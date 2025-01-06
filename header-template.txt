@@ -1,0 +1,12 @@
+# This file is part of SmarterMail Log Tool.
+# https://github.com/T313C0mun1s7/sm-logtool
+#
+# Copyright (C) 2025 John C. Reid
+#
+# Purpose: [Brief description of the file's purpose, e.g., handles log parsing and reporting.]
+#
+# This project is licensed under the GNU Affero General Public License (AGPL-3.0).
+# For more details, see the LICENSE file distributed with this source or visit:
+# https://www.gnu.org/licenses/agpl-3.0.html
+#
+# Contributions are welcome! See CONTRIBUTING.md for guidelines.
