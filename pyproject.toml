@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sm-logtool"
+version = "0.0.1.dev0"
+description = "TUI helper for exploring SmarterMail logs"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  {name = "John", email = "john@example.com"}
+]
+keywords = ["smartermail", "logs", "tui"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Intended Audience :: System Administrators",
+  "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+  "textual>=0.55",
+]
+
+[project.scripts]
+sm-logtool = "sm_logtool.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sm_logtool*"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["test"]
