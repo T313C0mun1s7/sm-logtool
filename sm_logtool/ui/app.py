@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Optional
 
 from textual import events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
@@ -85,11 +86,21 @@ class KindListItem(ListItem):
         else:
             self.remove_class("selected")
 
+    def set_active(self, active: bool) -> None:
+        if active:
+            self.add_class("active")
+        else:
+            self.remove_class("active")
+
 
 class KindListView(ListView):
     """Simple list view for selecting a single log kind."""
 
-    pass
+    def set_selection(self, kind: str) -> None:
+        for child in self.children:
+            if isinstance(child, KindListItem):
+                child.set_selected(child.kind == kind)
+                child.set_active(child.kind == kind)
 
 
 class DateListItem(ListItem):
@@ -108,6 +119,12 @@ class DateListItem(ListItem):
         else:
             self.remove_class("selected")
 
+    def set_active(self, active: bool) -> None:
+        if active:
+            self.add_class("active")
+        else:
+            self.remove_class("active")
+
     def on_mouse_down(self, event: events.MouseDown) -> None:  # pragma: no cover - UI behaviour
         parent = self.parent
         if isinstance(parent, DateListView):
@@ -123,7 +140,7 @@ class DateSelectionChanged(Message):
 
 
 class DateListView(ListView):
-    """ListView that supports multi-selection with ctrl/shift modifiers."""
+    """List view that supports persistent multi-selection via toggles."""
 
     def __init__(self) -> None:
         super().__init__(id="date-list")
@@ -132,44 +149,27 @@ class DateListView(ListView):
 
     # Keyboard handling -----------------------------------------------------------------
     def on_key(self, event: events.Key) -> None:  # pragma: no cover - UI behaviour
-        mods_raw = getattr(event, 'modifiers', set())
-        if isinstance(mods_raw, (list, tuple, set, frozenset)):
-            mods_iter = mods_raw
-        elif mods_raw:
-            mods_iter = (mods_raw,)
-        else:
-            mods_iter = ()
-        mods: set[str] = set()
-        for mod in mods_iter:
-            text = str(mod).lower()
-            if '.' in text:
-                text = text.split('.')[-1]
-            mods.add(text)
-        key_value = event.key if hasattr(event, 'key') and event.key else ''
-        key_lower = key_value.lower()
-        shift = 'shift' in mods or bool(getattr(event, 'shift', False)) or 'shift+' in key_lower or key_lower.endswith('+shift')
-        ctrl = bool(mods.intersection({'ctrl', 'control', 'primary', 'meta', 'command'})) or bool(getattr(event, 'ctrl', False)) or 'ctrl+' in key_lower or key_lower.endswith('+ctrl') or 'control+' in key_lower
-
         key = event.key
         index = self.index if self.index is not None else 0
         if key == 'space':
-            if shift and self.anchor_index is not None:
-                self._select_range(self.anchor_index, index, additive=ctrl)
-            else:
-                self._toggle_index(index, exclusive=not ctrl)
-                self.anchor_index = index
+            self._toggle_index(index)
+            self.anchor_index = index
             self._update_visual_state()
             self.post_message(DateSelectionChanged(self, self.selected_infos))
             event.stop()
             return
         if key == 'enter':
+            if not self.selected_indices:
+                self.selected_indices = {index}
+                self._update_visual_state()
             selected_infos = self.selected_infos
             self.post_message(DateSelectionChanged(self, selected_infos))
             app = getattr(self, 'app', None)
-            if selected_infos and hasattr(app, '_show_step_search') and hasattr(app, '_update_next_button_state'):
+            if selected_infos and hasattr(app, '_show_step_search'):
                 try:
                     app.selected_logs = selected_infos  # type: ignore[attr-defined]
-                    app._update_next_button_state()  # type: ignore[attr-defined]
+                    if hasattr(app, '_update_next_button_state'):
+                        app._update_next_button_state()  # type: ignore[attr-defined]
                     app._show_step_search()  # type: ignore[attr-defined]
                 except Exception:
                     pass
@@ -204,15 +204,7 @@ class DateListView(ListView):
             movement_handled = True
 
         if movement_handled:
-            if shift:
-                if self.anchor_index is None:
-                    self.anchor_index = index
-                anchor = self.anchor_index if self.anchor_index is not None else index
-                self._select_range(anchor, new_index, additive=ctrl)
-            else:
-                self.anchor_index = new_index
-                if not ctrl:
-                    self.selected_indices = {new_index}
+            self.anchor_index = new_index
             self._update_visual_state()
             self.post_message(DateSelectionChanged(self, self.selected_infos))
             event.stop()
@@ -227,33 +219,8 @@ class DateListView(ListView):
         except ValueError:  # pragma: no cover - defensive
             return
 
-        mods_raw = getattr(event, 'modifiers', set())
-        if isinstance(mods_raw, (list, tuple, set, frozenset)):
-            mods_iter = mods_raw
-        elif mods_raw:
-            mods_iter = (mods_raw,)
-        else:
-            mods_iter = ()
-        mods: set[str] = set()
-        for mod in mods_iter:
-            text = str(mod).lower()
-            if '.' in text:
-                text = text.split('.')[-1]
-            mods.add(text)
-        shift = 'shift' in mods or bool(getattr(event, 'shift', False))
-        ctrl = bool(mods.intersection({'ctrl', 'control', 'primary', 'meta', 'command'})) or bool(getattr(event, 'ctrl', False))
-
-        if shift:
-            if self.anchor_index is None:
-                self.anchor_index = index
-            anchor = self.anchor_index if self.anchor_index is not None else index
-            self._select_range(anchor, index, additive=ctrl)
-        elif ctrl:
-            self._toggle_index(index, exclusive=False)
-            self.anchor_index = index
-        else:
-            self._toggle_index(index, exclusive=True)
-            self.anchor_index = index
+        self._toggle_index(index)
+        self.anchor_index = index
 
         self.index = index
         self._update_visual_state()
@@ -272,27 +239,18 @@ class DateListView(ListView):
             self.anchor_index = first
         self._update_visual_state()
 
-    def _toggle_index(self, index: int, *, exclusive: bool) -> None:
-        if exclusive:
-            self.selected_indices = {index}
-        elif index in self.selected_indices:
+    def _toggle_index(self, index: int) -> None:
+        if index in self.selected_indices:
             self.selected_indices.remove(index)
         else:
             self.selected_indices.add(index)
 
-    def _select_range(self, start: int, end: int, *, additive: bool) -> None:
-        if not additive:
-            self.selected_indices.clear()
-        if start <= end:
-            rng = range(start, end + 1)
-        else:
-            rng = range(end, start + 1)
-        self.selected_indices.update(rng)
-
     def _update_visual_state(self) -> None:
+        current_index = self.index if self.index is not None else -1
         for idx, child in enumerate(self.children):
             if isinstance(child, DateListItem):
                 child.set_selected(idx in self.selected_indices)
+                child.set_active(idx == current_index)
 
     @property
     def selected_infos(self) -> list[LogFileInfo]:
@@ -322,6 +280,28 @@ class LogBrowser(App):
 
     .selected .label {
         text-style: bold;
+        background: #444444;
+        color: yellow;
+    }
+
+    .active .label {
+        background: #005f87;
+        color: white;
+    }
+
+    .selected.active .label {
+        background: #1b98d3;
+        color: black;
+    }
+
+    .cursor--true .label {
+        background: #005f87;
+        color: white;
+    }
+
+    .selected.cursor--true .label {
+        background: #1b98d3;
+        color: black;
     }
 
     #result-log {
@@ -330,9 +310,9 @@ class LogBrowser(App):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("/", "focus_search", "Focus search"),
-        ("r", "refresh", "Refresh"),
+        Binding("q", "quit", "Quit", show=True),
+        Binding("r", "reset", "Reset Search", show=True),
+        Binding("/", "focus_search", "Focus search", show=True),
     ]
 
     logs_dir: reactive[Path] = reactive(Path.cwd() / "sample_logs")
@@ -352,12 +332,14 @@ class LogBrowser(App):
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
         self.output_log: OutputLog | None = None
+        self.footer: Footer | None = None
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False)
         self.wizard = Vertical(id="wizard-body")
         yield self.wizard
-        yield Footer()
+        self.footer = Footer()
+        yield self.footer
 
     def on_mount(self) -> None:
         self._refresh_logs()
@@ -368,42 +350,47 @@ class LogBrowser(App):
         self.step = WizardStep.KIND
         self._clear_wizard()
         self.wizard.mount(Static("Step 1: Choose a log type", classes="instruction"))
-        self.kind_list = KindListView()
-        self.wizard.mount(self.kind_list)
         button_row = Horizontal(Button("Next", id="next-kind"), Button("Quit", id="quit-kind"), classes="button-row")
-        self.wizard.mount(button_row)
 
         if not self._logs_by_kind:
-            self.kind_list.append(ListItem(Static("No logs discovered")))
+            self.kind_list = KindListView(ListItem(Static("No logs discovered")))
+            self.current_kind = None
+            self.wizard.mount(self.kind_list)
+            self.kind_list.focus()
         else:
             kinds_sorted = sorted(self._logs_by_kind)
-            for kind in kinds_sorted:
-                item = KindListItem(kind)
-                item.set_selected(False)
-                self.kind_list.append(item)
             preferred = self.default_kind if self.default_kind in self._logs_by_kind else None
             if preferred is None and "smtpLog" in self._logs_by_kind:
                 preferred = "smtpLog"
             if preferred is None:
                 preferred = kinds_sorted[0]
+            items: list[ListItem] = []
+            preferred_index = 0
+            for idx, kind in enumerate(kinds_sorted):
+                item = KindListItem(kind)
+                items.append(item)
+                if kind == preferred:
+                    preferred_index = idx
+            initial_index = preferred_index + 1 if preferred is not None else 0
+            self.kind_list = KindListView(*items, initial_index=initial_index)
             self.current_kind = preferred
-            if hasattr(self.kind_list, "index"):
-                if preferred in kinds_sorted:
-                    idx = kinds_sorted.index(preferred)
-                    self.kind_list.index = idx
-            for child in self.kind_list.children:
-                if isinstance(child, KindListItem):
-                    child.set_selected(child.kind == preferred)
-            self.kind_list.focus()
+            self.wizard.mount(self.kind_list)
+            if preferred:
+                self.call_after_refresh(lambda kind=preferred: self._apply_kind_selection(kind))
+            else:
+                self.kind_list.focus()
+
+        self.wizard.mount(button_row)
         self._update_next_button_state()
+        self._refresh_footer_bindings()
 
     def _show_step_date(self) -> None:
         self.step = WizardStep.DATE
         self._clear_wizard()
         self.wizard.mount(Static("Step 2: Select one or more log dates", classes="instruction"))
         instructions = Static(
-            "Use Arrow keys or the mouse to choose dates. Space toggles selection.\n"
-            "Use Shift+Arrow/Click for range selection and Ctrl+Click to add/remove individual dates."
+            "Use arrow keys or the mouse to highlight a date. Press Space or click to toggle it.\n"
+            "Press Enter (or Next) when you are ready to continue."
         )
         self.wizard.mount(instructions)
 
@@ -423,6 +410,7 @@ class LogBrowser(App):
         self.date_list.populate(infos, default_indices)
         self._update_next_button_state()
         self.date_list.focus()
+        self._refresh_footer_bindings()
 
     def _show_step_search(self) -> None:
         self.step = WizardStep.SEARCH
@@ -441,6 +429,7 @@ class LogBrowser(App):
         )
         self.wizard.mount(button_row)
         self.search_input.focus()
+        self._refresh_footer_bindings()
 
     def _show_step_results(self, rendered: str | None = None) -> None:
         self.step = WizardStep.RESULTS
@@ -455,7 +444,8 @@ class LogBrowser(App):
         )
         self.wizard.mount(button_row)
         if rendered:
-            self.output_log.write(rendered)
+            self._write_output_lines(rendered.splitlines())
+        self._refresh_footer_bindings()
 
     # Step helpers ---------------------------------------------------------------------
     def _default_date_indices(self, infos: list[LogFileInfo]) -> list[int]:
@@ -503,16 +493,17 @@ class LogBrowser(App):
         elif button_id == "new-search":
             self._show_step_kind()
 
+        self._refresh_footer_bindings()
+
     def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:  # type: ignore[override]
         if self.step == WizardStep.KIND and isinstance(event.item, KindListItem):
             self.current_kind = event.item.kind
-            if self.kind_list is not None:
-                for child in self.kind_list.children:
-                    if isinstance(child, KindListItem):
-                        child.set_selected(child is event.item)
+            if isinstance(self.kind_list, KindListView):
+                self.kind_list.set_selection(event.item.kind)
         elif self.step == WizardStep.DATE and isinstance(event.item, DateListItem):
             if self.date_list is not None and self.date_list.index is not None:
                 self.date_list.anchor_index = self.date_list.index
+                self.date_list._update_visual_state()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:  # type: ignore[override]
         if self.step == WizardStep.KIND and isinstance(event.item, KindListItem):
@@ -520,7 +511,18 @@ class LogBrowser(App):
             self._show_step_date()
         elif self.step == WizardStep.DATE and isinstance(event.item, DateListItem):
             if self.date_list is not None:
-                self.selected_logs = self.date_list.selected_infos or [event.item.info]
+                children = list(self.date_list.children)
+                try:
+                    index = children.index(event.item)
+                except ValueError:
+                    index = self.date_list.index if self.date_list.index is not None else None
+                if index is None:
+                    return
+                self.date_list._toggle_index(index)
+                self.date_list.anchor_index = index
+                self.date_list._update_visual_state()
+                self.selected_logs = self.date_list.selected_infos
+                self.post_message(DateSelectionChanged(self.date_list, self.date_list.selected_infos))
             self._update_next_button_state()
 
     def on_date_selection_changed(self, message: DateSelectionChanged) -> None:
@@ -537,16 +539,38 @@ class LogBrowser(App):
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
 
-    def action_refresh(self) -> None:
+    def action_quit(self) -> None:
+        self.exit()
+
+    def action_reset(self) -> None:
         self._refresh_logs()
-        if self.step == WizardStep.KIND:
-            self._show_step_kind()
-        elif self.step == WizardStep.DATE:
-            self._show_step_date()
-        elif self.step == WizardStep.SEARCH:
-            self._show_step_search()
-        else:
-            self._show_step_kind()
+        self.selected_logs = []
+        self.current_kind = None
+        self._show_step_kind()
+        self._refresh_footer_bindings()
+
+    def _refresh_footer_bindings(self) -> None:
+        if self.footer is not None:
+            # Reset cached footer text so global key legend renders for every step.
+            self.footer._key_text = None  # type: ignore[attr-defined]
+            self.footer.refresh()
+
+    def _apply_kind_selection(self, kind: str) -> None:
+        if not self.kind_list:
+            return
+        children = list(self.kind_list.children)
+        for idx, child in enumerate(children):
+            if isinstance(child, KindListItem) and child.kind == kind:
+                try:
+                    self.kind_list.index = idx
+                except Exception:
+                    pass
+                if isinstance(self.kind_list, KindListView):
+                    self.kind_list.set_selection(kind)
+                else:
+                    child.set_selected(True)
+                self.kind_list.focus()
+                break
 
     def _clear_wizard(self) -> None:
         if hasattr(self, 'wizard'):
@@ -605,18 +629,7 @@ class LogBrowser(App):
             rendered_lines.append("")
 
         self._show_step_results()
-        if self.output_log is not None:
-            if hasattr(self.output_log, 'clear'):
-                self.output_log.clear()  # type: ignore[call-arg]
-            else:  # pragma: no cover - safety for unknown widgets
-                self.output_log.update('')
-            for line in rendered_lines:
-                self.output_log.write(line)
-            if hasattr(self.output_log, 'scroll_end'):
-                try:
-                    self.output_log.scroll_end()
-                except Exception:
-                    pass
+        self._write_output_lines(rendered_lines)
         self._notify("Search complete.")
 
     def _notify(self, message: str) -> None:
@@ -629,6 +642,27 @@ class LogBrowser(App):
         else:
             status = Static(message, id='status')
             self.wizard.mount(status)
+
+    def _write_output_lines(self, lines: list[str]) -> None:
+        if self.output_log is None:
+            return
+        if hasattr(self.output_log, 'clear'):
+            self.output_log.clear()  # type: ignore[call-arg]
+        else:  # pragma: no cover - safety for unknown widgets
+            self.output_log.update('')
+        if hasattr(self.output_log, 'write'):
+            for line in lines:
+                try:
+                    self.output_log.write(f"{line}\n")
+                except Exception:
+                    self.output_log.write(f"{str(line)}\n")
+        else:
+            self.output_log.update("\n".join(lines))
+        if hasattr(self.output_log, 'scroll_end'):
+            try:
+                self.output_log.scroll_end()
+            except Exception:
+                pass
 
 
 def list_log_files(logs_dir: Path) -> list[Path]:
@@ -648,4 +682,3 @@ def run(logs_dir: Path, staging_dir: Path | None = None, default_kind: str | Non
     app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir, default_kind=default_kind)
     app.run()
     return 0
-

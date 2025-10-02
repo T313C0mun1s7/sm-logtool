@@ -25,8 +25,8 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [ ] Resize the TUI panels so kind/date lists match their content width while maximizing output space.
 - [ ] Add a navigation legend plus keyboard/mouse multi-select (Tab cycling, Ctrl/Shift modifiers, Space toggle).
 
-## Current State Notes
-- Wizard UI needs modifier-aware selection (shift/ctrl) and keyboard navigation restoration; multi-select still unreliable.
-- Search results lose newline formatting despite log widget; revisit rendering pipeline.
-- Enter key on search step not triggering execution; focus/submit handling requires fix.
 
+## Current State Notes
+- Verify toggle-only date selection works smoothly (arrows + space, enter) with the new highlight styling.
+- Confirm footer shortcuts (`Q` quit, `R` reset search, `/` focus search) display on every step and function even when the search input or results pane has focus.
+- Make sure search results display one log line per row after recent changes.
