@@ -9,6 +9,7 @@ from zipfile import ZipFile
 import pytest
 
 from sm_logtool import cli
+from sm_logtool.config import AppConfig
 
 
 def create_smtp_zip(path: Path, content: str) -> None:
@@ -47,14 +48,20 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
     )
 
     args = argparse.Namespace(
-        logs_dir=logs_dir,
-        staging_dir=staging_dir,
-        kind='smtpLog',
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
         log_file=None,
         date='2024.01.01',
         list=False,
         case_sensitive=False,
         term='hello',
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtpLog",
     )
 
     exit_code = cli._run_search(args)

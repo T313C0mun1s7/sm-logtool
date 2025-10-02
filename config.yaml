@@ -1,0 +1,3 @@
+logs_dir: /ext/GitHub/sm-logtool/sample_logs
+staging_dir: /var/tmp/sm-logtool
+default_kind: smtpLog

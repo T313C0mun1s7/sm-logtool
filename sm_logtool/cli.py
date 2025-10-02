@@ -11,6 +11,7 @@ from pathlib import Path
 import sys
 from typing import Callable
 
+from .config import AppConfig, ConfigError, load_config
 from .logfiles import (
     UnknownLogDate,
     find_log_by_date,
@@ -23,6 +24,7 @@ from .staging import DEFAULT_STAGING_ROOT, stage_log
 
 
 DEFAULT_LOGS_DIR = Path(__file__).resolve().parent.parent / "sample_logs"
+CONFIG_ATTR = "_config"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,14 +41,24 @@ def build_parser() -> argparse.ArgumentParser:
         ).strip(),
     )
 
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a YAML configuration file. Defaults to $SM_LOGTOOL_CONFIG or "
+            "~/.config/sm-logtool/config.yaml."
+        ),
+    )
+
     subparsers = parser.add_subparsers(dest="command")
 
     browse_parser = subparsers.add_parser("browse", help="Launch the Textual UI")
     browse_parser.add_argument(
         "--logs-dir",
         type=Path,
-        default=DEFAULT_LOGS_DIR,
-        help="Path containing SmarterMail log files.",
+        default=None,
+        help="Path containing SmarterMail log files (overrides config).",
     )
     browse_parser.set_defaults(handler=_run_browse)
 
@@ -60,16 +72,16 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument(
         "--logs-dir",
         type=Path,
-        default=DEFAULT_LOGS_DIR,
-        help="Directory containing the original logs.",
+        default=None,
+        help="Directory containing the original logs (overrides config).",
     )
     search_parser.add_argument(
         "--staging-dir",
         type=Path,
         default=None,
         help=(
-            "Directory where logs are copied before analysis. Defaults to"
-            f" {DEFAULT_STAGING_ROOT}"
+            "Directory where logs are copied before analysis. Overrides config; "
+            f"defaults to {DEFAULT_STAGING_ROOT}"
         ),
     )
     search_parser.add_argument(
@@ -80,8 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     search_parser.add_argument(
         "--kind",
-        default="smtpLog",
-        help="Log kind to search (defaults to smtpLog).",
+        default=None,
+        help="Log kind to search (overrides config default).",
     )
     search_parser.add_argument(
         "--date",
@@ -111,13 +123,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    try:
+        config = load_config(args.config)
+    except ConfigError as exc:
+        parser.error(str(exc))
+
+    setattr(args, CONFIG_ATTR, config)
+
     handler: Callable[[argparse.Namespace], int] = getattr(args, "handler", _run_browse)
 
     return handler(args)
 
 
 def _run_browse(args: argparse.Namespace) -> int:
-    logs_dir: Path = args.logs_dir
+    config: AppConfig = getattr(args, CONFIG_ATTR)
+    logs_dir = _resolve_logs_dir(args, config)
 
     # Lazy import so tests can import this module without having textual installed.
     try:
@@ -128,13 +148,15 @@ def _run_browse(args: argparse.Namespace) -> int:
             f"Details: {exc}"
         ) from exc
 
-    return run_tui(logs_dir)
+    staging_dir = _resolve_staging_dir(args, config)
+    return run_tui(logs_dir, staging_dir=staging_dir, default_kind=config.default_kind)
 
 
 def _run_search(args: argparse.Namespace) -> int:
-    logs_dir: Path = args.logs_dir
-    staging_dir: Path | None = args.staging_dir
-    log_kind: str = args.kind
+    config: AppConfig = getattr(args, CONFIG_ATTR)
+    logs_dir = _resolve_logs_dir(args, config)
+    staging_dir = _resolve_staging_dir(args, config)
+    log_kind: str = args.kind or config.default_kind
 
     if args.list:
         return _list_logs(logs_dir, log_kind)
@@ -172,7 +194,10 @@ def _run_search(args: argparse.Namespace) -> int:
         info_source = info.path
 
     try:
-        staged = stage_log(log_path, staging_dir=staging_dir)
+        staged = stage_log(
+            log_path,
+            staging_dir=staging_dir,
+        )
     except Exception as exc:  # pragma: no cover - staging failure is surfaced to user
         print(f"Failed to stage log {log_path}: {exc}", file=sys.stderr)
         return 1
@@ -204,6 +229,7 @@ def _print_search_summary(result, source_path: Path) -> None:
         for line_number, line in result.orphan_matches:
             print(f"{line_number}: {line}")
 
+
 def _list_logs(logs_dir: Path, kind: str) -> int:
     logs = summarize_logs(logs_dir, kind)
     if not logs:
@@ -218,7 +244,13 @@ def _list_logs(logs_dir: Path, kind: str) -> int:
     return 0
 
 
+def _resolve_logs_dir(args: argparse.Namespace, config: AppConfig) -> Path:
+    candidate = args.logs_dir or config.logs_dir or DEFAULT_LOGS_DIR
+    return candidate
 
+
+def _resolve_staging_dir(args: argparse.Namespace, config: AppConfig) -> Path | None:
+    return getattr(args, 'staging_dir', None) or config.staging_dir
 
 
 def scan_logs(logs_dir: Path) -> list[Path]:
@@ -235,8 +267,6 @@ def scan_logs(logs_dir: Path) -> list[Path]:
         for path in logs_dir.iterdir()
         if path.is_file() and not path.name.startswith('.')
     )
-
-
 
 
 if __name__ == "__main__":

@@ -21,6 +21,12 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 ## Upcoming Work
 - [ ] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
 - [ ] Add syntax highlighting for SMTP conversations in CLI and TUI views.
-- [ ] Introduce a YAML config file to store default log paths and other settings.
+- [x] Introduce a YAML config file to store default log paths and other settings.
 - [ ] Resize the TUI panels so kind/date lists match their content width while maximizing output space.
 - [ ] Add a navigation legend plus keyboard/mouse multi-select (Tab cycling, Ctrl/Shift modifiers, Space toggle).
+
+## Current State Notes
+- Wizard UI needs modifier-aware selection (shift/ctrl) and keyboard navigation restoration; multi-select still unreliable.
+- Search results lose newline formatting despite log widget; revisit rendering pipeline.
+- Enter key on search step not triggering execution; focus/submit handling requires fix.
+
