@@ -46,6 +46,8 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
 - After any change that modifies repository files, create a local git commit before
   handing control back to the user. This ensures every step is recoverable if an
   iteration goes sideways and prevents repeated mistake loops.
+- Before making changes, confirm you are not on `main`. Switch to an appropriate
+  feature branch so protected branches stay clean and reviewable.
 
 ## Security & Configuration Tips
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
