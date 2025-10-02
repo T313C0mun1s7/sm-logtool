@@ -36,7 +36,7 @@ class AppConfig:
 
 
 def default_config_path() -> Path:
-    """Return the default configuration path, honoring ``SM_LOGTOOL_CONFIG``."""
+    """Return the default config path, honoring ``SM_LOGTOOL_CONFIG``."""
 
     env_value = os.environ.get(_DEFAULT_CONFIG_ENV)
     if env_value:
@@ -55,24 +55,28 @@ def load_config(path: Path | None = None) -> AppConfig:
     try:
         with config_path.open("r", encoding="utf-8") as handle:
             raw: Any = yaml.safe_load(handle) or {}
-    except yaml.YAMLError as exc:  # pragma: no cover - parsing errors shared with user
-        raise ConfigError(f"Failed to parse YAML config {config_path}: {exc}") from exc
-    except OSError as exc:  # pragma: no cover - filesystem errors propagated to caller
-        raise ConfigError(f"Failed to read config {config_path}: {exc}") from exc
+    except yaml.YAMLError as exc:  # pragma: no cover - parsing errors surfaced
+        message = f"Failed to parse YAML config {config_path}: {exc}"
+        raise ConfigError(message) from exc
+    except OSError as exc:  # pragma: no cover - propagate filesystem errors
+        message = f"Failed to read config {config_path}: {exc}"
+        raise ConfigError(message) from exc
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            f"Expected a mapping at the top level of {config_path}, got {type(raw).__name__}."
+        expected = type(raw).__name__
+        message = (
+            f"Expected a mapping at the top level of {config_path}, "
+            f"got {expected}."
         )
+        raise ConfigError(message)
 
     logs_dir = _coerce_path(raw.get("logs_dir"))
     staging_dir = _coerce_path(raw.get("staging_dir"))
     default_kind = raw.get("default_kind", "smtpLog")
 
     if not isinstance(default_kind, str):
-        raise ConfigError(
-            f"Config key 'default_kind' must be a string (file: {config_path})."
-        )
+        message = "Config key 'default_kind' must be a string"
+        raise ConfigError(f"{message} (file: {config_path}).")
 
     return AppConfig(
         path=config_path,
@@ -87,5 +91,7 @@ def _coerce_path(value: Any) -> Optional[Path]:
         return None
     if isinstance(value, str):
         return Path(value).expanduser()
-    raise ConfigError(f"Expected a string path in configuration, got {type(value).__name__}.")
-
+    typename = type(value).__name__
+    raise ConfigError(
+        f"Expected a string path in configuration, got {typename}."
+    )

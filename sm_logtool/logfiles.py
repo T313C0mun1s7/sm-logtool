@@ -42,7 +42,12 @@ def parse_log_filename(path: Path) -> LogFileInfo:
 
     match = _LOG_NAME_PATTERN.match(path.name)
     if not match:
-        return LogFileInfo(path=path, stamp=None, kind="", is_zipped=path.suffix == ".zip")
+        return LogFileInfo(
+            path=path,
+            stamp=None,
+            kind="",
+            is_zipped=path.suffix == ".zip",
+        )
 
     stamp = datetime.strptime(match.group("stamp"), "%Y.%m.%d").date()
     kind = match.group("kind")
@@ -58,7 +63,11 @@ def parse_stamp(value: str) -> date:
         raise UnknownLogDate(f"Invalid log date stamp: {value!r}") from exc
 
 
-def find_log_by_date(logs_dir: Path, kind: str, target_date: date) -> Optional[LogFileInfo]:
+def find_log_by_date(
+    logs_dir: Path,
+    kind: str,
+    target_date: date,
+) -> Optional[LogFileInfo]:
     """Return the log matching ``target_date`` for ``kind`` if present."""
 
     candidates = discover_logs(logs_dir, kind)
@@ -92,7 +101,14 @@ def discover_logs(logs_dir: Path, kind: str) -> List[LogFileInfo]:
             continue
         infos.append(info)
 
-    infos.sort(key=lambda item: (item.stamp or date.min, not item.is_zipped, item.path.name), reverse=True)
+    infos.sort(
+        key=lambda item: (
+            item.stamp or date.min,
+            not item.is_zipped,
+            item.path.name,
+        ),
+        reverse=True,
+    )
     return infos
 
 
@@ -101,4 +117,3 @@ def newest_log(logs_dir: Path, kind: str) -> Optional[LogFileInfo]:
 
     logs = discover_logs(logs_dir, kind)
     return logs[0] if logs else None
-
