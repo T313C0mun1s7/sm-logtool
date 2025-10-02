@@ -6,7 +6,7 @@ import inspect
 from datetime import date
 from enum import Enum, auto
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -206,21 +206,25 @@ class DateListView(ListView):
         self._trigger_search_transition()
 
     def _handle_navigation_key(self, key: str, fallback_index: int) -> bool:
-        actions: dict[str, Callable[[], None]] = {
-            "down": self.action_cursor_down,
-            "shift+down": self.action_cursor_down,
-            "up": self.action_cursor_up,
-            "shift+up": self.action_cursor_up,
-            "pageup": self.action_cursor_page_up,
-            "shift+pageup": self.action_cursor_page_up,
-            "pagedown": self.action_cursor_page_down,
-            "shift+pagedown": self.action_cursor_page_down,
-            "home": self.action_cursor_home,
-            "shift+home": self.action_cursor_home,
-            "end": self.action_cursor_end,
-            "shift+end": self.action_cursor_end,
+        action_names = {
+            "down": "action_cursor_down",
+            "shift+down": "action_cursor_down",
+            "up": "action_cursor_up",
+            "shift+up": "action_cursor_up",
+            "pageup": "action_cursor_page_up",
+            "shift+pageup": "action_cursor_page_up",
+            "pagedown": "action_cursor_page_down",
+            "shift+pagedown": "action_cursor_page_down",
+            "home": "action_cursor_home",
+            "shift+home": "action_cursor_home",
+            "end": "action_cursor_end",
+            "shift+end": "action_cursor_end",
         }
-        action = actions.get(key)
+        action_name = action_names.get(key)
+        if action_name is None:
+            return False
+
+        action = getattr(self, action_name, None)
         if action is None:
             return False
 
