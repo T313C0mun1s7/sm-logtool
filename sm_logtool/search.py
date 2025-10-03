@@ -63,7 +63,10 @@ def search_smtp_conversations(
             if message_id:
                 builder = builders.get(message_id)
                 if builder is None:
-                    builder = _ConversationBuilder(message_id=message_id, first_line_number=line_number)
+                    builder = _ConversationBuilder(
+                        message_id=message_id,
+                        first_line_number=line_number,
+                    )
                     builders[message_id] = builder
                 builder.add_line(line)
 
@@ -73,7 +76,11 @@ def search_smtp_conversations(
                 else:
                     orphan_matches.append((line_number, line))
 
-    conversations = [builders[mid].as_conversation() for mid in matched_ids if mid in builders]
+    conversations = [
+        builders[mid].as_conversation()
+        for mid in matched_ids
+        if mid in builders
+    ]
     conversations.sort(key=lambda conv: conv.first_line_number)
 
     return SmtpSearchResult(
@@ -112,4 +119,3 @@ class _ConversationBuilder:
             lines=self.lines.copy(),
             first_line_number=self.first_line_number,
         )
-

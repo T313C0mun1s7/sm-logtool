@@ -34,9 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="sm-logtool",
         description=textwrap.dedent(
             """
-            Explore SmarterMail logs from your terminal. The `browse` subcommand
-            launches the Textual UI while `search` performs a console-based SMTP
-            conversation search.
+            Explore SmarterMail logs from your terminal.
+            The `browse` subcommand launches the Textual UI.
+            The `search` subcommand performs a console-based SMTP conversation
+            search.
             """
         ).strip(),
     )
@@ -46,14 +47,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Path to a YAML configuration file. Defaults to $SM_LOGTOOL_CONFIG or "
+            "Path to a YAML config file. Defaults to $SM_LOGTOOL_CONFIG or "
             "~/.config/sm-logtool/config.yaml."
         ),
     )
 
     subparsers = parser.add_subparsers(dest="command")
 
-    browse_parser = subparsers.add_parser("browse", help="Launch the Textual UI")
+    browse_parser = subparsers.add_parser(
+        "browse",
+        help="Launch the Textual UI",
+    )
     browse_parser.add_argument(
         "--logs-dir",
         type=Path,
@@ -62,7 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     browse_parser.set_defaults(handler=_run_browse)
 
-    search_parser = subparsers.add_parser("search", help="Search SMTP logs for a term")
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Search SMTP logs for a term",
+    )
     search_parser.add_argument(
         "term",
         nargs="?",
@@ -80,15 +87,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help=(
-            "Directory where logs are copied before analysis. Overrides config; "
-            f"defaults to {DEFAULT_STAGING_ROOT}"
+            "Directory where logs are copied before analysis. Overrides the "
+            f"configuration; defaults to {DEFAULT_STAGING_ROOT}."
         ),
     )
     search_parser.add_argument(
         "--log-file",
         type=Path,
         default=None,
-        help="Specific log file to search (relative to --logs-dir unless absolute).",
+        help=(
+            "Specific log file to search. Relative paths resolve under "
+            "--logs-dir."
+        ),
     )
     search_parser.add_argument(
         "--kind",
@@ -130,7 +140,8 @@ def main(argv: list[str] | None = None) -> int:
 
     setattr(args, CONFIG_ATTR, config)
 
-    handler: Callable[[argparse.Namespace], int] = getattr(args, "handler", _run_browse)
+    handler: Callable[[argparse.Namespace], int]
+    handler = getattr(args, "handler", _run_browse)
 
     return handler(args)
 
@@ -139,17 +150,22 @@ def _run_browse(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     logs_dir = _resolve_logs_dir(args, config)
 
-    # Lazy import so tests can import this module without having textual installed.
+    # Lazy import so tests can import this module without textual installed.
     try:
         from .ui.app import run as run_tui  # type: ignore
     except Exception as exc:  # pragma: no cover - defensive fallback
         raise SystemExit(
-            "The Textual UI could not be loaded. Ensure the 'textual' package is installed.\n"
+            "The Textual UI could not be loaded. Ensure the 'textual' package "
+            "is installed.\n"
             f"Details: {exc}"
         ) from exc
 
     staging_dir = _resolve_staging_dir(args, config)
-    return run_tui(logs_dir, staging_dir=staging_dir, default_kind=config.default_kind)
+    return run_tui(
+        logs_dir,
+        staging_dir=staging_dir,
+        default_kind=config.default_kind,
+    )
 
 
 def _run_search(args: argparse.Namespace) -> int:
@@ -162,11 +178,18 @@ def _run_search(args: argparse.Namespace) -> int:
         return _list_logs(logs_dir, log_kind)
 
     if args.term is None:
-        print("Search term is required unless --list is supplied.", file=sys.stderr)
+        print(
+            "Search term is required unless --list is supplied.",
+            file=sys.stderr,
+        )
         return 2
 
     if args.log_file is not None:
-        log_path = args.log_file if args.log_file.is_absolute() else logs_dir / args.log_file
+        log_path = (
+            args.log_file
+            if args.log_file.is_absolute()
+            else logs_dir / args.log_file
+        )
         info_source = log_path
         if not log_path.exists():
             print(f"Log file not found: {log_path}", file=sys.stderr)
@@ -180,15 +203,19 @@ def _run_search(args: argparse.Namespace) -> int:
                 return 2
             info = find_log_by_date(logs_dir, log_kind, target_date)
             if info is None:
-                print(
-                    f"No {log_kind} log found for {target_date:%Y.%m.%d} in {logs_dir}",
-                    file=sys.stderr,
+                message = (
+                    f"No {log_kind} log found for {target_date:%Y.%m.%d} in "
+                    f"{logs_dir}"
                 )
+                print(message, file=sys.stderr)
                 return 2
         else:
             info = newest_log(logs_dir, log_kind)
             if info is None:
-                print(f"No {log_kind} logs found in {logs_dir}", file=sys.stderr)
+                print(
+                    f"No {log_kind} logs found in {logs_dir}",
+                    file=sys.stderr,
+                )
                 return 2
         log_path = info.path
         info_source = info.path
@@ -198,7 +225,7 @@ def _run_search(args: argparse.Namespace) -> int:
             log_path,
             staging_dir=staging_dir,
         )
-    except Exception as exc:  # pragma: no cover - staging failure is surfaced to user
+    except Exception as exc:  # pragma: no cover - surface staging failure
         print(f"Failed to stage log {log_path}: {exc}", file=sys.stderr)
         return 1
 
@@ -214,12 +241,15 @@ def _run_search(args: argparse.Namespace) -> int:
 
 def _print_search_summary(result, source_path: Path) -> None:
     print(
-        f"Search term '{result.term}' -> {result.total_conversations} conversation(s) in "
-        f"{source_path.name}"
+        f"Search term '{result.term}' -> "
+        f"{result.total_conversations} conversation(s) in {source_path.name}"
     )
     for conversation in result.conversations:
         print()
-        print(f"[{conversation.message_id}] first seen on line {conversation.first_line_number}")
+        print(
+            f"[{conversation.message_id}] first seen on line "
+            f"{conversation.first_line_number}"
+        )
         for line in conversation.lines:
             print(line)
 
@@ -249,8 +279,11 @@ def _resolve_logs_dir(args: argparse.Namespace, config: AppConfig) -> Path:
     return candidate
 
 
-def _resolve_staging_dir(args: argparse.Namespace, config: AppConfig) -> Path | None:
-    return getattr(args, 'staging_dir', None) or config.staging_dir
+def _resolve_staging_dir(
+    args: argparse.Namespace,
+    config: AppConfig,
+) -> Path | None:
+    return getattr(args, "staging_dir", None) or config.staging_dir
 
 
 def scan_logs(logs_dir: Path) -> list[Path]:
@@ -271,4 +304,3 @@ def scan_logs(logs_dir: Path) -> list[Path]:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

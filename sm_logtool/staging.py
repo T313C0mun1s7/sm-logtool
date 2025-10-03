@@ -24,7 +24,12 @@ class StagedLog:
     info: LogFileInfo
 
 
-def _needs_refresh(info: LogFileInfo, *, today: date | None = None, force: bool = False) -> bool:
+def _needs_refresh(
+    info: LogFileInfo,
+    *,
+    today: date | None = None,
+    force: bool = False,
+) -> bool:
     if force:
         return True
     if info.stamp is None:
@@ -75,12 +80,19 @@ def stage_log(
 
 def _extract_single_member_zip(zip_path: Path, target: Path) -> None:
     with ZipFile(zip_path) as archive:
-        members = [member for member in archive.namelist() if not member.endswith("/")]
+        members = [
+            member
+            for member in archive.namelist()
+            if not member.endswith("/")
+        ]
         if not members:
             raise ValueError(f"Zip file {zip_path} contains no files")
         if len(members) > 1:
-            raise ValueError(f"Zip file {zip_path} contains multiple members; expected one")
+            message = (
+                f"Zip file {zip_path} contains multiple members; "
+                "expected one"
+            )
+            raise ValueError(message)
         member = members[0]
         with archive.open(member) as src, target.open("wb") as dst:
             shutil.copyfileobj(src, dst)
-
