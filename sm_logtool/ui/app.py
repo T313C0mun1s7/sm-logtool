@@ -202,7 +202,7 @@ class WizardBody(Vertical):
     ]
 
 
-class SearchInput(Input):
+class SearchInput(Input, inherit_bindings=False):
     BINDINGS = [
         Binding("left", "cursor_left", show=False),
         Binding("right", "cursor_right", show=False),
