@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import inspect
+from collections import defaultdict
 from datetime import date
 from enum import Enum, auto
+from itertools import groupby
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -23,6 +25,8 @@ from textual.widgets import (
     ListView,
     Static,
 )
+from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
+from rich.text import Text
 
 from ..logfiles import (
     LogFileInfo,
@@ -166,11 +170,11 @@ class WizardBody(Vertical):
     can_focus = True
     BINDINGS = [
         Binding(
-            "alt+m",
+            "ctrl+shift+m",
             "app.menu",
             "Menu",
             show=True,
-            key_display="ALT+M",
+            key_display="CTRL+SHIFT+M",
         ),
         Binding(
             "ctrl+q",
@@ -195,6 +199,127 @@ class WizardBody(Vertical):
             key_display="CTRL+F",
         ),
     ]
+
+
+class MnemonicFooterKey(FooterKey):
+    def __init__(
+        self,
+        *args: object,
+        mnemonic_index: int | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._mnemonic_index = mnemonic_index
+
+    def render(self) -> Text:
+        key_style = self.get_component_rich_style("footer-key--key")
+        description_style = self.get_component_rich_style(
+            "footer-key--description"
+        )
+        key_display = self.key_display
+        key_padding = self.get_component_styles("footer-key--key").padding
+        description_padding = self.get_component_styles(
+            "footer-key--description"
+        ).padding
+
+        description = self.description
+        if description:
+            key_text = Text(
+                " " * key_padding.left + key_display + " " * key_padding.right,
+                style=key_style,
+            )
+            desc_text = Text(
+                " " * description_padding.left
+                + description
+                + " " * description_padding.right,
+                style=description_style,
+            )
+            if self._mnemonic_index is not None:
+                underline_pos = description_padding.left + self._mnemonic_index
+                if 0 <= underline_pos < len(desc_text):
+                    desc_text.stylize(
+                        "underline",
+                        underline_pos,
+                        underline_pos + 1,
+                    )
+            label_text = Text.assemble(key_text, desc_text)
+        else:
+            label_text = Text.assemble((key_display, key_style))
+
+        label_text.stylize_before(self.rich_style)
+        return label_text
+
+
+class MenuFooter(Footer):
+    MENU_MNEMONIC_INDEX = 0
+
+    def _build_footer_key(
+        self,
+        binding: Binding,
+        enabled: bool,
+        tooltip: str,
+        *,
+        grouped: bool = False,
+    ) -> FooterKey:
+        key_display = self.app.get_key_display(binding)
+        classes = "-grouped" if grouped else ""
+        if binding.action in {"menu", "app.menu"} and binding.description:
+            return MnemonicFooterKey(
+                binding.key,
+                key_display,
+                binding.description,
+                binding.action,
+                disabled=not enabled,
+                tooltip=tooltip or binding.description,
+                classes=classes,
+                mnemonic_index=self.MENU_MNEMONIC_INDEX,
+            ).data_bind(compact=Footer.compact)
+        return FooterKey(
+            binding.key,
+            key_display,
+            "" if grouped else binding.description,
+            binding.action,
+            disabled=not enabled,
+            tooltip=tooltip,
+            classes=classes,
+        ).data_bind(compact=Footer.compact)
+
+    def compose(self) -> ComposeResult:
+        if not self._bindings_ready:
+            return
+        active_bindings = self.screen.active_bindings
+        bindings = [
+            (binding, enabled, tooltip)
+            for (_, binding, enabled, tooltip) in active_bindings.values()
+            if binding.show
+        ]
+        action_to_bindings: defaultdict[str, list[tuple[Binding, bool, str]]]
+        action_to_bindings = defaultdict(list)
+        for binding, enabled, tooltip in bindings:
+            action_to_bindings[binding.action].append((binding, enabled, tooltip))
+
+        self.styles.grid_size_columns = len(action_to_bindings)
+
+        for group, multi_bindings_iterable in groupby(
+            action_to_bindings.values(),
+            lambda multi_bindings_: multi_bindings_[0][0].group,
+        ):
+            multi_bindings = list(multi_bindings_iterable)
+            if group is not None and len(multi_bindings) > 1:
+                with KeyGroup(classes="-compact" if group.compact else ""):
+                    for multi_bindings in multi_bindings:
+                        binding, enabled, tooltip = multi_bindings[0]
+                        yield self._build_footer_key(
+                            binding,
+                            enabled,
+                            tooltip,
+                            grouped=True,
+                        )
+                yield FooterLabel(group.description)
+            else:
+                for multi_bindings in multi_bindings:
+                    binding, enabled, tooltip = multi_bindings[0]
+                    yield self._build_footer_key(binding, enabled, tooltip)
 
 
 class DateListView(ListView):
@@ -424,7 +549,7 @@ class LogBrowser(App):
         yield Header(show_clock=False, icon="Menu")
         self.wizard = WizardBody(id="wizard-body")
         yield self.wizard
-        self.footer = Footer(show_command_palette=False)
+        self.footer = MenuFooter(show_command_palette=False)
         yield self.footer
 
     def on_mount(self) -> None:

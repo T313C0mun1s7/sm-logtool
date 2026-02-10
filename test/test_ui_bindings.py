@@ -23,7 +23,7 @@ async def test_footer_shows_global_keys_on_results_step():
         text = str(rendered)
         assert "Quit" in text
         assert "Reset Search" in text
-        assert "Focus search" in text
+        assert "Menu" in text
 
 
 @pytest.mark.asyncio
