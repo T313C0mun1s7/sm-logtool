@@ -248,12 +248,12 @@ class MnemonicFooterKey(FooterKey):
                 style=description_style,
             )
             if self._mnemonic_index is not None:
-                underline_pos = description_padding.left + self._mnemonic_index
-                if 0 <= underline_pos < len(desc_text):
+                bold_pos = description_padding.left + self._mnemonic_index
+                if 0 <= bold_pos < len(desc_text):
                     desc_text.stylize(
-                        "underline",
-                        underline_pos,
-                        underline_pos + 1,
+                        "bold",
+                        bold_pos,
+                        bold_pos + 1,
                     )
             label_text = Text.assemble(key_text, desc_text)
         else:
@@ -690,6 +690,8 @@ class LogBrowser(App):
         self._clear_wizard()
         self.wizard.mount(Static("Search results", classes="instruction"))
         self.output_log = OutputLog(id="result-log")
+        self.output_log.styles.height = "1fr"
+        self.output_log.styles.min_height = 5
         self.wizard.mount(self.output_log)
         button_row = Horizontal(
             Button("Back", id="back-results"),
