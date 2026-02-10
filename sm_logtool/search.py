@@ -7,8 +7,8 @@ from pathlib import Path
 import re
 from typing import List, Tuple
 
+from .log_parsers import parse_smtp_line
 
-_MESSAGE_ID_PATTERN = re.compile(r"\[[^\]]*\]\[(?P<message_id>[^\]]+)\]")
 
 
 @dataclass
@@ -93,10 +93,10 @@ def search_smtp_conversations(
 
 
 def _extract_message_id(line: str) -> str | None:
-    match = _MESSAGE_ID_PATTERN.search(line)
-    if match:
-        return match.group("message_id")
-    return None
+    entry = parse_smtp_line(line)
+    if entry is None:
+        return None
+    return entry.log_id
 
 
 @dataclass
