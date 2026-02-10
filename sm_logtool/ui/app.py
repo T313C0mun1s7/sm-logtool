@@ -202,6 +202,18 @@ class WizardBody(Vertical):
     ]
 
 
+class SearchInput(Input):
+    BINDINGS = [
+        Binding("left", "cursor_left", show=False),
+        Binding("right", "cursor_right", show=False),
+        Binding("home", "home", show=False),
+        Binding("end", "end", show=False),
+        Binding("backspace", "delete_left", show=False),
+        Binding("delete", "delete_right", show=False),
+        Binding("enter", "submit", show=False),
+    ]
+
+
 class MnemonicFooterKey(FooterKey):
     def __init__(
         self,
@@ -659,7 +671,7 @@ class LogBrowser(App):
         )
         summary = Static(summary_text, classes="instruction")
         self.wizard.mount(summary)
-        self.search_input = Input(
+        self.search_input = SearchInput(
             placeholder="Enter search term",
             id="search-term",
         )
