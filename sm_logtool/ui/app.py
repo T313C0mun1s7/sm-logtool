@@ -511,6 +511,10 @@ class LogBrowser(App):
         padding: 1 0;
     }
 
+    .button-row {
+        height: auto;
+    }
+
     .button-row Button {
         margin-right: 1;
     }
