@@ -165,14 +165,34 @@ class DateSelectionChanged(Message):
 class WizardBody(Vertical):
     can_focus = True
     BINDINGS = [
-        Binding("m", "app.command_palette", "Menu", show=True),
-        Binding("ctrl+p", "app.command_palette", "Menu", show=True),
-        Binding("q", "app.quit", "Quit", show=True),
-        Binding("ctrl+q", "app.quit", "Quit", show=True),
-        Binding("r", "app.reset", "Reset Search", show=True),
-        Binding("ctrl+r", "app.reset", "Reset Search", show=True),
-        Binding("/", "app.focus_search", "Focus search", show=True),
-        Binding("ctrl+f", "app.focus_search", "Focus search", show=True),
+        Binding(
+            "ctrl+m",
+            "app.menu",
+            "Menu",
+            show=True,
+            key_display="CTRL+M",
+        ),
+        Binding(
+            "ctrl+q",
+            "app.quit",
+            "Quit",
+            show=True,
+            key_display="CTRL+Q",
+        ),
+        Binding(
+            "ctrl+r",
+            "app.reset",
+            "Reset Search",
+            show=True,
+            key_display="CTRL+R",
+        ),
+        Binding(
+            "ctrl+f",
+            "app.focus_search",
+            "Focus search",
+            show=True,
+            key_display="CTRL+F",
+        ),
     ]
 
 
@@ -400,7 +420,7 @@ class LogBrowser(App):
         self.footer: Footer | None = None
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
-        yield Header(show_clock=False, icon="Menu (M)")
+        yield Header(show_clock=False, icon="Menu")
         self.wizard = WizardBody(id="wizard-body")
         yield self.wizard
         self.footer = Footer()
@@ -670,6 +690,9 @@ class LogBrowser(App):
     def action_focus_search(self) -> None:
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
+
+    def action_menu(self) -> None:
+        self.action_command_palette()
 
     def action_quit(self) -> None:
         self.exit()
