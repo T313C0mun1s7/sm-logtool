@@ -51,7 +51,12 @@ if _BaseLog is not None:
     class OutputLog(_BaseLog):
         """Text log widget that adapts to Textual version differences."""
 
-        def __init__(self, *, id: str | None = None) -> None:
+        def __init__(
+            self,
+            *,
+            id: str | None = None,
+            classes: str | None = None,
+        ) -> None:
             kwargs = {}
             init_sig = inspect.signature(_BaseLog.__init__)
             if "highlight" in init_sig.parameters:
@@ -60,6 +65,8 @@ if _BaseLog is not None:
                 kwargs["wrap"] = True
             if "id" in init_sig.parameters:
                 kwargs["id"] = id
+            if "classes" in init_sig.parameters:
+                kwargs["classes"] = classes
             super().__init__(**kwargs)  # type: ignore[arg-type]
 
 else:
@@ -67,8 +74,13 @@ else:
     class OutputLog(Static):  # type: ignore[no-redef]
         """Fallback when neither TextLog nor Log widgets are available."""
 
-        def __init__(self, *, id: str | None = None) -> None:
-            super().__init__("", id=id)
+        def __init__(
+            self,
+            *,
+            id: str | None = None,
+            classes: str | None = None,
+        ) -> None:
+            super().__init__("", id=id, classes=classes)
             self._lines: list[str] = []
 
         def write(self, text: str) -> None:  # type: ignore[override]
@@ -547,7 +559,7 @@ class LogBrowser(App):
         color: black;
     }
 
-    #result-log {
+    .result-log {
         height: 1fr;
     }
     """
@@ -582,6 +594,7 @@ class LogBrowser(App):
         self.subsearch_terms: list[str] = []
         self.subsearch_paths: list[Path] = []
         self.subsearch_rendered: list[list[str]] = []
+        self._result_log_counter = 0
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False, icon="Menu")
@@ -712,7 +725,9 @@ class LogBrowser(App):
         self._clear_wizard()
         title = self._results_title()
         self.wizard.mount(Static(title, classes="instruction"))
-        self.output_log = OutputLog(id="result-log")
+        self._result_log_counter += 1
+        result_id = f"result-log-{self._result_log_counter}"
+        self.output_log = OutputLog(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
         self.wizard.mount(self.output_log)
