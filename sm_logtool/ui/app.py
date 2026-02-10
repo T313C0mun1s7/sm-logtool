@@ -579,6 +579,9 @@ class LogBrowser(App):
         self.subsearch_active = False
         self.subsearch_depth = 0
         self.last_rendered_lines: list[str] | None = None
+        self.subsearch_terms: list[str] = []
+        self.subsearch_paths: list[Path] = []
+        self.subsearch_rendered: list[list[str]] = []
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False, icon="Menu")
@@ -707,17 +710,21 @@ class LogBrowser(App):
     def _show_step_results(self, rendered: str | None = None) -> None:
         self.step = WizardStep.RESULTS
         self._clear_wizard()
-        self.wizard.mount(Static("Search results", classes="instruction"))
+        title = self._results_title()
+        self.wizard.mount(Static(title, classes="instruction"))
         self.output_log = OutputLog(id="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
         self.wizard.mount(self.output_log)
-        button_row = Horizontal(
+        show_back = len(self.subsearch_terms) > 1
+        buttons: list[Static] = [
             Button("New Search", id="new-search"),
             Button("Sub-search", id="sub-search"),
-            Button("Quit", id="quit-results"),
-            classes="button-row",
-        )
+        ]
+        if show_back:
+            buttons.append(Button("Back", id="back-subsearch"))
+        buttons.append(Button("Quit", id="quit-results"))
+        button_row = Horizontal(*buttons, classes="button-row")
         self.wizard.mount(button_row)
         if rendered:
             self._write_output_lines(rendered.splitlines())
@@ -782,6 +789,8 @@ class LogBrowser(App):
             self._show_step_kind()
         elif button_id == "sub-search":
             self._start_subsearch()
+        elif button_id == "back-subsearch":
+            self._step_back_subsearch()
         elif button_id == "quit-results":
             self.exit()
 
@@ -970,7 +979,7 @@ class LogBrowser(App):
         ]
         rendered_lines = self._render_results(results, search_targets)
         self.last_rendered_lines = rendered_lines
-        self._write_subsearch_snapshot(results)
+        self._write_subsearch_snapshot(results, term, rendered_lines)
 
         self._show_step_results()
         self._write_output_lines(rendered_lines)
@@ -1049,9 +1058,14 @@ class LogBrowser(App):
         name = f"subsearch_{depth:02d}_{timestamp}.log"
         return staging_dir / name
 
-    def _write_subsearch_snapshot(self, results: list) -> None:
+    def _write_subsearch_snapshot(
+        self,
+        results: list,
+        term: str,
+        rendered_lines: list[str],
+    ) -> None:
         if not self.subsearch_active:
-            self.subsearch_depth = 0
+            self._reset_subsearch()
         output_path = self._subsearch_output_path()
         lines: list[str] = []
         for result in results:
@@ -1064,6 +1078,9 @@ class LogBrowser(App):
                 handle.write(f"{line}\n")
         self.subsearch_path = output_path
         self.subsearch_depth += 1
+        self.subsearch_terms.append(term)
+        self.subsearch_paths.append(output_path)
+        self.subsearch_rendered.append(rendered_lines)
 
     def _start_subsearch(self) -> None:
         if self.subsearch_path is None:
@@ -1079,11 +1096,39 @@ class LogBrowser(App):
         rendered = "\n".join(self.last_rendered_lines)
         self._show_step_results(rendered)
 
+    def _step_back_subsearch(self) -> None:
+        if len(self.subsearch_terms) <= 1:
+            return
+        self.subsearch_terms.pop()
+        self.subsearch_paths.pop()
+        self.subsearch_rendered.pop()
+        self.subsearch_depth = len(self.subsearch_paths)
+        self.subsearch_path = (
+            self.subsearch_paths[-1] if self.subsearch_paths else None
+        )
+        self.last_rendered_lines = (
+            self.subsearch_rendered[-1] if self.subsearch_rendered else None
+        )
+        if self.last_rendered_lines:
+            rendered = "\n".join(self.last_rendered_lines)
+            self._show_step_results(rendered)
+        else:
+            self._show_step_kind()
+
     def _reset_subsearch(self) -> None:
         self.subsearch_active = False
         self.subsearch_path = None
         self.subsearch_depth = 0
         self.last_rendered_lines = None
+        self.subsearch_terms = []
+        self.subsearch_paths = []
+        self.subsearch_rendered = []
+
+    def _results_title(self) -> str:
+        if not self.subsearch_terms:
+            return "Search results"
+        crumb = " » ".join(self.subsearch_terms)
+        return f"Search results: {crumb}"
 
     def _focus_results(self) -> None:
         if self.output_log is not None:
