@@ -698,8 +698,8 @@ class LogBrowser(App):
         self.output_log.styles.min_height = 5
         self.wizard.mount(self.output_log)
         button_row = Horizontal(
-            Button("Back", id="back-results"),
             Button("New Search", id="new-search"),
+            Button("Quit", id="quit-results"),
             classes="button-row",
         )
         self.wizard.mount(button_row)
@@ -759,10 +759,10 @@ class LogBrowser(App):
             self._show_step_date()
         elif button_id == "do-search":
             self._perform_search()
-        elif button_id == "back-results":
-            self._show_step_search()
         elif button_id == "new-search":
             self._show_step_kind()
+        elif button_id == "quit-results":
+            self.exit()
 
         self._refresh_footer_bindings()
 
