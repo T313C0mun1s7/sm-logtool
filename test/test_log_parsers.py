@@ -1,4 +1,8 @@
-from sm_logtool.log_parsers import parse_delivery_entries, parse_smtp_line
+from sm_logtool.log_parsers import (
+    parse_admin_entries,
+    parse_delivery_entries,
+    parse_smtp_line,
+)
 
 
 def test_parse_smtp_line_extracts_fields():
@@ -38,3 +42,21 @@ def test_parse_delivery_entries_orphan_lines():
     assert len(orphans) == 1
     assert len(entries) == 1
     assert entries[0].delivery_id == "84012347"
+
+
+def test_parse_admin_entries_handles_continuations():
+    lines = [
+        "00:00:01.100 [1.2.3.4] SMTP Login failed: bad password",
+        "\tBrute force attempts increased to 1 of 5 in 10 minutes.",
+        "\tNext clean available at 2/10/2026 12:00:32 AM",
+        "00:00:02.200 [5.6.7.8] Webmail Login successful: With user demo",
+    ]
+    entries, orphans = parse_admin_entries(lines)
+    assert not orphans
+    assert len(entries) == 2
+    first = entries[0]
+    assert first.ip == "1.2.3.4"
+    assert len(first.continuation_lines) == 2
+    second = entries[1]
+    assert second.ip == "5.6.7.8"
+    assert not second.continuation_lines

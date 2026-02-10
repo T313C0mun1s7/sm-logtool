@@ -19,6 +19,11 @@ _DELIVERY_PATTERN = re.compile(
     r"\[(?P<delivery_id>[^\]]+)\] (?P<message>.*)$"
 )
 
+_ADMIN_PATTERN = re.compile(
+    rf"^(?P<time>{_TIME_PATTERN}) "
+    r"\[(?P<ip>[^\]]+)\] (?P<message>.*)$"
+)
+
 
 @dataclass(frozen=True)
 class SmtpLogEntry:
@@ -43,6 +48,23 @@ class DeliveryLogEntry:
 
     def add_continuation(self, line: str) -> None:
         """Append a continuation line (stack trace, etc.)."""
+
+        self.continuation_lines.append(line)
+        self.raw_lines.append(line)
+
+
+@dataclass
+class AdminLogEntry:
+    """Structured administrative log entry with continuation lines."""
+
+    timestamp: str
+    ip: str
+    message: str
+    raw_lines: List[str] = field(default_factory=list)
+    continuation_lines: List[str] = field(default_factory=list)
+
+    def add_continuation(self, line: str) -> None:
+        """Append a continuation line."""
 
         self.continuation_lines.append(line)
         self.raw_lines.append(line)
@@ -83,6 +105,40 @@ def parse_delivery_entries(
             current = DeliveryLogEntry(
                 timestamp=match.group("time"),
                 delivery_id=match.group("delivery_id"),
+                message=match.group("message"),
+                raw_lines=[line],
+            )
+            entries.append(current)
+            continue
+
+        if current is None:
+            orphans.append(line)
+            continue
+        current.add_continuation(line)
+
+    return entries, orphans
+
+
+def parse_admin_entries(
+    lines: Iterable[str],
+) -> Tuple[List[AdminLogEntry], List[str]]:
+    """Parse administrative log lines into structured entries.
+
+    Lines that do not begin with a timestamp are treated as continuation
+    lines for the previous entry. If no prior entry exists, they are
+    returned as orphans.
+    """
+
+    entries: List[AdminLogEntry] = []
+    orphans: List[str] = []
+    current: AdminLogEntry | None = None
+
+    for line in lines:
+        match = _ADMIN_PATTERN.match(line)
+        if match:
+            current = AdminLogEntry(
+                timestamp=match.group("time"),
+                ip=match.group("ip"),
                 message=match.group("message"),
                 raw_lines=[line],
             )
