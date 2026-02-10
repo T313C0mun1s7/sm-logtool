@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from enum import Enum, auto
 from itertools import groupby
 from pathlib import Path
@@ -321,7 +321,9 @@ class MenuFooter(Footer):
         action_to_bindings: defaultdict[str, list[tuple[Binding, bool, str]]]
         action_to_bindings = defaultdict(list)
         for binding, enabled, tooltip in bindings:
-            action_to_bindings[binding.action].append((binding, enabled, tooltip))
+            action_to_bindings[binding.action].append(
+                (binding, enabled, tooltip)
+            )
 
         self.styles.grid_size_columns = len(action_to_bindings)
 
@@ -573,6 +575,10 @@ class LogBrowser(App):
         self.search_input: Input | None = None
         self.output_log: OutputLog | None = None
         self.footer: Footer | None = None
+        self.subsearch_path: Path | None = None
+        self.subsearch_active = False
+        self.subsearch_depth = 0
+        self.last_rendered_lines: list[str] | None = None
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False, icon="Menu")
@@ -589,6 +595,7 @@ class LogBrowser(App):
     def _show_step_kind(self) -> None:
         self.step = WizardStep.KIND
         self._clear_wizard()
+        self._reset_subsearch()
         self.wizard.mount(
             Static("Step 1: Choose a log type", classes="instruction")
         )
@@ -669,10 +676,13 @@ class LogBrowser(App):
     def _show_step_search(self) -> None:
         self.step = WizardStep.SEARCH
         self._clear_wizard()
-        summary_text = (
-            "Step 3: Enter a search term for "
-            f"{self.current_kind} across {len(self.selected_logs)} log(s)"
-        )
+        if self.subsearch_active:
+            summary_text = "Step 3: Enter a sub-search term"
+        else:
+            summary_text = (
+                "Step 3: Enter a search term for "
+                f"{self.current_kind} across {len(self.selected_logs)} log(s)"
+            )
         summary = Static(summary_text, classes="instruction")
         self.wizard.mount(summary)
         self.search_input = SearchInput(
@@ -680,8 +690,13 @@ class LogBrowser(App):
             id="search-term",
         )
         self.wizard.mount(self.search_input)
+        back_label = "Back"
+        back_id = "back-search"
+        if self.subsearch_active:
+            back_label = "Back to Results"
+            back_id = "back-results"
         button_row = Horizontal(
-            Button("Back", id="back-search"),
+            Button(back_label, id=back_id),
             Button("Search", id="do-search"),
             classes="button-row",
         )
@@ -699,6 +714,7 @@ class LogBrowser(App):
         self.wizard.mount(self.output_log)
         button_row = Horizontal(
             Button("New Search", id="new-search"),
+            Button("Sub-search", id="sub-search"),
             Button("Quit", id="quit-results"),
             classes="button-row",
         )
@@ -757,10 +773,15 @@ class LogBrowser(App):
                 self._show_step_search()
         elif button_id == "back-search":
             self._show_step_date()
+        elif button_id == "back-results":
+            self._show_last_results()
         elif button_id == "do-search":
             self._perform_search()
         elif button_id == "new-search":
+            self._reset_subsearch()
             self._show_step_kind()
+        elif button_id == "sub-search":
+            self._start_subsearch()
         elif button_id == "quit-results":
             self.exit()
 
@@ -867,6 +888,7 @@ class LogBrowser(App):
         self._refresh_logs()
         self.selected_logs = []
         self.current_kind = None
+        self._reset_subsearch()
         self._show_step_kind()
         self._refresh_footer_bindings()
 
@@ -916,49 +938,39 @@ class LogBrowser(App):
             self.current_kind = None
 
     def _perform_search(self) -> None:
-        if not self.selected_logs:
-            self._notify("Select at least one log date before searching.")
-            return
+        if self.subsearch_active:
+            if self.subsearch_path is None:
+                self._notify("No prior results available for sub-search.")
+                return
+            search_targets = [self.subsearch_path]
+        else:
+            if not self.selected_logs:
+                self._notify("Select at least one log date before searching.")
+                return
+            search_targets = []
+            for info in self.selected_logs:
+                try:
+                    staged = stage_log(
+                        info.path,
+                        staging_dir=self.staging_dir or DEFAULT_STAGING_ROOT,
+                    )
+                except Exception as exc:
+                    # pragma: no cover - filesystem feedback
+                    self._notify(f"Failed to stage {info.path.name}: {exc}")
+                    return
+                search_targets.append(staged.staged_path)
         term = (self.search_input.value if self.search_input else "").strip()
         if not term:
             self._notify("Enter a search term.")
             return
 
-        rendered_lines: list[str] = []
-        for info in self.selected_logs:
-            try:
-                staged = stage_log(
-                    info.path,
-                    staging_dir=self.staging_dir or DEFAULT_STAGING_ROOT,
-                )
-            except Exception as exc:  # pragma: no cover - filesystem feedback
-                self._notify(f"Failed to stage {info.path.name}: {exc}")
-                return
-            result = search_smtp_conversations(staged.staged_path, term)
-            rendered_lines.append(f"=== {info.path.name} ===")
-            summary = (
-                f"Search term '{result.term}' -> "
-                f"{result.total_conversations} conversation(s)"
-            )
-            rendered_lines.append(summary)
-            if not result.conversations and not result.orphan_matches:
-                rendered_lines.append("No matches found.")
-            for conversation in result.conversations:
-                rendered_lines.append("")
-                header = (
-                    f"[{conversation.message_id}] first seen on line "
-                    f"{conversation.first_line_number}"
-                )
-                rendered_lines.append(header)
-                rendered_lines.extend(conversation.lines)
-            if result.orphan_matches:
-                rendered_lines.append("")
-                rendered_lines.append(
-                    "Lines without message identifiers that matched:"
-                )
-                for line_number, line in result.orphan_matches:
-                    rendered_lines.append(f"{line_number}: {line}")
-            rendered_lines.append("")
+        results = [
+            search_smtp_conversations(target, term)
+            for target in search_targets
+        ]
+        rendered_lines = self._render_results(results, search_targets)
+        self.last_rendered_lines = rendered_lines
+        self._write_subsearch_snapshot(results)
 
         self._show_step_results()
         self._write_output_lines(rendered_lines)
@@ -995,6 +1007,83 @@ class LogBrowser(App):
                 self.output_log.scroll_end()
             except Exception:
                 pass
+
+    def _render_results(
+        self,
+        results: list,
+        targets: list[Path],
+    ) -> list[str]:
+        rendered_lines: list[str] = []
+        for result, target in zip(results, targets):
+            rendered_lines.append(f"=== {target.name} ===")
+            summary = (
+                f"Search term '{result.term}' -> "
+                f"{result.total_conversations} conversation(s)"
+            )
+            rendered_lines.append(summary)
+            if not result.conversations and not result.orphan_matches:
+                rendered_lines.append("No matches found.")
+            for conversation in result.conversations:
+                rendered_lines.append("")
+                header = (
+                    f"[{conversation.message_id}] first seen on line "
+                    f"{conversation.first_line_number}"
+                )
+                rendered_lines.append(header)
+                rendered_lines.extend(conversation.lines)
+            if result.orphan_matches:
+                rendered_lines.append("")
+                rendered_lines.append(
+                    "Lines without message identifiers that matched:"
+                )
+                for line_number, line in result.orphan_matches:
+                    rendered_lines.append(f"{line_number}: {line}")
+            rendered_lines.append("")
+        return rendered_lines
+
+    def _subsearch_output_path(self) -> Path:
+        staging_dir = self.staging_dir or DEFAULT_STAGING_ROOT
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        depth = self.subsearch_depth + 1
+        name = f"subsearch_{depth:02d}_{timestamp}.log"
+        return staging_dir / name
+
+    def _write_subsearch_snapshot(self, results: list) -> None:
+        if not self.subsearch_active:
+            self.subsearch_depth = 0
+        output_path = self._subsearch_output_path()
+        lines: list[str] = []
+        for result in results:
+            for conversation in result.conversations:
+                lines.extend(conversation.lines)
+            for _line_number, line in result.orphan_matches:
+                lines.append(line)
+        with output_path.open("w", encoding="utf-8") as handle:
+            for line in lines:
+                handle.write(f"{line}\n")
+        self.subsearch_path = output_path
+        self.subsearch_depth += 1
+
+    def _start_subsearch(self) -> None:
+        if self.subsearch_path is None:
+            self._notify("No prior results available for sub-search.")
+            return
+        self.subsearch_active = True
+        self._show_step_search()
+
+    def _show_last_results(self) -> None:
+        if not self.last_rendered_lines:
+            self._notify("No prior results to display.")
+            return
+        rendered = "\n".join(self.last_rendered_lines)
+        self._show_step_results(rendered)
+
+    def _reset_subsearch(self) -> None:
+        self.subsearch_active = False
+        self.subsearch_path = None
+        self.subsearch_depth = 0
+        self.last_rendered_lines = None
 
     def _focus_results(self) -> None:
         if self.output_log is not None:
