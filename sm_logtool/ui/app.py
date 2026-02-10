@@ -705,6 +705,8 @@ class LogBrowser(App):
         kinds: Dict[str, List[LogFileInfo]] = {}
         if self.logs_dir.exists():
             for path in self.logs_dir.iterdir():
+                if not path.is_file():
+                    continue
                 info = parse_log_filename(path)
                 if not info.kind:
                     continue

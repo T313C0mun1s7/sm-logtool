@@ -96,6 +96,8 @@ def discover_logs(logs_dir: Path, kind: str) -> List[LogFileInfo]:
 
     infos: list[LogFileInfo] = []
     for path in logs_dir.iterdir():
+        if not path.is_file():
+            continue
         info = parse_log_filename(path)
         if info.kind != kind:
             continue

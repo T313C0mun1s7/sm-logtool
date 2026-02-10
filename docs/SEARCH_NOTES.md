@@ -31,6 +31,10 @@ Notes:
 - File discovery and sorting: list newest files first; optionally group by type and by day.
 - Zipped logs: support `.zip` (and potentially `.gz`) without permanently extracting to the logs directory.
   - Prefer streaming reads via `zipfile`/`gzip` or extraction to a temporary workspace (`/tmp` or configurable) with cleanup.
+- Staging workspace: copy or unzip logs into a temp directory (e.g.,
+  `/var/tmp/sm-logtool/Temp`) so searches use a stable snapshot and
+  sub-searches can operate on already-filtered files without mutating
+  production logs.
 - Search modes:
   - Plain text (case-insensitive substring).
   - Regex (case-sensitive toggle + flags).
@@ -104,4 +108,3 @@ Data model sketch:
 
 - Existing Bash script behavior summarized above (AWK two-phase matching and grouping by first occurrence).
 - Textual for TUI scaffolding; Rich for highlighting.
-
