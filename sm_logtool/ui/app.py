@@ -170,11 +170,12 @@ class WizardBody(Vertical):
     can_focus = True
     BINDINGS = [
         Binding(
-            "ctrl+shift+m",
+            "ctrl+u",
             "app.menu",
             "Menu",
             show=True,
-            key_display="CTRL+SHIFT+M",
+            key_display="CTRL+U",
+            priority=True,
         ),
         Binding(
             "ctrl+q",
@@ -251,7 +252,18 @@ class MnemonicFooterKey(FooterKey):
 
 
 class MenuFooter(Footer):
-    MENU_MNEMONIC_INDEX = 0
+    def _mnemonic_index(self, binding: Binding) -> int | None:
+        description = binding.description
+        if not description:
+            return None
+        letters = [char for char in binding.key if char.isalpha()]
+        if not letters:
+            return None
+        target = letters[-1]
+        for idx, char in enumerate(description):
+            if char.lower() == target.lower():
+                return idx
+        return None
 
     def _build_footer_key(
         self,
@@ -263,7 +275,8 @@ class MenuFooter(Footer):
     ) -> FooterKey:
         key_display = self.app.get_key_display(binding)
         classes = "-grouped" if grouped else ""
-        if binding.action in {"menu", "app.menu"} and binding.description:
+        mnemonic_index = self._mnemonic_index(binding)
+        if mnemonic_index is not None and binding.description:
             return MnemonicFooterKey(
                 binding.key,
                 key_display,
@@ -272,7 +285,7 @@ class MenuFooter(Footer):
                 disabled=not enabled,
                 tooltip=tooltip or binding.description,
                 classes=classes,
-                mnemonic_index=self.MENU_MNEMONIC_INDEX,
+                mnemonic_index=mnemonic_index,
             ).data_bind(compact=Footer.compact)
         return FooterKey(
             binding.key,
