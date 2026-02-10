@@ -275,7 +275,11 @@ def _list_logs(logs_dir: Path, kind: str) -> int:
 
 
 def _resolve_logs_dir(args: argparse.Namespace, config: AppConfig) -> Path:
-    candidate = args.logs_dir or config.logs_dir or DEFAULT_LOGS_DIR
+    candidate = (
+        getattr(args, "logs_dir", None)
+        or config.logs_dir
+        or DEFAULT_LOGS_DIR
+    )
     return candidate
 
 
