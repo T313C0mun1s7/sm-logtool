@@ -162,6 +162,20 @@ class DateSelectionChanged(Message):
         self.infos = infos
 
 
+class WizardBody(Vertical):
+    can_focus = True
+    BINDINGS = [
+        Binding("m", "app.command_palette", "Menu", show=True),
+        Binding("ctrl+p", "app.command_palette", "Menu", show=True),
+        Binding("q", "app.quit", "Quit", show=True),
+        Binding("ctrl+q", "app.quit", "Quit", show=True),
+        Binding("r", "app.reset", "Reset Search", show=True),
+        Binding("ctrl+r", "app.reset", "Reset Search", show=True),
+        Binding("/", "app.focus_search", "Focus search", show=True),
+        Binding("ctrl+f", "app.focus_search", "Focus search", show=True),
+    ]
+
+
 class DateListView(ListView):
     """List view that supports persistent multi-selection via toggles."""
 
@@ -361,13 +375,6 @@ class LogBrowser(App):
     }
     """
 
-    BINDINGS = [
-        Binding("m", "command_palette", "Menu", show=True),
-        Binding("q", "quit", "Quit", show=True),
-        Binding("r", "reset", "Reset Search", show=True),
-        Binding("/", "focus_search", "Focus search", show=True),
-    ]
-
     logs_dir: reactive[Path] = reactive(Path.cwd() / "sample_logs")
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive("smtpLog")
@@ -394,7 +401,7 @@ class LogBrowser(App):
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False, icon="Menu (M)")
-        self.wizard = Vertical(id="wizard-body")
+        self.wizard = WizardBody(id="wizard-body")
         yield self.wizard
         self.footer = Footer()
         yield self.footer
@@ -521,6 +528,7 @@ class LogBrowser(App):
         self.wizard.mount(button_row)
         if rendered:
             self._write_output_lines(rendered.splitlines())
+        self.call_after_refresh(self._focus_results)
         self._refresh_footer_bindings()
 
     # Step helpers -------------------------------------------------------
@@ -798,6 +806,18 @@ class LogBrowser(App):
                 self.output_log.scroll_end()
             except Exception:
                 pass
+
+    def _focus_results(self) -> None:
+        if self.output_log is not None:
+            try:
+                self.output_log.focus()
+                return
+            except Exception:
+                pass
+        try:
+            self.wizard.focus()
+        except Exception:
+            return
 
 
 def list_log_files(logs_dir: Path) -> list[Path]:
