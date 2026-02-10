@@ -166,11 +166,11 @@ class WizardBody(Vertical):
     can_focus = True
     BINDINGS = [
         Binding(
-            "ctrl+m",
+            "alt+m",
             "app.menu",
             "Menu",
             show=True,
-            key_display="CTRL+M",
+            key_display="ALT+M",
         ),
         Binding(
             "ctrl+q",
@@ -178,6 +178,7 @@ class WizardBody(Vertical):
             "Quit",
             show=True,
             key_display="CTRL+Q",
+            priority=True,
         ),
         Binding(
             "ctrl+r",
@@ -423,7 +424,7 @@ class LogBrowser(App):
         yield Header(show_clock=False, icon="Menu")
         self.wizard = WizardBody(id="wizard-body")
         yield self.wizard
-        self.footer = Footer()
+        self.footer = Footer(show_command_palette=False)
         yield self.footer
 
     def on_mount(self) -> None:
@@ -696,6 +697,15 @@ class LogBrowser(App):
 
     def action_quit(self) -> None:
         self.exit()
+
+    def check_action(
+        self,
+        action: str,
+        parameters: tuple[object, ...],
+    ) -> bool | None:
+        if action == "focus_search":
+            return self.step == WizardStep.SEARCH
+        return True
 
     def action_reset(self) -> None:
         self._refresh_logs()
