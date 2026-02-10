@@ -14,10 +14,10 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     Footer,
-    Header,
     Input,
     ListItem,
     ListView,
@@ -160,6 +160,85 @@ class DateSelectionChanged(Message):
         super().__init__()
         self.sender = sender
         self.infos = infos
+
+
+class MenuListItem(ListItem):
+    def __init__(self, label: str, action: str) -> None:
+        super().__init__(Static(label, classes="label"))
+        self.action = action
+
+
+class MenuScreen(ModalScreen[None]):
+    DEFAULT_CSS = """
+    MenuScreen {
+        align: center middle;
+    }
+
+    #menu-body {
+        width: 40;
+        padding: 1;
+        background: #1c1c1c;
+        border: round #666666;
+    }
+
+    #menu-title {
+        text-style: bold;
+        padding: 0 0 1 0;
+    }
+
+    #menu-list {
+        height: auto;
+        max-height: 12;
+    }
+
+    #menu-close {
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss", "Close", show=True),
+    ]
+
+    def compose(self) -> ComposeResult:  # type: ignore[override]
+        menu_items = ListView(
+            MenuListItem("Reset search", "reset"),
+            MenuListItem("Focus search", "focus_search"),
+            MenuListItem("Quit", "quit"),
+            id="menu-list",
+        )
+        yield Vertical(
+            Static("Menu", id="menu-title"),
+            menu_items,
+            Button("Close", id="menu-close"),
+            id="menu-body",
+        )
+
+    def on_mount(self) -> None:
+        try:
+            self.query_one(ListView).focus()
+        except Exception:
+            return
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:  # type: ignore[override]
+        if event.button.id == "menu-close":
+            self.dismiss(None)
+
+    def on_list_view_selected(
+        self,
+        event: ListView.Selected,
+    ) -> None:  # type: ignore[override]
+        if not isinstance(event.item, MenuListItem):
+            return
+        action = event.item.action
+        self.dismiss(None)
+        app = self.app
+        handler = getattr(app, f"action_{action}", None)
+        if handler is not None:
+            handler()
 
 
 class DateListView(ListView):
@@ -317,6 +396,22 @@ class LogBrowser(App):
     """Wizard-style application for exploring SmarterMail logs."""
 
     CSS = """
+    #app-header {
+        height: 3;
+        padding: 0 1;
+        background: #2b2b2b;
+    }
+
+    #app-title {
+        width: 1fr;
+        content-align: left middle;
+        text-style: bold;
+    }
+
+    #menu-button {
+        margin: 0 0 0 1;
+    }
+
     #wizard-body {
         margin: 1 2;
         height: 1fr;
@@ -362,6 +457,7 @@ class LogBrowser(App):
     """
 
     BINDINGS = [
+        Binding("m", "menu", "Menu", show=True),
         Binding("q", "quit", "Quit", show=True),
         Binding("r", "reset", "Reset Search", show=True),
         Binding("/", "focus_search", "Focus search", show=True),
@@ -390,9 +486,15 @@ class LogBrowser(App):
         self.search_input: Input | None = None
         self.output_log: OutputLog | None = None
         self.footer: Footer | None = None
+        self.menu_button: Button | None = None
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
-        yield Header(show_clock=False)
+        self.menu_button = Button("Menu (M)", id="menu-button")
+        yield Horizontal(
+            Static("sm-logtool", id="app-title"),
+            self.menu_button,
+            id="app-header",
+        )
         self.wizard = Vertical(id="wizard-body")
         yield self.wizard
         self.footer = Footer()
@@ -559,7 +661,9 @@ class LogBrowser(App):
         event: Button.Pressed,
     ) -> None:  # type: ignore[override]
         button_id = event.button.id
-        if button_id == "quit-kind":
+        if button_id == "menu-button":
+            self.action_menu()
+        elif button_id == "quit-kind":
             self.exit()
         elif button_id == "next-kind":
             if self.current_kind:
@@ -661,6 +765,11 @@ class LogBrowser(App):
     def action_focus_search(self) -> None:
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
+
+    def action_menu(self) -> None:
+        if isinstance(self.screen, MenuScreen):
+            return
+        self.push_screen(MenuScreen())
 
     def action_quit(self) -> None:
         self.exit()
