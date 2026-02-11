@@ -98,7 +98,7 @@ Date selection shortcuts:
 ### Run console search
 
 ```bash
-sm-logtool search "example.com" --kind smtp --date 2024.01.01
+sm-logtool search --kind smtp --date 2024.01.01 "example.com"
 ```
 
 Useful options:
