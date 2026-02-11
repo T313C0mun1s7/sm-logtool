@@ -19,9 +19,6 @@ def create_smtp_zip(path: Path, content: str) -> None:
     with ZipFile(path, 'w') as archive:
         archive.writestr(path.name.replace('.zip', ''), content)
 
-
-
-
 def test_scan_logs_handles_missing_directory(tmp_path):
     missing_dir = tmp_path / "missing"
 

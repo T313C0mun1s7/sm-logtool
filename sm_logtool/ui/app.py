@@ -44,9 +44,7 @@ from ..result_formatting import (
     format_conversation_lines,
 )
 from ..search import get_search_function
-from ..syntax import (
-    spans_for_line,
-)
+from ..syntax import spans_for_line
 from ..staging import stage_log
 
 try:  # Prefer selection-capable logs when available.
