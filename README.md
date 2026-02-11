@@ -101,12 +101,34 @@ Date selection shortcuts:
 sm-logtool search --kind smtp --date 2024.01.01 "example.com"
 ```
 
-Useful options:
+Minimum examples:
 
-- `--list` list available logs for a kind and exit
-- `--log-file` target one explicit file
-- `--case-sensitive` disable default case-insensitive matching
-- `--staging-dir` override staging directory for this run
+```bash
+# Search newest log for default_kind from config.yaml (default: smtp)
+sm-logtool search "john@prime42.net"
+
+# Search newest delivery log
+sm-logtool search --kind delivery "john@prime42.net"
+```
+
+Target resolution:
+
+1. If `--log-file` is provided (repeatable), those files are searched.
+2. Else if `--date` is provided (repeatable), those dates are searched.
+3. Else the newest available log for `--kind` is searched.
+
+Search options:
+
+- `--logs-dir`: source logs directory. Optional when `logs_dir` is set in
+  `config.yaml`.
+- `--staging-dir`: staging directory. Optional when `staging_dir` is set in
+  `config.yaml`.
+- `--kind`: log kind. Optional when `default_kind` is set in `config.yaml`.
+- `--date`: `YYYY.MM.DD` date to search. Repeat to search multiple dates.
+- `--log-file`: explicit file to search. Repeat to search multiple files.
+- `--list`: list available logs for the selected kind and exit.
+- `--list-kinds`: list supported kinds and exit.
+- `--case-sensitive`: disable default case-insensitive matching.
 
 Search terms are literal substrings (regex/fuzzy modes are not enabled in the
 current CLI/TUI search path).
