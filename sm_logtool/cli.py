@@ -24,7 +24,7 @@ from .search import get_search_function
 from .staging import DEFAULT_STAGING_ROOT, stage_log
 
 
-DEFAULT_LOGS_DIR = Path(__file__).resolve().parent.parent / "sample_logs"
+DEFAULT_LOGS_DIR = Path("/var/lib/smartermail/Logs")
 CONFIG_ATTR = "_config"
 
 

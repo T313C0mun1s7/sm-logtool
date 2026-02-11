@@ -1,10 +1,17 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Core code lives in `sm_logtool/`: `cli.py` powers the CLI and `ui/` hosts the Textual TUI. Tests stay in `test/`; keep new files runnable by both pytest and unittest. Use `sample_logs/` for fixtures, stage real logs before analysis, and park references in `docs/`.
+Core code lives in `sm_logtool/`: `cli.py` powers the CLI and `ui/` hosts the
+Textual TUI. Tests stay in `test/`; keep new files runnable by both pytest and
+unittest. Use staged logs under `/var/lib/smartermail/Logs` for local runs and
+park references in `docs/`.
 
 ## Build, Test, and Development Commands
-Create a venv (`python -m venv .venv && source .venv/bin/activate`) and install with `python -m pip install -e .`. Add pytest if needed, run `pytest -q`, and mirror CI with `python -m unittest discover test`. Launch the TUI via `python -m sm_logtool.cli --logs-dir sample_logs` or aim it at your staging folder.
+Create a venv (`python -m venv .venv && source .venv/bin/activate`) and
+install with `python -m pip install -e .`. Add pytest if needed, run
+`pytest -q`, and mirror CI with `python -m unittest discover test`. Launch the
+TUI via `python -m sm_logtool.cli --logs-dir /var/lib/smartermail/Logs` or aim
+it at your staging folder.
 
 ## Coding Style & Naming Conventions
 - Target Python 3.10+, follow PEP 8, and indent with four spaces.

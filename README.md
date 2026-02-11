@@ -72,7 +72,7 @@ sm-logtool --help
 ```bash
 sm-logtool
 # or
-sm-logtool browse --logs-dir sample_logs
+sm-logtool browse --logs-dir /var/lib/smartermail/Logs
 ```
 
 Wizard flow:
