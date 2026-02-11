@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 from zipfile import ZipFile
 
 import pytest
+from rich.console import Console
 
 from sm_logtool import cli
 from sm_logtool.config import AppConfig
@@ -76,6 +78,96 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
     captured = capsys.readouterr()
     assert 'MSG1' in captured.out
     assert 'Search term' in captured.out
+
+
+def test_run_search_supports_imap_retrieval_kind(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-imapRetrieval.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        (
+            "00:00:01.100 [72] [user; host:other] Connection refused\n"
+            "   at System.Net.Sockets.Socket.Connect(EndPoint remoteEP)\n"
+        ),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        term="Socket.Connect",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="imapRetrieval",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "Search term" in captured.out
+    assert "[72]" in captured.out
+
+
+def test_run_search_uses_syntax_highlighting_in_cli_output(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    zip_path = logs_dir / "2024.01.01-smtpLog.log.zip"
+    create_smtp_zip(
+        zip_path,
+        (
+            "00:00:00 [1.1.1.1][MSG1] cmd: EHLO example.com\n"
+            "00:00:01 [1.1.1.1][MSG1] rsp: 250 Success\n"
+        ),
+    )
+
+    def build_console() -> Console:
+        return Console(
+            file=sys.stdout,
+            force_terminal=True,
+            color_system="truecolor",
+            highlight=False,
+            soft_wrap=True,
+        )
+
+    monkeypatch.setattr(cli, "_build_stdout_console", build_console)
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        term="EHLO",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtpLog",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "\x1b[" in captured.out
+    assert "EHLO" in captured.out
 
 
 def test_run_search_requires_logs_dir_from_config_or_flag(capsys):

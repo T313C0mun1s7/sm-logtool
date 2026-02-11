@@ -1,6 +1,6 @@
 """Command-line entry point for sm-logtool.
 
-Provides a TUI browser (`browse`) and a basic SMTP search workflow (`search`).
+Provides a TUI browser (`browse`) and a search workflow (`search`).
 """
 
 from __future__ import annotations
@@ -11,7 +11,10 @@ from pathlib import Path
 import sys
 from typing import Callable
 
+from rich.console import Console
+
 from .config import AppConfig, ConfigError, load_config
+from .highlighting import highlight_line
 from .logfiles import (
     UnknownLogDate,
     find_log_by_date,
@@ -36,8 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
             """
             Explore SmarterMail logs from your terminal.
             The `browse` subcommand launches the Textual UI.
-            The `search` subcommand performs a console-based SMTP conversation
-            search.
+            The `search` subcommand performs a console-based search across
+            supported SmarterMail log kinds.
             """
         ).strip(),
     )
@@ -68,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     search_parser = subparsers.add_parser(
         "search",
-        help="Search SMTP logs for a term",
+        help="Search SmarterMail logs for a term",
     )
     search_parser.add_argument(
         "term",
@@ -257,6 +260,7 @@ def _print_search_summary(
     source_path: Path,
     log_kind: str,
 ) -> None:
+    console = _build_stdout_console()
     kind_key = log_kind.lower()
     ungrouped_kinds = {
         "administrative",
@@ -275,17 +279,21 @@ def _print_search_summary(
     }
     is_ungrouped = kind_key in ungrouped_kinds
     label = "entry" if is_ungrouped else "conversation"
-    print(
+    _write_highlighted(
+        console,
+        log_kind,
         f"Search term '{result.term}' -> "
-        f"{result.total_conversations} {label}(s) in {source_path.name}"
+        f"{result.total_conversations} {label}(s) in {source_path.name}",
     )
     widths = collect_widths(log_kind, result.conversations)
     for conversation in result.conversations:
         if not is_ungrouped:
-            print()
-            print(
+            console.print()
+            _write_highlighted(
+                console,
+                log_kind,
                 f"[{conversation.message_id}] first seen on line "
-                f"{conversation.first_line_number}"
+                f"{conversation.first_line_number}",
             )
         formatted = format_conversation_lines(
             log_kind,
@@ -293,17 +301,40 @@ def _print_search_summary(
             widths,
         )
         for line in formatted:
-            print(line)
+            _write_highlighted(console, log_kind, line)
 
     if result.orphan_matches:
         if not is_ungrouped:
-            print()
-            print("Lines without message identifiers that matched:")
+            console.print()
+            _write_highlighted(
+                console,
+                log_kind,
+                "Lines without message identifiers that matched:",
+            )
         for line_number, line in result.orphan_matches:
             if is_ungrouped:
-                print(line)
+                _write_highlighted(console, log_kind, line)
             else:
-                print(f"{line_number}: {line}")
+                _write_highlighted(
+                    console,
+                    log_kind,
+                    f"{line_number}: {line}",
+                )
+
+
+def _build_stdout_console() -> Console:
+    return Console(highlight=False, soft_wrap=True)
+
+
+def _write_highlighted(
+    console: Console,
+    log_kind: str,
+    line: str,
+) -> None:
+    if not line:
+        console.print()
+        return
+    console.print(highlight_line(log_kind, line))
 
 
 def _list_logs(logs_dir: Path, kind: str) -> int:

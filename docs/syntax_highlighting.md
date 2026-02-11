@@ -4,7 +4,7 @@ The results pane uses a read-only `TextArea` with a single SMlog tokenizer.
 Highlighting is driven by two pieces:
 
 1. Token spans: `sm_logtool/syntax.py`
-2. Token styles: `sm_logtool/ui/app.py` (`_SMLOG_THEME`)
+2. Token styles: `sm_logtool/highlighting.py` (`TOKEN_STYLES`)
 
 **Tokenizer Overview**
 
@@ -31,13 +31,13 @@ Update the regexes or token lists in:
 
 For example, to add a new protocol keyword:
 - Add it to `_PROTOCOL_TOKENS` in `sm_logtool/syntax.py`.
-- Add a style entry for its token in `_SMLOG_THEME` in
-  `sm_logtool/ui/app.py`.
+- Add a style entry for its token in `TOKEN_STYLES` in
+  `sm_logtool/highlighting.py`.
 
 **Adjusting Colors**
 
-Colors live in `_SMLOG_THEME`:
-- `sm_logtool/ui/app.py`
+Colors live in `TOKEN_STYLES`:
+- `sm_logtool/highlighting.py`
 
 Each token name maps to a Rich `Style`, so you can change colors,
 bolding, or other attributes without touching the tokenizer.
