@@ -112,6 +112,12 @@ if _BaseLog is not None:
             selections[self] = Selection.from_offsets(start, end)
             screen.selections = selections
 
+        def _line_text(self, line: object) -> str:
+            plain = getattr(line, "plain", None)
+            if isinstance(plain, str):
+                return plain
+            return str(line)
+
         def _clamp_offset(self, offset: Offset) -> Offset:
             if self.line_count <= 0:
                 return Offset(0, 0)
@@ -130,6 +136,42 @@ if _BaseLog is not None:
             return self._clamp_offset(
                 Offset(scroll_x + event.x, scroll_y + event.y),
             )
+
+        def _order_offsets(
+            self,
+            start: Offset,
+            end: Offset,
+        ) -> tuple[Offset, Offset]:
+            if (start.y, start.x) <= (end.y, end.x):
+                return start, end
+            return end, start
+
+        def get_selection_text(self) -> str | None:
+            if self.line_count <= 0:
+                return None
+            if self._selection_anchor is None:
+                return None
+            if self._selection_cursor is None:
+                return None
+            start = self._clamp_offset(self._selection_anchor)
+            end = self._clamp_offset(self._selection_cursor)
+            start, end = self._order_offsets(start, end)
+            if (start.y, start.x) == (end.y, end.x):
+                return None
+            if not self.lines:
+                return None
+            if start.y == end.y:
+                line = self._line_text(self.lines[start.y])
+                return line[start.x:end.x] or None
+            parts: list[str] = []
+            first_line = self._line_text(self.lines[start.y])
+            parts.append(first_line[start.x:])
+            for line_idx in range(start.y + 1, end.y):
+                parts.append(self._line_text(self.lines[line_idx]))
+            last_line = self._line_text(self.lines[end.y])
+            parts.append(last_line[:end.x])
+            text = "\n".join(parts)
+            return text or None
 
         def _cursor_span(self) -> tuple[Offset, Offset]:
             cursor = self._selection_cursor
@@ -215,6 +257,13 @@ if _BaseLog is not None:
             self,
             event: events.MouseDown,
         ) -> None:  # pragma: no cover - UI behaviour
+            if getattr(event, "button", None) == 3:
+                app = getattr(self, "app", None)
+                copy_results = getattr(app, "_copy_results", None)
+                if copy_results is not None:
+                    copy_results(selection_only=True)
+                event.stop()
+                return
             offset = self._offset_from_event(event)
             self._selection_cursor = offset
             self._selection_anchor = offset
@@ -224,6 +273,9 @@ if _BaseLog is not None:
             if self._use_custom_selection:
                 start, end = self._cursor_span()
                 self._set_selection(start, end)
+            capture = getattr(self, "capture_mouse", None)
+            if capture is not None:
+                capture()
             handler = getattr(super(), "on_mouse_down", None)
             if handler is not None:
                 handler(event)
@@ -279,6 +331,9 @@ if _BaseLog is not None:
                         self._selection_cursor,
                     )
             self._mouse_selecting = False
+            release = getattr(self, "release_mouse", None)
+            if release is not None:
+                release()
             handler = getattr(super(), "on_mouse_up", None)
             if handler is not None:
                 handler(event)
@@ -1370,32 +1425,28 @@ class LogBrowser(App):
             self.output_log.show_cursor()
 
     def _copy_results(self, *, selection_only: bool) -> None:
-        text: str | None = None
-        had_selection = False
         if selection_only:
             text = self._get_selected_text()
-            had_selection = bool(text)
-        if not text:
-            text = self._get_full_results_text()
+            if not text:
+                self._notify("Select text to copy.")
+                return
+            self.copy_to_clipboard(text)
+            self._notify("Copied selection to clipboard.")
+            return
+        text = self._get_full_results_text()
         if not text:
             self._notify("No results available to copy.")
             return
         self.copy_to_clipboard(text)
-        if selection_only and had_selection:
-            self._notify("Copied selection to clipboard.")
-        else:
-            self._notify("Copied full results to clipboard.")
+        self._notify("Copied full results to clipboard.")
 
     def _get_selected_text(self) -> str | None:
+        if isinstance(self.output_log, OutputLog):
+            return self.output_log.get_selection_text()
         if self.screen is None:
             return None
-        if isinstance(self.output_log, OutputLog):
-            if self.output_log.cursor_only_selection():
-                return None
         selected = self.screen.get_selected_text()
-        if not selected:
-            return None
-        return selected
+        return selected or None
 
     def _get_full_results_text(self) -> str | None:
         if self.last_rendered_lines:
