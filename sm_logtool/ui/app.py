@@ -17,8 +17,8 @@ from textual.containers import Horizontal, Vertical
 from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.selection import Selection
-from textual.widget import Widget
 from textual.widgets import (
     Button,
     Footer,
@@ -405,43 +405,77 @@ else:
             return
 
 
-class ContextMenu(Horizontal):
-    """Context menu used for result copy actions."""
+class ContextMenuScreen(ModalScreen[str | None]):
+    """Modal context menu used for result copy actions."""
 
     DEFAULT_CSS = """
-    ContextMenu {
+    ContextMenuScreen {
+        background: transparent;
+    }
+
+    #context-menu {
         position: absolute;
         layer: overlay;
         background: #1f1f1f;
         border: solid #5f5f5f;
         padding: 0 1;
-        height: 3;
+        height: auto;
         width: auto;
     }
 
-    ContextMenu Button {
+    #context-menu Button {
         width: auto;
-        height: 1;
+        height: auto;
         margin-right: 1;
-        padding: 0 1;
     }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, x: float, y: float) -> None:
         super().__init__()
-        self._items = [
-            ("Copy", "context-copy"),
-            ("Copy All", "context-copy-all"),
-        ]
-        labels = [label for label, _ in self._items]
-        self.menu_width = sum(len(label) for label in labels) + 12
-        self.menu_height = 3
-        self.styles.width = self.menu_width
-        self.styles.height = self.menu_height
+        self._origin = Offset(int(x), int(y))
 
     def compose(self) -> ComposeResult:
-        for label, button_id in self._items:
-            yield Button(label, id=button_id)
+        yield Horizontal(
+            Button("Copy", id="context-copy"),
+            Button("Copy All", id="context-copy-all"),
+            id="context-menu",
+        )
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self._position_menu)
+
+    def on_mouse_down(
+        self,
+        event: events.MouseDown,
+    ) -> None:  # pragma: no cover - UI behaviour
+        menu = self.query_one("#context-menu")
+        if not menu.region.contains(event.screen_x, event.screen_y):
+            self.dismiss(None)
+
+    def on_key(
+        self,
+        event: events.Key,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if event.key == "escape":
+            self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "context-copy":
+            self.dismiss("copy")
+        elif event.button.id == "context-copy-all":
+            self.dismiss("copy-all")
+
+    def _position_menu(self) -> None:
+        menu = self.query_one("#context-menu")
+        width = menu.outer_size.width
+        height = menu.outer_size.height
+        max_x = max(self.size.width - width, 0)
+        max_y = max(self.size.height - height, 0)
+        offset = Offset(
+            min(self._origin.x, max_x),
+            min(self._origin.y, max_y),
+        )
+        menu.styles.offset = offset
 
 
 class WizardStep(Enum):
@@ -979,7 +1013,7 @@ class LogBrowser(App):
         self.subsearch_paths: list[Path] = []
         self.subsearch_rendered: list[list[str]] = []
         self._result_log_counter = 0
-        self._context_menu: ContextMenu | None = None
+        self._context_menu_open = False
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False, icon="Menu")
@@ -1188,24 +1222,6 @@ class LogBrowser(App):
             kind_next.disabled = not bool(self._logs_by_kind)
 
     # Events -------------------------------------------------------------
-    def on_key(
-        self,
-        event: events.Key,
-    ) -> None:  # type: ignore[override]
-        if event.key == "escape":
-            if self._context_menu is not None:
-                self._hide_context_menu()
-
-    def on_mouse_down(
-        self,
-        event: events.MouseDown,
-    ) -> None:  # type: ignore[override]
-        if self._context_menu is None:
-            return
-        if self._is_context_target(event.widget):
-            return
-        self._hide_context_menu()
-
     def on_button_pressed(
         self,
         event: Button.Pressed,
@@ -1240,12 +1256,6 @@ class LogBrowser(App):
             self._copy_results(selection_only=True)
         elif button_id == "copy-all":
             self._copy_results(selection_only=False)
-        elif button_id == "context-copy":
-            self._copy_results(selection_only=True)
-            self._hide_context_menu()
-        elif button_id == "context-copy-all":
-            self._copy_results(selection_only=False)
-            self._hide_context_menu()
 
         self._refresh_footer_bindings()
 
@@ -1378,61 +1388,26 @@ class LogBrowser(App):
                 break
 
     def _clear_wizard(self) -> None:
-        self._hide_context_menu()
         if hasattr(self, 'wizard'):
             for child in list(self.wizard.children):
                 child.remove()
 
-    def _is_context_target(self, widget: Widget | None) -> bool:
-        menu = self._context_menu
-        if menu is None or widget is None:
-            return False
-        current: Widget | None = widget
-        while current is not None:
-            if current is menu:
-                return True
-            current = current.parent
-        return False
-
     def _show_context_menu(self, x: float, y: float) -> None:
-        if self.screen is None:
+        if self._context_menu_open:
             return
-        self._hide_context_menu()
-        menu = ContextMenu()
-        self._context_menu = menu
-        self.screen.mount(menu)
-        self._position_context_menu(menu, x, y)
-        try:
-            menu.focus()
-        except Exception:
-            pass
+        self._context_menu_open = True
 
-    def _position_context_menu(
-        self,
-        menu: ContextMenu,
-        x: float,
-        y: float,
-    ) -> None:
-        if self.screen is None:
-            return
-        width = menu.menu_width
-        height = menu.menu_height
-        max_x = max(self.screen.size.width - width, 0)
-        max_y = max(self.screen.size.height - height, 0)
-        offset = Offset(
-            min(int(x), max_x),
-            min(int(y), max_y),
+        def handle_choice(result: str | None) -> None:
+            self._context_menu_open = False
+            if result == "copy":
+                self._copy_results(selection_only=True)
+            elif result == "copy-all":
+                self._copy_results(selection_only=False)
+
+        self.push_screen(
+            ContextMenuScreen(x=x, y=y),
+            handle_choice,
         )
-        menu.styles.offset = offset
-
-    def _hide_context_menu(self) -> None:
-        if self._context_menu is None:
-            return
-        try:
-            self._context_menu.remove()
-        except Exception:
-            pass
-        self._context_menu = None
 
     # Core behaviour -----------------------------------------------------
     def _refresh_logs(self) -> None:
