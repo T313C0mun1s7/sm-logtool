@@ -44,14 +44,17 @@ from ..search import get_search_function
 from ..syntax import highlight_result_line
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
-try:
-    from textual.widgets import TextLog as _BaseLog
-except ImportError:  # pragma: no cover - textual>=6 renames widgets
+try:  # Prefer rich-capable logs when available.
+    from textual.widgets import RichLog as _BaseLog  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - older Textual
     try:
-        from textual.widgets import Log  # type: ignore[attr-defined]
-        _BaseLog = Log
-    except ImportError:  # pragma: no cover - final fallback
-        _BaseLog = None
+        from textual.widgets import TextLog as _BaseLog
+    except ImportError:  # pragma: no cover - textual>=6 renames widgets
+        try:
+            from textual.widgets import Log  # type: ignore[attr-defined]
+            _BaseLog = Log
+        except ImportError:  # pragma: no cover - final fallback
+            _BaseLog = None
 
 
 if _BaseLog is not None:
@@ -88,6 +91,14 @@ if _BaseLog is not None:
             self._use_custom_selection = not callable(
                 getattr(_BaseLog, "on_mouse_down", None),
             )
+            if hasattr(self, "markup"):
+                try:
+                    self.markup = True  # type: ignore[attr-defined]
+                    self._prefer_markup = True
+                except Exception:
+                    self._prefer_markup = bool(
+                        getattr(self, "markup", False),
+                    )
 
         def clear_selection(self) -> None:
             try:
