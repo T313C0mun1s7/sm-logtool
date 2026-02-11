@@ -593,6 +593,7 @@ class ResultsArea(TextArea):
         event: events.MouseDown,
     ) -> None:  # pragma: no cover - UI behaviour
         if getattr(event, "button", None) == 3:
+            selection = self.selected_text or None
             end_selection = getattr(self, "_end_mouse_selection", None)
             if callable(end_selection):
                 try:
@@ -615,7 +616,11 @@ class ResultsArea(TextArea):
                 app = getattr(self, "app", None)
                 show_menu = getattr(app, "_show_context_menu", None)
                 if show_menu is not None:
-                    show_menu(screen_x, screen_y)
+                    show_menu(
+                        screen_x,
+                        screen_y,
+                        selection=selection,
+                    )
 
             self.call_after_refresh(_open_menu)
             event.stop()
@@ -1650,7 +1655,13 @@ class LogBrowser(App):
             for child in list(self.wizard.children):
                 child.remove()
 
-    def _show_context_menu(self, x: float, y: float) -> None:
+    def _show_context_menu(
+        self,
+        x: float,
+        y: float,
+        *,
+        selection: str | None = None,
+    ) -> None:
         if self._context_menu_open:
             return
         self._context_menu_open = True
@@ -1658,7 +1669,10 @@ class LogBrowser(App):
         def handle_choice(result: str | None) -> None:
             self._context_menu_open = False
             if result == "copy":
-                self._copy_results(selection_only=True)
+                self._copy_results(
+                    selection_only=True,
+                    fallback_text=selection,
+                )
             elif result == "copy-all":
                 self._copy_results(selection_only=False)
 
@@ -1761,9 +1775,16 @@ class LogBrowser(App):
         if hasattr(self.output_log, "update"):
             self.output_log.update("\n".join(lines))
 
-    def _copy_results(self, *, selection_only: bool) -> None:
+    def _copy_results(
+        self,
+        *,
+        selection_only: bool,
+        fallback_text: str | None = None,
+    ) -> None:
         if selection_only:
             text = self._get_selected_text()
+            if not text and fallback_text:
+                text = fallback_text
             if not text:
                 self._notify("Select text to copy.")
                 return
