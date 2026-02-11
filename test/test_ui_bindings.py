@@ -1,9 +1,14 @@
+import importlib.util
 from pathlib import Path
+import unittest
 
 try:
     import pytest
 except ModuleNotFoundError:  # pragma: no cover - fallback for unittest
     from test import _pytest_stub as pytest
+
+if importlib.util.find_spec("textual") is None:
+    raise unittest.SkipTest("Textual not installed")
 
 from sm_logtool.ui.app import LogBrowser, WizardStep
 
