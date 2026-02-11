@@ -1,3 +1,4 @@
 logs_dir: /var/tmp/sm-logtool
 staging_dir: /var/tmp/sm-logtool/Temp
 default_kind: smtpLog
+mouse: true

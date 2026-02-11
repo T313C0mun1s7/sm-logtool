@@ -18,6 +18,7 @@ from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
 from textual.selection import Selection
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Footer,
@@ -259,9 +260,9 @@ if _BaseLog is not None:
         ) -> None:  # pragma: no cover - UI behaviour
             if getattr(event, "button", None) == 3:
                 app = getattr(self, "app", None)
-                copy_results = getattr(app, "_copy_results", None)
-                if copy_results is not None:
-                    copy_results(selection_only=True)
+                show_menu = getattr(app, "_show_context_menu", None)
+                if show_menu is not None:
+                    show_menu(event.screen_x, event.screen_y)
                 event.stop()
                 return
             offset = self._offset_from_event(event)
@@ -402,6 +403,39 @@ else:
 
         def clear_selection(self) -> None:
             return
+
+
+class ContextMenu(Vertical):
+    """Context menu used for result copy actions."""
+
+    DEFAULT_CSS = """
+    ContextMenu {
+        position: absolute;
+        background: #1f1f1f;
+        border: solid #5f5f5f;
+        padding: 1 1;
+    }
+
+    ContextMenu Button {
+        width: 100%;
+        height: auto;
+        margin: 0;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._items = [
+            ("Copy", "context-copy"),
+            ("Copy All", "context-copy-all"),
+        ]
+        self.menu_width = max(len(label) for label, _ in self._items) + 4
+        self.menu_height = len(self._items) + 2
+        self.styles.width = self.menu_width
+
+    def compose(self) -> ComposeResult:
+        for label, button_id in self._items:
+            yield Button(label, id=button_id)
 
 
 class WizardStep(Enum):
@@ -939,6 +973,7 @@ class LogBrowser(App):
         self.subsearch_paths: list[Path] = []
         self.subsearch_rendered: list[list[str]] = []
         self._result_log_counter = 0
+        self._context_menu: ContextMenu | None = None
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Header(show_clock=False, icon="Menu")
@@ -1070,7 +1105,7 @@ class LogBrowser(App):
         title = self._results_title()
         help_text = (
             "Selection: arrows move, Shift+arrows select, "
-            "mouse drag works."
+            "mouse drag works. Right-click for copy."
         )
         header_row = Horizontal(
             Static(title, classes="instruction"),
@@ -1147,6 +1182,24 @@ class LogBrowser(App):
             kind_next.disabled = not bool(self._logs_by_kind)
 
     # Events -------------------------------------------------------------
+    def on_key(
+        self,
+        event: events.Key,
+    ) -> None:  # type: ignore[override]
+        if event.key == "escape":
+            if self._context_menu is not None:
+                self._hide_context_menu()
+
+    def on_mouse_down(
+        self,
+        event: events.MouseDown,
+    ) -> None:  # type: ignore[override]
+        if self._context_menu is None:
+            return
+        if self._is_context_target(event.widget):
+            return
+        self._hide_context_menu()
+
     def on_button_pressed(
         self,
         event: Button.Pressed,
@@ -1181,6 +1234,12 @@ class LogBrowser(App):
             self._copy_results(selection_only=True)
         elif button_id == "copy-all":
             self._copy_results(selection_only=False)
+        elif button_id == "context-copy":
+            self._copy_results(selection_only=True)
+            self._hide_context_menu()
+        elif button_id == "context-copy-all":
+            self._copy_results(selection_only=False)
+            self._hide_context_menu()
 
         self._refresh_footer_bindings()
 
@@ -1313,9 +1372,61 @@ class LogBrowser(App):
                 break
 
     def _clear_wizard(self) -> None:
+        self._hide_context_menu()
         if hasattr(self, 'wizard'):
             for child in list(self.wizard.children):
                 child.remove()
+
+    def _is_context_target(self, widget: Widget | None) -> bool:
+        menu = self._context_menu
+        if menu is None or widget is None:
+            return False
+        current: Widget | None = widget
+        while current is not None:
+            if current is menu:
+                return True
+            current = current.parent
+        return False
+
+    def _show_context_menu(self, x: float, y: float) -> None:
+        if self.screen is None:
+            return
+        self._hide_context_menu()
+        menu = ContextMenu()
+        self._context_menu = menu
+        self.screen.mount(menu)
+        self._position_context_menu(menu, x, y)
+        try:
+            menu.focus()
+        except Exception:
+            pass
+
+    def _position_context_menu(
+        self,
+        menu: ContextMenu,
+        x: float,
+        y: float,
+    ) -> None:
+        if self.screen is None:
+            return
+        width = menu.menu_width
+        height = menu.menu_height
+        max_x = max(self.screen.size.width - width, 0)
+        max_y = max(self.screen.size.height - height, 0)
+        offset = Offset(
+            min(int(x), max_x),
+            min(int(y), max_y),
+        )
+        menu.styles.offset = offset
+
+    def _hide_context_menu(self) -> None:
+        if self._context_menu is None:
+            return
+        try:
+            self._context_menu.remove()
+        except Exception:
+            pass
+        self._context_menu = None
 
     # Core behaviour -----------------------------------------------------
     def _refresh_logs(self) -> None:
@@ -1631,6 +1742,7 @@ def run(
     logs_dir: Path,
     staging_dir: Path | None = None,
     default_kind: str | None = None,
+    mouse: bool = True,
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
@@ -1639,5 +1751,5 @@ def run(
         staging_dir=staging_dir,
         default_kind=default_kind,
     )
-    app.run()
+    app.run(mouse=mouse)
     return 0
