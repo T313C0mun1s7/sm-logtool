@@ -19,6 +19,7 @@ def create_smtp_zip(path: Path, content: str) -> None:
     with ZipFile(path, 'w') as archive:
         archive.writestr(path.name.replace('.zip', ''), content)
 
+
 def test_scan_logs_handles_missing_directory(tmp_path):
     missing_dir = tmp_path / "missing"
 
@@ -73,6 +74,7 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
     assert exit_code == 0
 
     captured = capsys.readouterr()
+    assert "=== 2024.01.01-smtpLog.log.zip ===" in captured.out
     assert 'MSG1' in captured.out
     assert 'Search term' in captured.out
 
@@ -111,8 +113,43 @@ def test_run_search_supports_imap_retrieval_kind(tmp_path, capsys):
     assert exit_code == 0
 
     captured = capsys.readouterr()
+    assert "=== 2024.01.01-imapRetrieval.log ===" in captured.out
     assert "Search term" in captured.out
     assert "[72]" in captured.out
+
+
+def test_run_search_displays_no_matches_message(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-smtpLog.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][MSG1] no target here\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        term="missing-term",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtpLog",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "No matches found." in captured.out
 
 
 def test_run_search_uses_syntax_highlighting_in_cli_output(

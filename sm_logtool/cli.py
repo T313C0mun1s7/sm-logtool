@@ -22,7 +22,7 @@ from .logfiles import (
     parse_stamp,
     summarize_logs,
 )
-from .result_formatting import collect_widths, format_conversation_lines
+from .result_rendering import render_search_results
 from .search import get_search_function
 from .staging import stage_log
 
@@ -261,65 +261,9 @@ def _print_search_summary(
     log_kind: str,
 ) -> None:
     console = _build_stdout_console()
-    kind_key = log_kind.lower()
-    ungrouped_kinds = {
-        "administrative",
-        "activation",
-        "autocleanfolders",
-        "calendars",
-        "contentfilter",
-        "event",
-        "generalerrors",
-        "indexing",
-        "ldaplog",
-        "maintenance",
-        "profiler",
-        "spamchecks",
-        "webdav",
-    }
-    is_ungrouped = kind_key in ungrouped_kinds
-    label = "entry" if is_ungrouped else "conversation"
-    _write_highlighted(
-        console,
-        log_kind,
-        f"Search term '{result.term}' -> "
-        f"{result.total_conversations} {label}(s) in {source_path.name}",
-    )
-    widths = collect_widths(log_kind, result.conversations)
-    for conversation in result.conversations:
-        if not is_ungrouped:
-            console.print()
-            _write_highlighted(
-                console,
-                log_kind,
-                f"[{conversation.message_id}] first seen on line "
-                f"{conversation.first_line_number}",
-            )
-        formatted = format_conversation_lines(
-            log_kind,
-            conversation.lines,
-            widths,
-        )
-        for line in formatted:
-            _write_highlighted(console, log_kind, line)
-
-    if result.orphan_matches:
-        if not is_ungrouped:
-            console.print()
-            _write_highlighted(
-                console,
-                log_kind,
-                "Lines without message identifiers that matched:",
-            )
-        for line_number, line in result.orphan_matches:
-            if is_ungrouped:
-                _write_highlighted(console, log_kind, line)
-            else:
-                _write_highlighted(
-                    console,
-                    log_kind,
-                    f"{line_number}: {line}",
-                )
+    lines = render_search_results([result], [source_path], log_kind)
+    for line in lines:
+        _write_highlighted(console, log_kind, line)
 
 
 def _build_stdout_console() -> Console:
