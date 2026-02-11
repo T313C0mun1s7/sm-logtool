@@ -739,6 +739,10 @@ class LogBrowser(App):
         text-align: right;
     }
 
+    .results-body {
+        height: 1fr;
+    }
+
     .button-spacer {
         width: 1fr;
     }
@@ -926,7 +930,6 @@ class LogBrowser(App):
         self.output_log = OutputLog(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        self.wizard.mount(self.output_log)
         show_back = len(self.subsearch_terms) > 1
         left_buttons: list[Static] = [
             Button("New Search", id="new-search"),
@@ -945,7 +948,12 @@ class LogBrowser(App):
             Horizontal(*right_buttons, classes="right-buttons"),
             classes="button-row",
         )
-        self.wizard.mount(button_row)
+        results_body = Vertical(
+            self.output_log,
+            button_row,
+            classes="results-body",
+        )
+        self.wizard.mount(results_body)
         if rendered:
             self._write_output_lines(rendered.splitlines())
         self.call_after_refresh(self._focus_results)
