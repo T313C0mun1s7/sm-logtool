@@ -111,24 +111,28 @@ def _format_entry(
     if kind_key == "smtplog":
         ip = entry["ip"]
         log_id = entry["log_id"]
+        ip_pad = " " * (widths.ip - len(ip) + 1)
+        id_pad = " " * (widths.log_id - len(log_id) + 1)
         return (
             f"{time:<{widths.time}} "
-            f"[{ip:<{widths.ip}}] "
-            f"[{log_id:<{widths.log_id}}] "
+            f"[{ip}]{ip_pad}"
+            f"[{log_id}]{id_pad}"
             f"{message}"
         )
     if kind_key == "delivery":
         log_id = entry["log_id"]
+        id_pad = " " * (widths.log_id - len(log_id) + 1)
         return (
             f"{time:<{widths.time}} "
-            f"[{log_id:<{widths.log_id}}] "
+            f"[{log_id}]{id_pad}"
             f"{message}"
         )
     if kind_key == "administrative":
         ip = entry["ip"]
+        ip_pad = " " * (widths.ip - len(ip) + 1)
         return (
             f"{time:<{widths.time}} "
-            f"[{ip:<{widths.ip}}] "
+            f"[{ip}]{ip_pad}"
             f"{message}"
         )
     return f"{time} {message}"
@@ -138,14 +142,14 @@ def _continuation_prefix(
     kind_key: str,
     widths: ColumnWidths,
 ) -> str:
+    return " " * _message_column(kind_key, widths)
+
+
+def _message_column(kind_key: str, widths: ColumnWidths) -> int:
     if kind_key == "smtplog":
-        return (
-            f"{'':<{widths.time}} "
-            f"[{'':<{widths.ip}}] "
-            f"[{'':<{widths.log_id}}] "
-        )
+        return widths.time + widths.ip + widths.log_id + 7
     if kind_key == "delivery":
-        return f"{'':<{widths.time}} [{'':<{widths.log_id}}] "
+        return widths.time + widths.log_id + 4
     if kind_key == "administrative":
-        return f"{'':<{widths.time}} [{'':<{widths.ip}}] "
-    return ""
+        return widths.time + widths.ip + 4
+    return 0
