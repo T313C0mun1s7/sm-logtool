@@ -53,8 +53,9 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
 
 ## Upcoming Work
-- [ ] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
-- [ ] Add syntax highlighting for SMTP conversations in CLI and TUI views.
+- [x] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
+- [x] Add syntax highlighting for SMTP conversations in the TUI view.
+- [ ] Add syntax highlighting for SMTP conversations in the CLI view.
 - [ ] Plan packaging/distribution (standalone binaries, pipx, release workflow).
 - [x] Introduce a YAML config file to store default log paths and other settings.
 - [x] Replace the old multipane layout with the new wizard flow so list panels size appropriately while preserving output space.
@@ -62,6 +63,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 
 
 ## Current State Notes
-- Verify toggle-only date selection works smoothly (arrows + space, enter) with the new highlight styling.
-- Confirm footer shortcuts (`Q` quit, `R` reset search, `/` focus search) display on every step and function even when the search input or results pane has focus.
-- Make sure search results display one log line per row after recent changes.
+- [x] Toggle-only date selection works with arrows, `Space`, and `Enter`.
+- [x] Footer shortcuts (`Ctrl+Q` quit, `Ctrl+R` reset, `Ctrl+F` focus search)
+  display on each step and remain functional with input/results focus.
+- [x] Search results display one log line per row after formatting updates.

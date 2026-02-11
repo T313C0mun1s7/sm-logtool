@@ -1,97 +1,137 @@
-
 # sm-logtool
 
-sm-logtool is a TUI (Text User Interface) focused on making searches and sub-searches against **SmarterMail** logs faster and easier. It targets Linux servers that host SmarterMail or have direct access to the SmarterMail log directory.
+`sm-logtool` is a terminal-first log explorer for SmarterMail logs. It ships
+with:
 
----
+- A Textual wizard UI (`browse`) for interactive searching.
+- A console search command (`search`) for quick scripted checks.
+- Log staging that copies or unzips source logs before analysis.
+- Conversation/entry grouping for supported SmarterMail log kinds.
+- Syntax-highlighted results in the TUI.
 
-## Features
+## Requirements
 
-- Interactive TUI for an intuitive log search experience directly in your terminal.
-- Efficiently search across large SmarterMail log files without leaving the server.
-- Perform sub-searches to refine results in place.
-- Configuration-driven setup for flexible log and output management.
-- Designed for native execution on Linux systems where the logs are stored.
+- Python 3.10+
+- Linux (project classifiers currently target POSIX/Linux)
 
----
+## Install
 
-## Installation
+Install from this repository:
 
-Installation will be provided via a setup script or Python package manager (e.g., `pip` or `pipx`). The goal is to expose a single command in your system `$PATH` for easy access.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
 
-1. Install the app (exact method TBD):
-   ```bash
-   pip install sm-logtool
-   ```
+This installs the `sm-logtool` command and allows `python -m sm_logtool.cli`.
 
-2. Verify the installation:
-   ```bash
-   sm-logtool --version
-   ```
+## Configuration
 
-3. Ensure the server has access to the SmarterMail log directory described in your configuration.
+Configuration is YAML with these keys:
 
----
+- `logs_dir`: source SmarterMail logs directory.
+- `staging_dir`: working directory used for copied/unzipped logs.
+- `default_kind`: default log kind (for example `smtpLog`).
+
+Example:
+
+```yaml
+logs_dir: /var/tmp/sm-logtool
+staging_dir: /var/tmp/sm-logtool/Temp
+default_kind: smtpLog
+```
+
+Config resolution order:
+
+1. `--config /path/to/config.yaml`
+2. `SM_LOGTOOL_CONFIG`
+3. Repository `config.yaml`
 
 ## Usage
 
-### Configuration
-Before running the app, configure a file such as `config.yaml` with the following details:
-- Absolute path to the SmarterMail logs directory (usually inside `/var` on the same host as SmarterMail).
-- Output directory for filtered or exported logs.
-- Additional application-specific settings (search presets, theme options, etc.).
+Top-level help:
 
-### Running the App
-1. Launch the TUI from the terminal:
-   ```bash
-   sm-logtool
-   ```
+```bash
+sm-logtool --help
+```
 
-2. Follow the on-screen prompts:
-   - Choose the log type you want to inspect.
-   - Pick from the available log files (e.g., one per day, named by date).
-   - Enter your search term or perform sub-searches to dig deeper.
+### Launch the TUI
 
-3. Results appear within the TUI and can optionally be written to the output directory defined in your configuration.
+```bash
+sm-logtool
+# or
+sm-logtool browse --logs-dir sample_logs
+```
 
-### TUI Basics
-- `q` — quit the application
-- `/` — open the search action (placeholder for now)
-- `r` — refresh the file list
+Wizard flow:
 
-### Example Workflow
-- During local development, drop test files into the `sample_logs/` directory included in this repository and run `sm-logtool` to confirm the CLI can discover them.
-- SSH into the SmarterMail host (or open a local terminal) when you are ready to work with live data and update `--logs-dir` to point at the real log folder.
-- Run `sm-logtool`, explore the logs, and export any snippets that you need for troubleshooting or sharing.
+1. Choose log kind.
+2. Select one or more log dates.
+3. Enter search term.
+4. Review results, copy selection/all, and optionally run sub-search.
 
----
+Global shortcuts shown in the footer:
 
-## Contributing
+- `Ctrl+Q` quit
+- `Ctrl+R` reset search state
+- `Ctrl+F` focus search input (when search step is active)
+- `Ctrl+U` open command palette/menu
 
-Contributions are welcome! Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for guidelines.
+Date selection shortcuts:
 
----
+- Arrow keys to move
+- `Space` to toggle a date
+- `Enter` to continue
 
-## Code of Conduct
+### Run console search
 
-This project follows a [Code of Conduct](CODE_OF_CONDUCT.md) to ensure respectful and constructive collaboration.
+```bash
+sm-logtool search "example.com" --kind smtpLog --date 2024.01.01
+```
 
----
+Useful options:
+
+- `--list` list available logs for a kind and exit
+- `--log-file` target one explicit file
+- `--case-sensitive` disable default case-insensitive matching
+- `--staging-dir` override staging directory for this run
+
+Search terms are literal substrings (regex/fuzzy modes are not enabled in the
+current CLI/TUI search path).
+
+## Supported Log Kinds
+
+Search handlers currently exist for:
+
+- `smtpLog`, `imapLog`, `popLog`
+- `delivery`
+- `administrative`
+- `imapRetrieval`
+- `activation`, `autoCleanFolders`, `calendars`, `contentFilter`, `event`,
+  `generalErrors`, `indexing`, `ldapLog`, `maintenance`, `profiler`,
+  `spamChecks`, `webdav`
+
+Log discovery expects SmarterMail-style names such as:
+`YYYY.MM.DD-kind.log` or `YYYY.MM.DD-kind.log.zip`.
+
+## Development
+
+Run tests with both frameworks used in this repository:
+
+```bash
+pytest -q
+python -m unittest discover test
+```
+
+## Additional Docs
+
+- [Contributing](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Search Design Notes](docs/SEARCH_NOTES.md)
+- [Syntax Highlighting Notes](docs/syntax_highlighting.md)
 
 ## License
 
-This project is licensed under the GNU Affero General Public License (AGPL-3.0).  
-For more details, see the [LICENSE](LICENSE) file or visit [GNU AGPL-3.0 License](https://www.gnu.org/licenses/agpl-3.0.html).
-
----
-
-## Acknowledgments
-
-- Thanks to the open-source community for their invaluable resources and inspiration.
-
----
-
-## Design Notes
-
-For a deeper look at search behavior, grouping, fuzzy/regex modes, zipped logs, and UI plans, see:
-- `docs/SEARCH_NOTES.md`
+This project is licensed under AGPL-3.0.
+See [LICENSE](LICENSE).
