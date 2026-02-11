@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
-import unittest
 
-try:
-    import pytest
-except ModuleNotFoundError:  # pragma: no cover - fallback for unittest
-    from test import _pytest_stub as pytest
-
-if importlib.util.find_spec("yaml") is None:
-    raise unittest.SkipTest("PyYAML not installed")
+import pytest
 
 from sm_logtool import config
 
