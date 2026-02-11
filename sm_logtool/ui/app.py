@@ -99,11 +99,13 @@ if _BaseLog is not None:
             start: Offset,
             end: Offset,
         ) -> None:
-            if self.screen is None:
+            try:
+                screen = self.screen
+            except Exception:
                 return
-            selections = dict(self.screen.selections)
+            selections = dict(screen.selections)
             selections[self] = Selection.from_offsets(start, end)
-            self.screen.selections = selections
+            screen.selections = selections
 
         def _cursor_span(self) -> tuple[Offset, Offset]:
             cursor = self._selection_cursor
@@ -175,6 +177,15 @@ if _BaseLog is not None:
                     animate=False,
                     immediate=True,
                 )
+
+        def show_cursor(self) -> None:
+            if self.line_count <= 0:
+                return
+            try:
+                _ = self.screen
+            except Exception:
+                return
+            self._move_cursor(dx=0, dy=0, extend=False)
 
         def on_mouse_down(
             self,
@@ -923,6 +934,7 @@ class LogBrowser(App):
             Static("", classes="results-spacer"),
             Static(help_text, classes="results-help"),
             classes="results-header",
+            id="results-header",
         )
         self.wizard.mount(header_row)
         self._result_log_counter += 1
@@ -947,6 +959,7 @@ class LogBrowser(App):
             Static("", classes="button-spacer"),
             Horizontal(*right_buttons, classes="right-buttons"),
             classes="button-row",
+            id="results-buttons",
         )
         results_body = Vertical(
             self.output_log,
@@ -956,6 +969,7 @@ class LogBrowser(App):
         self.wizard.mount(results_body)
         if rendered:
             self._write_output_lines(rendered.splitlines())
+        self.call_after_refresh(self._resize_results_log)
         self.call_after_refresh(self._focus_results)
         self._refresh_footer_bindings()
 
@@ -1265,6 +1279,8 @@ class LogBrowser(App):
                 self.output_log.scroll_end()
             except Exception:
                 pass
+        if isinstance(self.output_log, OutputLog):
+            self.output_log.show_cursor()
 
     def _copy_results(self, *, selection_only: bool) -> None:
         text: str | None = None
@@ -1298,6 +1314,27 @@ class LogBrowser(App):
         if self.last_rendered_lines:
             return "\n".join(self.last_rendered_lines).rstrip("\n")
         return None
+
+    def _resize_results_log(self) -> None:
+        if self.step != WizardStep.RESULTS or self.output_log is None:
+            return
+        try:
+            header = self.wizard.query_one("#results-header")
+            buttons = self.wizard.query_one("#results-buttons")
+        except Exception:
+            return
+        available = (
+            self.wizard.size.height
+            - header.size.height
+            - buttons.size.height
+        )
+        if available < 5:
+            available = 5
+        self.output_log.styles.height = available
+
+    def on_resize(self, event: events.Resize) -> None:
+        if self.step == WizardStep.RESULTS:
+            self._resize_results_log()
 
     def _render_results(
         self,
