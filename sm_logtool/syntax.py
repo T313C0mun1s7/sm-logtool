@@ -19,6 +19,19 @@ TOKEN_COMMAND = "command"
 TOKEN_RESPONSE = "response"
 TOKEN_LINE_NUMBER = "line_number"
 TOKEN_MESSAGE_ID = "message_id"
+TOKEN_PROTO_SMTP = "proto_smtp"
+TOKEN_PROTO_IMAP = "proto_imap"
+TOKEN_PROTO_POP = "proto_pop"
+TOKEN_PROTO_USER = "proto_user"
+TOKEN_PROTO_WEBMAIL = "proto_webmail"
+TOKEN_PROTO_ACTIVESYNC = "proto_activesync"
+TOKEN_PROTO_EAS = "proto_eas"
+TOKEN_PROTO_CALDAV = "proto_caldav"
+TOKEN_PROTO_CARDDAV = "proto_carddav"
+TOKEN_PROTO_XMPP = "proto_xmpp"
+TOKEN_PROTO_API = "proto_api"
+TOKEN_STATUS_BAD = "status_bad"
+TOKEN_STATUS_GOOD = "status_good"
 
 _TIME_START = re.compile(
     r"^(?P<time>\d{2}:\d{2}:\d{2}(?:\.\d{3})?)"
@@ -38,6 +51,30 @@ _SMTP_VERB = re.compile(
 )
 _STATUS_CODE = re.compile(r"(?<!\d)([245]\d{2})(?=[ -])")
 _BRACKET_TAG = re.compile(r"\[[A-Za-z][^\]]*\]")
+_MESSAGE_WORD = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
+_STATUS_BAD = re.compile(
+    r"\b(failed|failure|error|exception|denied|blocked|invalid|"
+    r"warning|warn)\b",
+    re.IGNORECASE,
+)
+_STATUS_GOOD = re.compile(
+    r"\b(success|successful|completed)\b",
+    re.IGNORECASE,
+)
+
+_PROTOCOL_TOKENS = {
+    "SMTP": TOKEN_PROTO_SMTP,
+    "IMAP": TOKEN_PROTO_IMAP,
+    "POP": TOKEN_PROTO_POP,
+    "USER": TOKEN_PROTO_USER,
+    "WEBMAIL": TOKEN_PROTO_WEBMAIL,
+    "ACTIVESYNC": TOKEN_PROTO_ACTIVESYNC,
+    "EAS": TOKEN_PROTO_EAS,
+    "CALDAV": TOKEN_PROTO_CALDAV,
+    "CARDDAV": TOKEN_PROTO_CARDDAV,
+    "XMPP": TOKEN_PROTO_XMPP,
+    "API": TOKEN_PROTO_API,
+}
 
 
 @dataclass(frozen=True)
@@ -168,6 +205,12 @@ def _log_line_spans(line: str, offset: int) -> list[HighlightSpan]:
                 TOKEN_BRACKET,
             )
         )
+    spans.extend(
+        _message_leading_protocol_spans(
+            line[message_start:],
+            offset + message_start,
+        )
+    )
     spans.extend(_message_spans(line[message_start:], offset + message_start))
     return spans
 
@@ -220,6 +263,8 @@ def _message_spans(line: str, offset: int) -> list[HighlightSpan]:
         (_CMD_RSP, TOKEN_COMMAND),
         (_SMTP_VERB, TOKEN_COMMAND),
         (_STATUS_CODE, TOKEN_RESPONSE),
+        (_STATUS_BAD, TOKEN_STATUS_BAD),
+        (_STATUS_GOOD, TOKEN_STATUS_GOOD),
         (_EMAIL, TOKEN_EMAIL),
         (_IP, TOKEN_IP),
         (_MESSAGE_ID, TOKEN_MESSAGE_ID),
@@ -227,6 +272,26 @@ def _message_spans(line: str, offset: int) -> list[HighlightSpan]:
     ):
         spans.extend(_regex_spans(pattern, line, token, offset))
     return spans
+
+
+def _message_leading_protocol_spans(
+    line: str,
+    offset: int,
+) -> list[HighlightSpan]:
+    match = _MESSAGE_WORD.search(line)
+    if not match:
+        return []
+    word = match.group(0)
+    token = _PROTOCOL_TOKENS.get(word.upper())
+    if token is None:
+        return []
+    return [
+        HighlightSpan(
+            offset + match.start(),
+            offset + match.end(),
+            token,
+        )
+    ]
 
 
 def _regex_spans(

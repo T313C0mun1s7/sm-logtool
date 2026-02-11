@@ -2,6 +2,8 @@ from sm_logtool.syntax import (
     TOKEN_EMAIL,
     TOKEN_IP,
     TOKEN_LINE_NUMBER,
+    TOKEN_PROTO_IMAP,
+    TOKEN_STATUS_BAD,
     TOKEN_TIMESTAMP,
     spans_for_line,
 )
@@ -46,3 +48,17 @@ def test_highlight_orphan_prefix_dim():
     spans = spans_for_line("smtpLog", line)
     prefix_end = len("123: ")
     assert _has_span(spans, TOKEN_LINE_NUMBER, 0, prefix_end)
+
+
+def test_highlight_admin_protocol_and_status():
+    line = (
+        "23:59:57.727 [178.216.28.19] IMAP Login failed: "
+        "User [204be204] not found"
+    )
+    spans = spans_for_line("administrative", line)
+    proto_start = line.index("IMAP")
+    proto_end = proto_start + len("IMAP")
+    assert _has_span(spans, TOKEN_PROTO_IMAP, proto_start, proto_end)
+    status_start = line.index("failed")
+    status_end = status_start + len("failed")
+    assert _has_span(spans, TOKEN_STATUS_BAD, status_start, status_end)
