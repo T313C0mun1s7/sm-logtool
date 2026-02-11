@@ -567,6 +567,16 @@ class ResultsArea(TextArea):
         event: events.MouseDown,
     ) -> None:  # pragma: no cover - UI behaviour
         if getattr(event, "button", None) == 3:
+            end_selection = getattr(self, "_end_mouse_selection", None)
+            if callable(end_selection):
+                try:
+                    end_selection()
+                except Exception:
+                    pass
+            try:
+                self.release_mouse()
+            except Exception:
+                pass
             app = getattr(self, "app", None)
             show_menu = getattr(app, "_show_context_menu", None)
             if show_menu is not None:
@@ -652,6 +662,10 @@ class ContextMenuScreen(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._position_menu)
+        try:
+            self.query_one("#context-copy").focus()
+        except Exception:
+            pass
 
     def on_mouse_down(
         self,
