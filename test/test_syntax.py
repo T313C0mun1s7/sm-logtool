@@ -23,7 +23,7 @@ def test_highlight_smtp_line_styles_timestamp_and_ip():
         "23:59:56.065 [111.70.33.193][39603817] cmd: "
         "EHLO example.com"
     )
-    spans = spans_for_line("smtpLog", line)
+    spans = spans_for_line("smtp", line)
     assert _has_span(spans, TOKEN_TIMESTAMP, 0, len("23:59:56.065"))
     ip_start = line.index("111.70.33.193")
     ip_end = ip_start + len("111.70.33.193")
@@ -45,7 +45,7 @@ def test_highlight_orphan_prefix_dim():
     line = (
         "123: 00:00:01 [1.1.1.1][ABC] Connection initiated"
     )
-    spans = spans_for_line("smtpLog", line)
+    spans = spans_for_line("smtp", line)
     prefix_end = len("123: ")
     assert _has_span(spans, TOKEN_LINE_NUMBER, 0, prefix_end)
 

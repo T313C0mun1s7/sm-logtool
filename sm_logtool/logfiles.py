@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from typing import List, Optional
 
+from .log_kinds import normalize_kind
+
 
 class UnknownLogDate(ValueError):
     """Raised when parsing a log filename or stamp fails."""
@@ -50,7 +52,7 @@ def parse_log_filename(path: Path) -> LogFileInfo:
         )
 
     stamp = datetime.strptime(match.group("stamp"), "%Y.%m.%d").date()
-    kind = match.group("kind")
+    kind = normalize_kind(match.group("kind"))
     is_zipped = bool(match.group("zip"))
     return LogFileInfo(path=path, stamp=stamp, kind=kind, is_zipped=is_zipped)
 
@@ -87,19 +89,20 @@ def summarize_logs(logs_dir: Path, kind: str) -> list[LogFileInfo]:
 def discover_logs(logs_dir: Path, kind: str) -> List[LogFileInfo]:
     """Return log files of ``kind`` sorted by date (newest first).
 
-    The expected ``kind`` values follow the SmarterMail naming convention, e.g.
-    ``smtpLog`` or ``imapLog``.
+    ``kind`` accepts canonical keys (for example ``smtp`` or ``imap``) and
+    legacy aliases (for example ``smtpLog`` or ``imapLog``).
     """
 
     if not logs_dir.exists():
         return []
 
+    requested_kind = normalize_kind(kind)
     infos: list[LogFileInfo] = []
     for path in logs_dir.iterdir():
         if not path.is_file():
             continue
         info = parse_log_filename(path)
-        if info.kind != kind:
+        if info.kind != requested_kind:
             continue
         infos.append(info)
 

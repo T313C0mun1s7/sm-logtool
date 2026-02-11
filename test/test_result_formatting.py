@@ -24,15 +24,15 @@ def test_format_smtp_aligns_columns_and_continuations():
         ),
     ]
 
-    widths = collect_widths("smtpLog", conversations)
+    widths = collect_widths("smtp", conversations)
     assert widths is not None
     formatted = format_conversation_lines(
-        "smtpLog",
+        "smtp",
         conversations[0].lines,
         widths,
     )
     formatted += format_conversation_lines(
-        "smtpLog",
+        "smtp",
         conversations[1].lines,
         widths,
     )
@@ -98,10 +98,10 @@ def test_format_imap_retrieval_aligns_context():
         ],
     )
 
-    widths = collect_widths("imapRetrieval", [conversation])
+    widths = collect_widths("imapretrieval", [conversation])
     assert widths is not None
     formatted = format_conversation_lines(
-        "imapRetrieval",
+        "imapretrieval",
         conversation.lines,
         widths,
     )

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 from zipfile import ZipFile
 
 import pytest
+from rich.console import Console
 
 from sm_logtool import cli
 from sm_logtool.config import AppConfig
@@ -16,8 +18,6 @@ def create_smtp_zip(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(path, 'w') as archive:
         archive.writestr(path.name.replace('.zip', ''), content)
-
-
 
 
 def test_scan_logs_handles_missing_directory(tmp_path):
@@ -67,15 +67,287 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
     assert exit_code == 0
 
     captured = capsys.readouterr()
+    assert "=== 2024.01.01-smtpLog.log.zip ===" in captured.out
     assert 'MSG1' in captured.out
     assert 'Search term' in captured.out
+
+
+def test_run_search_supports_imap_retrieval_kind(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-imapRetrieval.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        (
+            "00:00:01.100 [72] [user; host:other] Connection refused\n"
+            "   at System.Net.Sockets.Socket.Connect(EndPoint remoteEP)\n"
+        ),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        term="Socket.Connect",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="imapretrieval",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "=== 2024.01.01-imapRetrieval.log ===" in captured.out
+    assert "Search term" in captured.out
+    assert "[72]" in captured.out
+
+
+def test_run_search_displays_no_matches_message(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-smtpLog.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][MSG1] no target here\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        term="missing-term",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "No matches found." in captured.out
+
+
+def test_run_search_supports_multiple_dates(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    first = logs_dir / "2024.01.01-smtpLog.log"
+    second = logs_dir / "2024.01.02-smtpLog.log"
+    first.write_text(
+        "00:00:00 [1.1.1.1][MSG1] hello\n",
+        encoding="utf-8",
+    )
+    second.write_text(
+        "00:00:00 [2.2.2.2][MSG2] hello\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date=["2024.01.01", "2024.01.02"],
+        list=False,
+        case_sensitive=False,
+        term="hello",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "=== 2024.01.01-smtpLog.log ===" in captured.out
+    assert "=== 2024.01.02-smtpLog.log ===" in captured.out
+
+
+def test_run_search_supports_multiple_log_files(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    first = logs_dir / "2024.01.01-smtpLog.log"
+    second = logs_dir / "2024.01.02-smtpLog.log"
+    first.write_text(
+        "00:00:00 [1.1.1.1][MSG1] hello\n",
+        encoding="utf-8",
+    )
+    second.write_text(
+        "00:00:00 [2.2.2.2][MSG2] hello\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=[Path(first.name), Path(second.name)],
+        date=None,
+        list=False,
+        case_sensitive=False,
+        term="hello",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "=== 2024.01.01-smtpLog.log ===" in captured.out
+    assert "=== 2024.01.02-smtpLog.log ===" in captured.out
+
+
+def test_run_search_rejects_mismatched_log_file_kind(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / "2024.01.01-imapLog.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][MSG1] hello\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=[Path(log_path.name)],
+        date=None,
+        list=False,
+        case_sensitive=False,
+        term="hello",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "does not match kind smtp" in captured.err
+
+
+def test_run_search_rejects_mixed_date_and_log_file(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / "2024.01.01-smtpLog.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][MSG1] hello\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=[Path(log_path.name)],
+        date=["2024.01.01"],
+        list=False,
+        case_sensitive=False,
+        term="hello",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "--log-file and --date cannot be used together." in captured.err
+
+
+def test_run_search_uses_syntax_highlighting_in_cli_output(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    zip_path = logs_dir / "2024.01.01-smtpLog.log.zip"
+    create_smtp_zip(
+        zip_path,
+        (
+            "00:00:00 [1.1.1.1][MSG1] cmd: EHLO example.com\n"
+            "00:00:01 [1.1.1.1][MSG1] rsp: 250 Success\n"
+        ),
+    )
+
+    def build_console() -> Console:
+        return Console(
+            file=sys.stdout,
+            force_terminal=True,
+            color_system="truecolor",
+            highlight=False,
+            soft_wrap=True,
+        )
+
+    monkeypatch.setattr(cli, "_build_stdout_console", build_console)
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        term="EHLO",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "\x1b[" in captured.out
+    assert "EHLO" in captured.out
 
 
 def test_run_search_requires_logs_dir_from_config_or_flag(capsys):
@@ -93,7 +365,7 @@ def test_run_search_requires_logs_dir_from_config_or_flag(capsys):
         path=Path("config.yaml"),
         logs_dir=None,
         staging_dir=None,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -124,7 +396,7 @@ def test_run_search_requires_staging_dir_from_config_or_flag(
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=None,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -132,3 +404,45 @@ def test_run_search_requires_staging_dir_from_config_or_flag(
     assert exit_code == 2
     captured = capsys.readouterr()
     assert "Staging directory is not configured." in captured.err
+
+
+def test_search_help_mentions_latest_and_supported_kinds(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["search", "--help"])
+    assert excinfo.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "newest available log for --kind is searched." in captured.out
+    assert "Available kinds:" in captured.out
+    assert "logs_dir is set in" in captured.out
+    assert "staging_dir is set in" in captured.out
+    assert "default_kind is set" in captured.out
+    assert "config.yaml." in captured.out
+    assert "smtp" in captured.out
+
+
+def test_run_search_list_kinds_does_not_require_dirs(capsys):
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date=None,
+        list=False,
+        list_kinds=True,
+        case_sensitive=False,
+        term=None,
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=None,
+        staging_dir=None,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Supported log kinds:" in captured.out
+    assert "smtp" in captured.out

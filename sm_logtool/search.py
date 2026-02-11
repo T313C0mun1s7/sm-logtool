@@ -7,6 +7,27 @@ from pathlib import Path
 import re
 from typing import List, Protocol, Tuple
 
+from .log_kinds import (
+    KIND_ACTIVATION,
+    KIND_ADMINISTRATIVE,
+    KIND_AUTOCLEANFOLDERS,
+    KIND_CALENDARS,
+    KIND_CONTENTFILTER,
+    KIND_DELIVERY,
+    KIND_EVENT,
+    KIND_GENERALERRORS,
+    KIND_IMAP,
+    KIND_IMAP_RETRIEVAL,
+    KIND_INDEXING,
+    KIND_LDAP,
+    KIND_MAINTENANCE,
+    KIND_POP,
+    KIND_PROFILER,
+    KIND_SMTP,
+    KIND_SPAMCHECKS,
+    KIND_WEBDAV,
+    normalize_kind,
+)
 from .log_parsers import (
     parse_admin_line,
     parse_imap_retrieval_line,
@@ -403,32 +424,32 @@ def get_search_function(
 ) -> SearchFunction | None:
     """Return the search function for the given log kind."""
 
-    kind_key = kind.lower()
-    if kind_key == "smtplog":
+    kind_key = normalize_kind(kind)
+    if kind_key == KIND_SMTP:
         return search_smtp_conversations
-    if kind_key == "imaplog":
+    if kind_key == KIND_IMAP:
         return search_smtp_conversations
-    if kind_key == "poplog":
+    if kind_key == KIND_POP:
         return search_smtp_conversations
-    if kind_key == "delivery":
+    if kind_key == KIND_DELIVERY:
         return search_delivery_conversations
-    if kind_key == "administrative":
+    if kind_key == KIND_ADMINISTRATIVE:
         return search_admin_entries
-    if kind_key == "imapretrieval":
+    if kind_key == KIND_IMAP_RETRIEVAL:
         return search_imap_retrieval_entries
     if kind_key in {
-        "activation",
-        "autocleanfolders",
-        "calendars",
-        "contentfilter",
-        "event",
-        "generalerrors",
-        "indexing",
-        "ldaplog",
-        "maintenance",
-        "profiler",
-        "spamchecks",
-        "webdav",
+        KIND_ACTIVATION,
+        KIND_AUTOCLEANFOLDERS,
+        KIND_CALENDARS,
+        KIND_CONTENTFILTER,
+        KIND_EVENT,
+        KIND_GENERALERRORS,
+        KIND_INDEXING,
+        KIND_LDAP,
+        KIND_MAINTENANCE,
+        KIND_PROFILER,
+        KIND_SPAMCHECKS,
+        KIND_WEBDAV,
     }:
         return search_ungrouped_entries
     return None

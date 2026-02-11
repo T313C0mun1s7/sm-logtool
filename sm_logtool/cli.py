@@ -1,6 +1,6 @@
 """Command-line entry point for sm-logtool.
 
-Provides a TUI browser (`browse`) and a basic SMTP search workflow (`search`).
+Provides a TUI browser (`browse`) and a search workflow (`search`).
 """
 
 from __future__ import annotations
@@ -11,15 +11,20 @@ from pathlib import Path
 import sys
 from typing import Callable
 
+from rich.console import Console
+
 from .config import AppConfig, ConfigError, load_config
+from .highlighting import highlight_line
+from .log_kinds import SUPPORTED_KINDS, normalize_kind
 from .logfiles import (
     UnknownLogDate,
     find_log_by_date,
     newest_log,
+    parse_log_filename,
     parse_stamp,
     summarize_logs,
 )
-from .result_formatting import collect_widths, format_conversation_lines
+from .result_rendering import render_search_results
 from .search import get_search_function
 from .staging import stage_log
 
@@ -36,8 +41,12 @@ def build_parser() -> argparse.ArgumentParser:
             """
             Explore SmarterMail logs from your terminal.
             The `browse` subcommand launches the Textual UI.
-            The `search` subcommand performs a console-based SMTP conversation
-            search.
+            The `search` subcommand performs a console-based search across
+            supported SmarterMail log kinds.
+
+            Config-aware defaults:
+              - logs_dir and staging_dir come from config.yaml when present.
+              - Command-line flags override config values.
             """
         ).strip(),
     )
@@ -62,13 +71,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--logs-dir",
         type=Path,
         default=None,
-        help="Path containing SmarterMail log files (overrides config).",
+        help=(
+            "Path containing SmarterMail log files. Optional when logs_dir "
+            "is set in config.yaml."
+        ),
     )
     browse_parser.set_defaults(handler=_run_browse)
 
     search_parser = subparsers.add_parser(
         "search",
-        help="Search SMTP logs for a term",
+        help="Search SmarterMail logs for a term",
+        description=(
+            "Search a SmarterMail log kind for a literal substring."
+        ),
+        epilog=_search_help_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     search_parser.add_argument(
         "term",
@@ -80,37 +97,57 @@ def build_parser() -> argparse.ArgumentParser:
         "--logs-dir",
         type=Path,
         default=None,
-        help="Directory containing the original logs (overrides config).",
+        help=(
+            "Directory containing source logs. Optional when logs_dir is "
+            "set in config.yaml."
+        ),
     )
     search_parser.add_argument(
         "--staging-dir",
         type=Path,
         default=None,
-        help="Directory where logs are copied before analysis.",
+        help=(
+            "Directory where logs are copied/extracted before analysis. "
+            "Optional when staging_dir is set in config.yaml."
+        ),
     )
     search_parser.add_argument(
         "--log-file",
         type=Path,
+        action="append",
         default=None,
         help=(
             "Specific log file to search. Relative paths resolve under "
-            "--logs-dir."
+            "--logs-dir. Repeat to search multiple files."
         ),
     )
     search_parser.add_argument(
         "--kind",
         default=None,
-        help="Log kind to search (overrides config default).",
+        help=(
+            "Log kind to search. Optional when default_kind is set in "
+            "config.yaml. "
+            "Use --list-kinds to show supported values."
+        ),
     )
     search_parser.add_argument(
         "--date",
+        action="append",
         default=None,
-        help="Date (YYYY.MM.DD) of the log file to search.",
+        help=(
+            "Date (YYYY.MM.DD) of the log file to search. Repeat to search "
+            "multiple dates."
+        ),
     )
     search_parser.add_argument(
         "--list",
         action="store_true",
         help="List available logs for the selected kind and exit.",
+    )
+    search_parser.add_argument(
+        "--list-kinds",
+        action="store_true",
+        help="List supported log kinds and exit.",
     )
     search_parser.add_argument(
         "--case-sensitive",
@@ -171,16 +208,20 @@ def _run_browse(args: argparse.Namespace) -> int:
 
 def _run_search(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
+    if getattr(args, "list_kinds", False):
+        return _list_kinds()
+
     try:
         logs_dir = _resolve_logs_dir(args, config)
         staging_dir = _resolve_staging_dir(args, config)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    log_kind = args.kind or config.default_kind
-    if log_kind is None:
+    log_kind_value = args.kind or config.default_kind
+    if log_kind_value is None:
         print("Log kind is required.", file=sys.stderr)
         return 2
+    log_kind = normalize_kind(log_kind_value)
 
     if args.list:
         return _list_logs(logs_dir, log_kind)
@@ -192,131 +233,90 @@ def _run_search(args: argparse.Namespace) -> int:
         )
         return 2
 
-    if args.log_file is not None:
-        log_path = (
-            args.log_file
-            if args.log_file.is_absolute()
-            else logs_dir / args.log_file
-        )
-        info_source = log_path
-        if not log_path.exists():
-            print(f"Log file not found: {log_path}", file=sys.stderr)
-            return 2
-    else:
-        if args.date is not None:
-            try:
-                target_date = parse_stamp(args.date)
-            except UnknownLogDate as exc:
-                print(str(exc), file=sys.stderr)
-                return 2
-            info = find_log_by_date(logs_dir, log_kind, target_date)
-            if info is None:
-                message = (
-                    f"No {log_kind} log found for {target_date:%Y.%m.%d} in "
-                    f"{logs_dir}"
-                )
-                print(message, file=sys.stderr)
-                return 2
-        else:
-            info = newest_log(logs_dir, log_kind)
-            if info is None:
-                print(
-                    f"No {log_kind} logs found in {logs_dir}",
-                    file=sys.stderr,
-                )
-                return 2
-        log_path = info.path
-        info_source = info.path
-
-    try:
-        staged = stage_log(
-            log_path,
-            staging_dir=staging_dir,
-        )
-    except Exception as exc:  # pragma: no cover - surface staging failure
-        print(f"Failed to stage log {log_path}: {exc}", file=sys.stderr)
-        return 1
-
     search_fn = get_search_function(log_kind)
     if search_fn is None:
         print(f"Unsupported log kind: {log_kind}", file=sys.stderr)
         return 2
 
-    result = search_fn(
-        staged.staged_path,
-        args.term,
-        ignore_case=not args.case_sensitive,
-    )
+    try:
+        targets = _resolve_search_targets(args, logs_dir, log_kind)
+    except (UnknownLogDate, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not targets:
+        print(
+            f"No {log_kind} logs found in {logs_dir}",
+            file=sys.stderr,
+        )
+        return 2
 
-    _print_search_summary(result, info_source, log_kind)
+    results = []
+    for source_path in targets:
+        try:
+            staged = stage_log(
+                source_path,
+                staging_dir=staging_dir,
+            )
+        except Exception as exc:  # pragma: no cover - surface staging failure
+            print(f"Failed to stage log {source_path}: {exc}", file=sys.stderr)
+            return 1
+        results.append(
+            search_fn(
+                staged.staged_path,
+                args.term,
+                ignore_case=not args.case_sensitive,
+            )
+        )
+
+    _print_search_summary(results, targets, log_kind)
     return 0
 
 
 def _print_search_summary(
-    result,
-    source_path: Path,
+    results,
+    source_paths: list[Path],
     log_kind: str,
 ) -> None:
-    kind_key = log_kind.lower()
-    ungrouped_kinds = {
-        "administrative",
-        "activation",
-        "autocleanfolders",
-        "calendars",
-        "contentfilter",
-        "event",
-        "generalerrors",
-        "indexing",
-        "ldaplog",
-        "maintenance",
-        "profiler",
-        "spamchecks",
-        "webdav",
-    }
-    is_ungrouped = kind_key in ungrouped_kinds
-    label = "entry" if is_ungrouped else "conversation"
-    print(
-        f"Search term '{result.term}' -> "
-        f"{result.total_conversations} {label}(s) in {source_path.name}"
-    )
-    widths = collect_widths(log_kind, result.conversations)
-    for conversation in result.conversations:
-        if not is_ungrouped:
-            print()
-            print(
-                f"[{conversation.message_id}] first seen on line "
-                f"{conversation.first_line_number}"
-            )
-        formatted = format_conversation_lines(
-            log_kind,
-            conversation.lines,
-            widths,
-        )
-        for line in formatted:
-            print(line)
+    console = _build_stdout_console()
+    lines = render_search_results(results, source_paths, log_kind)
+    for line in lines:
+        _write_highlighted(console, log_kind, line)
 
-    if result.orphan_matches:
-        if not is_ungrouped:
-            print()
-            print("Lines without message identifiers that matched:")
-        for line_number, line in result.orphan_matches:
-            if is_ungrouped:
-                print(line)
-            else:
-                print(f"{line_number}: {line}")
+
+def _build_stdout_console() -> Console:
+    return Console(highlight=False, soft_wrap=True)
+
+
+def _write_highlighted(
+    console: Console,
+    log_kind: str,
+    line: str,
+) -> None:
+    if not line:
+        console.print()
+        return
+    console.print(highlight_line(log_kind, line))
 
 
 def _list_logs(logs_dir: Path, kind: str) -> int:
-    logs = summarize_logs(logs_dir, kind)
+    resolved_kind = normalize_kind(kind)
+    logs = summarize_logs(logs_dir, resolved_kind)
     if not logs:
-        print(f"No {kind} logs found in {logs_dir}", file=sys.stderr)
+        print(f"No {resolved_kind} logs found in {logs_dir}", file=sys.stderr)
         return 2
 
-    print(f"Available {kind} logs in {logs_dir}:")
+    print(f"Available {resolved_kind} logs in {logs_dir}:")
     for info in logs:
         stamp = info.stamp.strftime('%Y.%m.%d') if info.stamp else 'unknown'
         suffix = ' (zip)' if info.is_zipped else ''
         print(f"  {stamp} -> {info.path.name}{suffix}")
+    return 0
+
+
+def _list_kinds() -> int:
+    print("Supported log kinds:")
+    for kind in SUPPORTED_KINDS:
+        print(f"  {kind}")
     return 0
 
 
@@ -341,6 +341,103 @@ def _resolve_staging_dir(
             "config.yaml or pass --staging-dir."
         )
     return candidate
+
+
+def _resolve_search_targets(
+    args: argparse.Namespace,
+    logs_dir: Path,
+    log_kind: str,
+) -> list[Path]:
+    log_files = _normalize_path_values(getattr(args, "log_file", None))
+    date_values = _normalize_text_values(getattr(args, "date", None))
+    if log_files and date_values:
+        raise ValueError("--log-file and --date cannot be used together.")
+
+    if log_files:
+        return _resolve_log_file_targets(logs_dir, log_kind, log_files)
+    if date_values:
+        return _resolve_date_targets(logs_dir, log_kind, date_values)
+    newest = newest_log(logs_dir, log_kind)
+    return [newest.path] if newest is not None else []
+
+
+def _resolve_log_file_targets(
+    logs_dir: Path,
+    log_kind: str,
+    log_files: list[Path],
+) -> list[Path]:
+    targets: list[Path] = []
+    seen: set[Path] = set()
+    kind_key = normalize_kind(log_kind)
+    for value in log_files:
+        target = value if value.is_absolute() else logs_dir / value
+        if not target.exists():
+            raise ValueError(f"Log file not found: {target}")
+        parsed = parse_log_filename(target)
+        if parsed.kind and parsed.kind != kind_key:
+            raise ValueError(
+                f"Log file {target.name} does not match kind {kind_key}."
+            )
+        resolved = target.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        targets.append(target)
+    return targets
+
+
+def _resolve_date_targets(
+    logs_dir: Path,
+    log_kind: str,
+    date_values: list[str],
+) -> list[Path]:
+    targets: list[Path] = []
+    seen: set[Path] = set()
+    for value in date_values:
+        target_date = parse_stamp(value)
+        info = find_log_by_date(logs_dir, log_kind, target_date)
+        if info is None:
+            raise ValueError(
+                f"No {log_kind} log found for {target_date:%Y.%m.%d} in "
+                f"{logs_dir}"
+            )
+        resolved = info.path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        targets.append(info.path)
+    return targets
+
+
+def _normalize_path_values(values: object) -> list[Path]:
+    if values is None:
+        return []
+    if isinstance(values, Path):
+        return [values]
+    return list(values)
+
+
+def _normalize_text_values(values: object) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [values]
+    return list(values)
+
+
+def _search_help_epilog() -> str:
+    kinds = ", ".join(SUPPORTED_KINDS)
+    return textwrap.dedent(
+        f"""
+        Target resolution:
+          1. If --log-file is provided (repeatable), those files are searched.
+          2. Else if --date is provided (repeatable), those dates are searched.
+          3. Else the newest available log for --kind is searched.
+
+        Available kinds:
+          {kinds}
+        """
+    ).strip()
 
 
 def scan_logs(logs_dir: Path) -> list[Path]:

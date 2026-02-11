@@ -14,13 +14,13 @@ This file tracks current search behavior and near-term design goals.
 
 Search handlers currently exist for:
 
-- `smtpLog`, `imapLog`, `popLog`
+- `smtp`, `imap`, `pop`
 - `delivery`
 - `administrative`
-- `imapRetrieval`
-- `activation`, `autoCleanFolders`, `calendars`, `contentFilter`, `event`,
-  `generalErrors`, `indexing`, `ldapLog`, `maintenance`, `profiler`,
-  `spamChecks`, `webdav`
+- `imapretrieval`
+- `activation`, `autocleanfolders`, `calendars`, `contentfilter`, `event`,
+  `generalerrors`, `indexing`, `ldap`, `maintenance`, `profiler`,
+  `spamchecks`, `webdav`
 
 ### Discovery and staging
 
@@ -33,7 +33,7 @@ Search handlers currently exist for:
 
 ### Grouping and rendering
 
-- SMTP/IMAP/POP, delivery, administrative, and imapRetrieval searches group
+- SMTP/IMAP/POP, delivery, administrative, and imapretrieval searches group
   related lines into conversations/entries by parsed identifiers.
 - Ungrouped kinds are grouped by timestamp-led entry boundaries so multiline
   entries stay together.
@@ -51,12 +51,11 @@ Search handlers currently exist for:
 ### CLI behavior
 
 - `search` and `browse` subcommands exist.
-- CLI search output is plain formatted text (no syntax colorization yet).
+- CLI search output uses the same syntax highlighting tokens as the TUI.
 - CLI does not provide interactive TUI workflows like sub-search chaining.
 
 ## Roadmap Items
 
-- Add syntax-highlighted output for CLI search results.
 - Bring CLI search/output behavior closer to TUI behavior where practical.
 - Add regex search mode with explicit mode flags and clear UX.
 - Add fuzzy/approximate search mode with configurable thresholds.

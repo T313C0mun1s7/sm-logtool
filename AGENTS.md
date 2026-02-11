@@ -55,6 +55,8 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
   iteration goes sideways and prevents repeated mistake loops.
 - Before making changes, confirm you are not on `main`. Switch to an appropriate
   feature branch so protected branches stay clean and reviewable.
+- When creating a new branch, ensure it is based on `origin/main`. If `origin`
+  is not on `main`, stop and confirm with the user before continuing.
 
 ## Security & Configuration Tips
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.

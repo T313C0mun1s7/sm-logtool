@@ -7,7 +7,7 @@ with:
 - A console search command (`search`) for quick scripted checks.
 - Log staging that copies or unzips source logs before analysis.
 - Conversation/entry grouping for supported SmarterMail log kinds.
-- Syntax-highlighted results in the TUI.
+- Syntax-highlighted results in both TUI and CLI output.
 
 ## Requirements
 
@@ -41,14 +41,14 @@ Configuration is YAML with these keys:
 
 - `logs_dir`: source SmarterMail logs directory.
 - `staging_dir`: working directory used for copied/unzipped logs.
-- `default_kind`: default log kind (for example `smtpLog`).
+- `default_kind`: default log kind (for example `smtp`).
 
 Example:
 
 ```yaml
 logs_dir: /var/lib/smartermail/Logs
 staging_dir: /var/tmp/sm-tool/logs
-default_kind: smtpLog
+default_kind: smtp
 ```
 
 If `staging_dir` does not exist yet, the app creates it automatically.
@@ -98,15 +98,37 @@ Date selection shortcuts:
 ### Run console search
 
 ```bash
-sm-logtool search "example.com" --kind smtpLog --date 2024.01.01
+sm-logtool search --kind smtp --date 2024.01.01 "example.com"
 ```
 
-Useful options:
+Minimum examples:
 
-- `--list` list available logs for a kind and exit
-- `--log-file` target one explicit file
-- `--case-sensitive` disable default case-insensitive matching
-- `--staging-dir` override staging directory for this run
+```bash
+# Search newest log for default_kind from config.yaml (default: smtp)
+sm-logtool search "john@prime42.net"
+
+# Search newest delivery log
+sm-logtool search --kind delivery "john@prime42.net"
+```
+
+Target resolution:
+
+1. If `--log-file` is provided (repeatable), those files are searched.
+2. Else if `--date` is provided (repeatable), those dates are searched.
+3. Else the newest available log for `--kind` is searched.
+
+Search options:
+
+- `--logs-dir`: source logs directory. Optional when `logs_dir` is set in
+  `config.yaml`.
+- `--staging-dir`: staging directory. Optional when `staging_dir` is set in
+  `config.yaml`.
+- `--kind`: log kind. Optional when `default_kind` is set in `config.yaml`.
+- `--date`: `YYYY.MM.DD` date to search. Repeat to search multiple dates.
+- `--log-file`: explicit file to search. Repeat to search multiple files.
+- `--list`: list available logs for the selected kind and exit.
+- `--list-kinds`: list supported kinds and exit.
+- `--case-sensitive`: disable default case-insensitive matching.
 
 Search terms are literal substrings (regex/fuzzy modes are not enabled in the
 current CLI/TUI search path).
@@ -115,13 +137,13 @@ current CLI/TUI search path).
 
 Search handlers currently exist for:
 
-- `smtpLog`, `imapLog`, `popLog`
+- `smtp`, `imap`, `pop`
 - `delivery`
 - `administrative`
-- `imapRetrieval`
-- `activation`, `autoCleanFolders`, `calendars`, `contentFilter`, `event`,
-  `generalErrors`, `indexing`, `ldapLog`, `maintenance`, `profiler`,
-  `spamChecks`, `webdav`
+- `imapretrieval`
+- `activation`, `autocleanfolders`, `calendars`, `contentfilter`, `event`,
+  `generalerrors`, `indexing`, `ldap`, `maintenance`, `profiler`,
+  `spamchecks`, `webdav`
 
 Log discovery expects SmarterMail-style names such as:
 `YYYY.MM.DD-kind.log` or `YYYY.MM.DD-kind.log.zip`.
