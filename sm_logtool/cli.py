@@ -15,6 +15,7 @@ from rich.console import Console
 
 from .config import AppConfig, ConfigError, load_config
 from .highlighting import highlight_line
+from .log_kinds import normalize_kind
 from .logfiles import (
     UnknownLogDate,
     find_log_by_date,
@@ -186,10 +187,11 @@ def _run_search(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    log_kind = args.kind or config.default_kind
-    if log_kind is None:
+    log_kind_value = args.kind or config.default_kind
+    if log_kind_value is None:
         print("Log kind is required.", file=sys.stderr)
         return 2
+    log_kind = normalize_kind(log_kind_value)
 
     if args.list:
         return _list_logs(logs_dir, log_kind)
@@ -267,12 +269,13 @@ def _write_highlighted(
 
 
 def _list_logs(logs_dir: Path, kind: str) -> int:
-    logs = summarize_logs(logs_dir, kind)
+    resolved_kind = normalize_kind(kind)
+    logs = summarize_logs(logs_dir, resolved_kind)
     if not logs:
-        print(f"No {kind} logs found in {logs_dir}", file=sys.stderr)
+        print(f"No {resolved_kind} logs found in {logs_dir}", file=sys.stderr)
         return 2
 
-    print(f"Available {kind} logs in {logs_dir}:")
+    print(f"Available {resolved_kind} logs in {logs_dir}:")
     for info in logs:
         stamp = info.stamp.strftime('%Y.%m.%d') if info.stamp else 'unknown'
         suffix = ' (zip)' if info.is_zipped else ''
@@ -328,14 +331,15 @@ def _resolve_log_file_targets(
 ) -> list[Path]:
     targets: list[Path] = []
     seen: set[Path] = set()
+    kind_key = normalize_kind(log_kind)
     for value in log_files:
         target = value if value.is_absolute() else logs_dir / value
         if not target.exists():
             raise ValueError(f"Log file not found: {target}")
         parsed = parse_log_filename(target)
-        if parsed.kind and parsed.kind.lower() != log_kind.lower():
+        if parsed.kind and parsed.kind != kind_key:
             raise ValueError(
-                f"Log file {target.name} does not match kind {log_kind}."
+                f"Log file {target.name} does not match kind {kind_key}."
             )
         resolved = target.resolve()
         if resolved in seen:

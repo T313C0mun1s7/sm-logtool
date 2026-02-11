@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 import yaml
 
+from .log_kinds import KIND_SMTP, normalize_kind
+
 
 class ConfigError(Exception):
     """Raised when the configuration file cannot be parsed."""
@@ -26,7 +28,7 @@ class AppConfig:
     path: Path
     logs_dir: Optional[Path] = None
     staging_dir: Optional[Path] = None
-    default_kind: str = "smtpLog"
+    default_kind: str = KIND_SMTP
 
     @property
     def exists(self) -> bool:
@@ -72,11 +74,12 @@ def load_config(path: Path | None = None) -> AppConfig:
 
     logs_dir = _coerce_path(raw.get("logs_dir"))
     staging_dir = _coerce_path(raw.get("staging_dir"))
-    default_kind = raw.get("default_kind", "smtpLog")
+    default_kind = raw.get("default_kind", KIND_SMTP)
 
     if not isinstance(default_kind, str):
         message = "Config key 'default_kind' must be a string"
         raise ConfigError(f"{message} (file: {config_path}).")
+    default_kind = normalize_kind(default_kind)
 
     return AppConfig(
         path=config_path,

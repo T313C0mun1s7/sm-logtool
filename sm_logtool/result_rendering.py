@@ -5,23 +5,39 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
+from .log_kinds import (
+    KIND_ACTIVATION,
+    KIND_ADMINISTRATIVE,
+    KIND_AUTOCLEANFOLDERS,
+    KIND_CALENDARS,
+    KIND_CONTENTFILTER,
+    KIND_EVENT,
+    KIND_GENERALERRORS,
+    KIND_INDEXING,
+    KIND_LDAP,
+    KIND_MAINTENANCE,
+    KIND_PROFILER,
+    KIND_SPAMCHECKS,
+    KIND_WEBDAV,
+    normalize_kind,
+)
 from .result_formatting import collect_widths, format_conversation_lines
 from .search import SmtpSearchResult
 
 UNGROUPED_KINDS = {
-    "administrative",
-    "activation",
-    "autocleanfolders",
-    "calendars",
-    "contentfilter",
-    "event",
-    "generalerrors",
-    "indexing",
-    "ldaplog",
-    "maintenance",
-    "profiler",
-    "spamchecks",
-    "webdav",
+    KIND_ADMINISTRATIVE,
+    KIND_ACTIVATION,
+    KIND_AUTOCLEANFOLDERS,
+    KIND_CALENDARS,
+    KIND_CONTENTFILTER,
+    KIND_EVENT,
+    KIND_GENERALERRORS,
+    KIND_INDEXING,
+    KIND_LDAP,
+    KIND_MAINTENANCE,
+    KIND_PROFILER,
+    KIND_SPAMCHECKS,
+    KIND_WEBDAV,
 }
 
 
@@ -36,7 +52,7 @@ def render_search_results(
         raise ValueError("results and targets must have matching lengths")
 
     rendered_lines: list[str] = []
-    kind_key = kind.lower()
+    kind_key = normalize_kind(kind)
     is_ungrouped = kind_key in UNGROUPED_KINDS
     label = "entry" if is_ungrouped else "conversation"
 

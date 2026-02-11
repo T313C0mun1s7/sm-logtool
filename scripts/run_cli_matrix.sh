@@ -118,6 +118,7 @@ with ZipFile(zip_path, "w") as archive:
 PY
 
 CLI_CMD="$PYTHON_BIN -m sm_logtool.cli"
+COMMON_ARGS="--logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\""
 CASE_TOTAL=0
 CASE_FAILED=0
 
@@ -132,7 +133,7 @@ CASE_FAILED=0
   printf "%-4s %-6s %-11s %-11s %-40s %s\n" \
     "ID" "Result" "Expected" "Observed" "Case" "Log"
   printf "%s\n" \
-    "--------------------------------------------------------------------------------"
+    "---------------------------------------------------------------------"
 } > "$SUMMARY_FILE"
 
 slugify() {
@@ -226,81 +227,88 @@ run_case \
 run_case \
   "List smtp logs" \
   0 \
-  "$CLI_CMD search --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --list" \
-  "Available smtpLog logs"
+  "$CLI_CMD search $COMMON_ARGS --kind smtp --list" \
+  "Available smtp logs"
 
 run_case \
   "Newest smtp search" \
   0 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp" \
   "=== 2026.02.10-smtpLog.log ==="
 
 run_case \
   "Single-date smtp search" \
   0 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026.02.09" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp --date 2026.02.09" \
   "=== 2026.02.09-smtpLog.log ==="
 
 run_case \
   "Multi-date smtp search" \
   0 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026.02.09 --date 2026.02.10" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp --date 2026.02.09 \
+--date 2026.02.10" \
   "=== 2026.02.09-smtpLog.log ===" \
   "=== 2026.02.10-smtpLog.log ==="
 
 run_case \
   "Multi-log-file smtp search" \
   0 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --log-file 2026.02.09-smtpLog.log --log-file 2026.02.10-smtpLog.log" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp \
+--log-file 2026.02.09-smtpLog.log --log-file 2026.02.10-smtpLog.log" \
   "=== 2026.02.09-smtpLog.log ===" \
   "=== 2026.02.10-smtpLog.log ==="
 
 run_case \
   "Zip log date search" \
   0 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026.02.08" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp --date 2026.02.08" \
   "=== 2026.02.08-smtpLog.log.zip ==="
 
 run_case \
   "IMAP retrieval search" \
   0 \
-  "$CLI_CMD search Socket.Connect --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind imapRetrieval --date 2026.02.10" \
+  "$CLI_CMD search Socket.Connect $COMMON_ARGS --kind imapretrieval \
+--date 2026.02.10" \
   "=== 2026.02.10-imapRetrieval.log ==="
 
 run_case \
   "No matches output" \
   0 \
-  "$CLI_CMD search does-not-exist --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026.02.09" \
+  "$CLI_CMD search does-not-exist $COMMON_ARGS --kind smtp \
+--date 2026.02.09" \
   "No matches found."
 
 run_case \
   "Case-sensitive no-match" \
   0 \
-  "$CLI_CMD search ehlo --case-sensitive --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026.02.09" \
+  "$CLI_CMD search ehlo --case-sensitive $COMMON_ARGS --kind smtp \
+--date 2026.02.09" \
   "No matches found."
 
 run_case \
   "Reject mixed date and log-file" \
   2 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026.02.09 --log-file 2026.02.09-smtpLog.log" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp --date 2026.02.09 \
+--log-file 2026.02.09-smtpLog.log" \
   "--log-file and --date cannot be used together."
 
 run_case \
   "Reject mismatched file kind" \
   2 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --log-file 2026.02.10-imapLog.log" \
-  "does not match kind smtpLog."
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp \
+--log-file 2026.02.10-imapLog.log" \
+  "does not match kind smtp."
 
 run_case \
   "Reject invalid date format" \
   2 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind smtpLog --date 2026-02-09" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind smtp --date 2026-02-09" \
   "Invalid log date stamp"
 
 run_case \
   "Reject unsupported kind" \
   2 \
-  "$CLI_CMD search EHLO --logs-dir \"$LOGS_DIR\" --staging-dir \"$STAGING_DIR\" --kind unknownKind --date 2026.02.09" \
+  "$CLI_CMD search EHLO $COMMON_ARGS --kind unknownKind --date 2026.02.09" \
   "Unsupported log kind"
 
 {

@@ -5,6 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
+from .log_kinds import (
+    KIND_ADMINISTRATIVE,
+    KIND_AUTOCLEANFOLDERS,
+    KIND_DELIVERY,
+    KIND_IMAP,
+    KIND_IMAP_RETRIEVAL,
+    KIND_INDEXING,
+    KIND_POP,
+    KIND_SMTP,
+    KIND_WEBDAV,
+    normalize_kind,
+)
 from .log_parsers import (
     TimeLogLine,
     parse_bracket1_line,
@@ -33,7 +45,7 @@ def collect_widths(
 
     widths = ColumnWidths()
     found = False
-    kind_key = kind.lower()
+    kind_key = normalize_kind(kind)
 
     for conversation in conversations:
         for line in conversation.lines:
@@ -66,7 +78,7 @@ def format_conversation_lines(
     if widths is None:
         return [line.rstrip("\n") for line in lines]
 
-    kind_key = kind.lower()
+    kind_key = normalize_kind(kind)
     prefix = _continuation_prefix(kind_key, widths)
     formatted: list[str] = []
 
@@ -89,7 +101,7 @@ def format_conversation_lines(
 
 
 def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
-    if kind_key in {"smtplog", "imaplog", "poplog"}:
+    if kind_key in {KIND_SMTP, KIND_IMAP, KIND_POP}:
         entry = parse_smtp_line(line)
         if entry is None:
             return None
@@ -99,7 +111,7 @@ def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
             "log_id": entry.log_id,
             "message": entry.message,
         }
-    if kind_key == "delivery":
+    if kind_key == KIND_DELIVERY:
         entry = parse_delivery_line(line)
         if entry is None:
             return None
@@ -108,7 +120,7 @@ def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
             "log_id": entry.delivery_id,
             "message": entry.message,
         }
-    if kind_key == "imapretrieval":
+    if kind_key == KIND_IMAP_RETRIEVAL:
         entry = parse_imap_retrieval_line(line)
         if entry is None:
             return None
@@ -119,10 +131,10 @@ def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
             "message": entry.message,
         }
     if kind_key in {
-        "administrative",
-        "autocleanfolders",
-        "indexing",
-        "webdav",
+        KIND_ADMINISTRATIVE,
+        KIND_AUTOCLEANFOLDERS,
+        KIND_INDEXING,
+        KIND_WEBDAV,
     }:
         entry = parse_bracket1_line(line)
         if entry is None:
@@ -145,7 +157,7 @@ def _format_entry(
     time = entry["time"]
     message = entry["message"]
 
-    if kind_key in {"smtplog", "imaplog", "poplog"}:
+    if kind_key in {KIND_SMTP, KIND_IMAP, KIND_POP}:
         ip = entry["ip"]
         log_id = entry["log_id"]
         ip_pad = " " * (widths.ip - len(ip) + 1)
@@ -156,7 +168,7 @@ def _format_entry(
             f"[{log_id}]{id_pad}"
             f"{message}"
         )
-    if kind_key == "delivery":
+    if kind_key == KIND_DELIVERY:
         log_id = entry["log_id"]
         id_pad = " " * (widths.log_id - len(log_id) + 1)
         return (
@@ -164,7 +176,7 @@ def _format_entry(
             f"[{log_id}]{id_pad}"
             f"{message}"
         )
-    if kind_key == "imapretrieval":
+    if kind_key == KIND_IMAP_RETRIEVAL:
         retrieval_id = entry["ip"]
         context = entry["log_id"]
         id_pad = " " * (widths.ip - len(retrieval_id) + 1)
@@ -176,10 +188,10 @@ def _format_entry(
             f"{message}"
         )
     if kind_key in {
-        "administrative",
-        "autocleanfolders",
-        "indexing",
-        "webdav",
+        KIND_ADMINISTRATIVE,
+        KIND_AUTOCLEANFOLDERS,
+        KIND_INDEXING,
+        KIND_WEBDAV,
     }:
         ip = entry["ip"]
         ip_pad = " " * (widths.ip - len(ip) + 1)
@@ -203,18 +215,17 @@ def _continuation_prefix(
 
 
 def _message_column(kind_key: str, widths: ColumnWidths) -> int:
-    if kind_key in {"smtplog", "imaplog", "poplog"}:
+    if kind_key in {KIND_SMTP, KIND_IMAP, KIND_POP}:
         return widths.time + widths.ip + widths.log_id + 7
-    if kind_key == "delivery":
+    if kind_key == KIND_DELIVERY:
         return widths.time + widths.log_id + 4
-    if kind_key == "imapretrieval":
+    if kind_key == KIND_IMAP_RETRIEVAL:
         return widths.time + widths.ip + widths.log_id + 7
     if kind_key in {
-        "administrative",
-        "autocleanfolders",
-        "indexing",
-        "webdav",
+        KIND_ADMINISTRATIVE,
+        KIND_AUTOCLEANFOLDERS,
+        KIND_INDEXING,
+        KIND_WEBDAV,
     }:
         return widths.time + widths.ip + 4
     return widths.time + 1
-    return 0

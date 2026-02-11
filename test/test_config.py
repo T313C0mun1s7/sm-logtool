@@ -15,7 +15,7 @@ def test_load_config_missing_file(tmp_path):
     assert app_config.path == cfg_path
     assert not app_config.exists
     assert app_config.logs_dir is None
-    assert app_config.default_kind == "smtpLog"
+    assert app_config.default_kind == "smtp"
 
 
 def test_load_config_reads_values(tmp_path):
@@ -33,7 +33,7 @@ def test_load_config_reads_values(tmp_path):
 
     assert app_config.logs_dir == logs_dir
     assert app_config.staging_dir == staging_dir
-    assert app_config.default_kind == "imapLog"
+    assert app_config.default_kind == "imap"
 
 
 def test_load_config_rejects_non_mapping(tmp_path):

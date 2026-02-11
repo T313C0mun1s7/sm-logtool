@@ -34,6 +34,7 @@ from textual._text_area_theme import TextAreaTheme
 from rich.text import Text
 
 from ..highlighting import TOKEN_STYLES
+from ..log_kinds import KIND_SMTP, normalize_kind
 from ..logfiles import (
     LogFileInfo,
     parse_log_filename,
@@ -1188,7 +1189,7 @@ class LogBrowser(App):
 
     logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
-    default_kind: reactive[Optional[str]] = reactive("smtpLog")
+    default_kind: reactive[Optional[str]] = reactive(KIND_SMTP)
 
     def __init__(
         self,
@@ -1199,7 +1200,7 @@ class LogBrowser(App):
         super().__init__()
         self.logs_dir = logs_dir
         self.staging_dir = staging_dir
-        self.default_kind = default_kind or "smtpLog"
+        self.default_kind = normalize_kind(default_kind or KIND_SMTP)
         self._logs_by_kind: Dict[str, List[LogFileInfo]] = {}
         self.current_kind: Optional[str] = None
         self.selected_logs: list[LogFileInfo] = []
@@ -1397,8 +1398,8 @@ class LogBrowser(App):
     def _initial_kind_choice(self, kinds_sorted: list[str]) -> str | None:
         if self.default_kind in self._logs_by_kind:
             return self.default_kind
-        if "smtpLog" in self._logs_by_kind:
-            return "smtpLog"
+        if KIND_SMTP in self._logs_by_kind:
+            return KIND_SMTP
         return kinds_sorted[0] if kinds_sorted else None
 
     def _default_date_indices(self, infos: list[LogFileInfo]) -> list[int]:

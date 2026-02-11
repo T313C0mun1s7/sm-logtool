@@ -67,7 +67,7 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -106,7 +106,7 @@ def test_run_search_supports_imap_retrieval_kind(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="imapRetrieval",
+        default_kind="imapretrieval",
     )
 
     exit_code = cli._run_search(args)
@@ -142,7 +142,7 @@ def test_run_search_displays_no_matches_message(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -181,7 +181,7 @@ def test_run_search_supports_multiple_dates(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -221,7 +221,7 @@ def test_run_search_supports_multiple_log_files(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -256,13 +256,13 @@ def test_run_search_rejects_mismatched_log_file_kind(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
     assert exit_code == 2
     captured = capsys.readouterr()
-    assert "does not match kind smtpLog" in captured.err
+    assert "does not match kind smtp" in captured.err
 
 
 def test_run_search_rejects_mixed_date_and_log_file(tmp_path, capsys):
@@ -289,7 +289,7 @@ def test_run_search_rejects_mixed_date_and_log_file(tmp_path, capsys):
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -339,7 +339,7 @@ def test_run_search_uses_syntax_highlighting_in_cli_output(
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=staging_dir,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -365,7 +365,7 @@ def test_run_search_requires_logs_dir_from_config_or_flag(capsys):
         path=Path("config.yaml"),
         logs_dir=None,
         staging_dir=None,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)
@@ -396,7 +396,7 @@ def test_run_search_requires_staging_dir_from_config_or_flag(
         path=Path("config.yaml"),
         logs_dir=logs_dir,
         staging_dir=None,
-        default_kind="smtpLog",
+        default_kind="smtp",
     )
 
     exit_code = cli._run_search(args)

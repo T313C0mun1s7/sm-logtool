@@ -7,7 +7,7 @@ with:
 - A console search command (`search`) for quick scripted checks.
 - Log staging that copies or unzips source logs before analysis.
 - Conversation/entry grouping for supported SmarterMail log kinds.
-- Syntax-highlighted results in the TUI.
+- Syntax-highlighted results in both TUI and CLI output.
 
 ## Requirements
 
@@ -41,14 +41,14 @@ Configuration is YAML with these keys:
 
 - `logs_dir`: source SmarterMail logs directory.
 - `staging_dir`: working directory used for copied/unzipped logs.
-- `default_kind`: default log kind (for example `smtpLog`).
+- `default_kind`: default log kind (for example `smtp`).
 
 Example:
 
 ```yaml
 logs_dir: /var/lib/smartermail/Logs
 staging_dir: /var/tmp/sm-tool/logs
-default_kind: smtpLog
+default_kind: smtp
 ```
 
 If `staging_dir` does not exist yet, the app creates it automatically.
@@ -98,7 +98,7 @@ Date selection shortcuts:
 ### Run console search
 
 ```bash
-sm-logtool search "example.com" --kind smtpLog --date 2024.01.01
+sm-logtool search "example.com" --kind smtp --date 2024.01.01
 ```
 
 Useful options:
@@ -115,13 +115,13 @@ current CLI/TUI search path).
 
 Search handlers currently exist for:
 
-- `smtpLog`, `imapLog`, `popLog`
+- `smtp`, `imap`, `pop`
 - `delivery`
 - `administrative`
-- `imapRetrieval`
-- `activation`, `autoCleanFolders`, `calendars`, `contentFilter`, `event`,
-  `generalErrors`, `indexing`, `ldapLog`, `maintenance`, `profiler`,
-  `spamChecks`, `webdav`
+- `imapretrieval`
+- `activation`, `autocleanfolders`, `calendars`, `contentfilter`, `event`,
+  `generalerrors`, `indexing`, `ldap`, `maintenance`, `profiler`,
+  `spamchecks`, `webdav`
 
 Log discovery expects SmarterMail-style names such as:
 `YYYY.MM.DD-kind.log` or `YYYY.MM.DD-kind.log.zip`.
