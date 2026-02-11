@@ -54,8 +54,9 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 
 ## Upcoming Work
 - [x] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
-- [x] Add syntax highlighting for SMTP conversations in the TUI view.
-- [ ] Add syntax highlighting for SMTP conversations in the CLI view.
+- [x] Add syntax highlighting for supported log kinds in the TUI view.
+- [ ] Add syntax highlighting for supported log kinds in the CLI view.
+- [ ] Bring CLI search and output behavior to parity with the TUI across supported log kinds.
 - [ ] Plan packaging/distribution (standalone binaries, pipx, release workflow).
 - [x] Introduce a YAML config file to store default log paths and other settings.
 - [x] Replace the old multipane layout with the new wizard flow so list panels size appropriately while preserving output space.
