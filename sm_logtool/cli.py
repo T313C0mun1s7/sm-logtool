@@ -19,7 +19,8 @@ from .logfiles import (
     parse_stamp,
     summarize_logs,
 )
-from .search import search_smtp_conversations
+from .result_formatting import collect_widths, format_conversation_lines
+from .search import get_search_function
 from .staging import DEFAULT_STAGING_ROOT, stage_log
 
 
@@ -172,7 +173,10 @@ def _run_search(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     logs_dir = _resolve_logs_dir(args, config)
     staging_dir = _resolve_staging_dir(args, config)
-    log_kind: str = args.kind or config.default_kind
+    log_kind = args.kind or config.default_kind
+    if log_kind is None:
+        print("Log kind is required.", file=sys.stderr)
+        return 2
 
     if args.list:
         return _list_logs(logs_dir, log_kind)
@@ -229,35 +233,73 @@ def _run_search(args: argparse.Namespace) -> int:
         print(f"Failed to stage log {log_path}: {exc}", file=sys.stderr)
         return 1
 
-    result = search_smtp_conversations(
+    search_fn = get_search_function(log_kind)
+    if search_fn is None:
+        print(f"Unsupported log kind: {log_kind}", file=sys.stderr)
+        return 2
+
+    result = search_fn(
         staged.staged_path,
         args.term,
         ignore_case=not args.case_sensitive,
     )
 
-    _print_search_summary(result, info_source)
+    _print_search_summary(result, info_source, log_kind)
     return 0
 
 
-def _print_search_summary(result, source_path: Path) -> None:
+def _print_search_summary(
+    result,
+    source_path: Path,
+    log_kind: str,
+) -> None:
+    kind_key = log_kind.lower()
+    ungrouped_kinds = {
+        "administrative",
+        "activation",
+        "autocleanfolders",
+        "calendars",
+        "contentfilter",
+        "event",
+        "generalerrors",
+        "indexing",
+        "ldaplog",
+        "maintenance",
+        "profiler",
+        "spamchecks",
+        "webdav",
+    }
+    is_ungrouped = kind_key in ungrouped_kinds
+    label = "entry" if is_ungrouped else "conversation"
     print(
         f"Search term '{result.term}' -> "
-        f"{result.total_conversations} conversation(s) in {source_path.name}"
+        f"{result.total_conversations} {label}(s) in {source_path.name}"
     )
+    widths = collect_widths(log_kind, result.conversations)
     for conversation in result.conversations:
-        print()
-        print(
-            f"[{conversation.message_id}] first seen on line "
-            f"{conversation.first_line_number}"
+        if not is_ungrouped:
+            print()
+            print(
+                f"[{conversation.message_id}] first seen on line "
+                f"{conversation.first_line_number}"
+            )
+        formatted = format_conversation_lines(
+            log_kind,
+            conversation.lines,
+            widths,
         )
-        for line in conversation.lines:
+        for line in formatted:
             print(line)
 
     if result.orphan_matches:
-        print()
-        print("Lines without message identifiers that matched:")
+        if not is_ungrouped:
+            print()
+            print("Lines without message identifiers that matched:")
         for line_number, line in result.orphan_matches:
-            print(f"{line_number}: {line}")
+            if is_ungrouped:
+                print(line)
+            else:
+                print(f"{line_number}: {line}")
 
 
 def _list_logs(logs_dir: Path, kind: str) -> int:
@@ -275,7 +317,11 @@ def _list_logs(logs_dir: Path, kind: str) -> int:
 
 
 def _resolve_logs_dir(args: argparse.Namespace, config: AppConfig) -> Path:
-    candidate = args.logs_dir or config.logs_dir or DEFAULT_LOGS_DIR
+    candidate = (
+        getattr(args, "logs_dir", None)
+        or config.logs_dir
+        or DEFAULT_LOGS_DIR
+    )
     return candidate
 
 

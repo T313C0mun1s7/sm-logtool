@@ -42,4 +42,3 @@ def test_load_config_rejects_non_mapping(tmp_path):
 
     with pytest.raises(config.ConfigError):
         config.load_config(cfg_path)
-

@@ -35,7 +35,10 @@ def test_scan_logs_lists_files(tmp_path):
 
     files = cli.scan_logs(logs_dir)
 
-    assert [file.name for file in files] == ["2024-05-01.log", "2024-05-02.log"]
+    assert [file.name for file in files] == [
+        "2024-05-01.log",
+        "2024-05-02.log",
+    ]
 
 
 def test_run_search_supports_date_selection(tmp_path, capsys):
@@ -44,7 +47,10 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
     zip_path = logs_dir / '2024.01.01-smtpLog.log.zip'
     create_smtp_zip(
         zip_path,
-        "00:00:00 [1.1.1.1][MSG1] initial\n00:00:01 [1.1.1.1][MSG1] HELLO there\n",
+        (
+            "00:00:00 [1.1.1.1][MSG1] initial\n"
+            "00:00:01 [1.1.1.1][MSG1] HELLO there\n"
+        ),
     )
 
     args = argparse.Namespace(
@@ -70,5 +76,3 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
     captured = capsys.readouterr()
     assert 'MSG1' in captured.out
     assert 'Search term' in captured.out
-
-

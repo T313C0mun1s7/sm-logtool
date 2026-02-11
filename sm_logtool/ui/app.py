@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import inspect
-from datetime import date
+from collections import defaultdict
+from datetime import date, datetime
 from enum import Enum, auto
+from itertools import groupby
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
@@ -12,8 +14,10 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
+from textual.selection import Selection
 from textual.widgets import (
     Button,
     Footer,
@@ -23,13 +27,19 @@ from textual.widgets import (
     ListView,
     Static,
 )
+from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
+from rich.text import Text
 
 from ..logfiles import (
     LogFileInfo,
     parse_log_filename,
     summarize_logs,
 )
-from ..search import search_smtp_conversations
+from ..result_formatting import (
+    collect_widths,
+    format_conversation_lines,
+)
+from ..search import get_search_function
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
 try:
@@ -47,7 +57,12 @@ if _BaseLog is not None:
     class OutputLog(_BaseLog):
         """Text log widget that adapts to Textual version differences."""
 
-        def __init__(self, *, id: str | None = None) -> None:
+        def __init__(
+            self,
+            *,
+            id: str | None = None,
+            classes: str | None = None,
+        ) -> None:
             kwargs = {}
             init_sig = inspect.signature(_BaseLog.__init__)
             if "highlight" in init_sig.parameters:
@@ -56,15 +71,187 @@ if _BaseLog is not None:
                 kwargs["wrap"] = True
             if "id" in init_sig.parameters:
                 kwargs["id"] = id
+            if "classes" in init_sig.parameters:
+                kwargs["classes"] = classes
             super().__init__(**kwargs)  # type: ignore[arg-type]
+            self._selection_anchor: Offset | None = None
+            self._selection_cursor: Offset | None = None
+            self._cursor_only = False
+
+        def clear_selection(self) -> None:
+            try:
+                screen = self.screen
+            except Exception:
+                return
+            selections = dict(screen.selections)
+            if self in selections:
+                del selections[self]
+                screen.selections = selections
+            self._selection_anchor = None
+            self._selection_cursor = None
+            self._cursor_only = False
+
+        def cursor_only_selection(self) -> bool:
+            return self._cursor_only
+
+        def _set_selection(
+            self,
+            start: Offset,
+            end: Offset,
+        ) -> None:
+            try:
+                screen = self.screen
+            except Exception:
+                return
+            selections = dict(screen.selections)
+            selections[self] = Selection.from_offsets(start, end)
+            screen.selections = selections
+
+        def _cursor_span(self) -> tuple[Offset, Offset]:
+            cursor = self._selection_cursor
+            if cursor is None:
+                cursor = Offset(0, 0)
+                self._selection_cursor = cursor
+            line = self.lines[cursor.y] if self.lines else ""
+            line_len = len(line)
+            if line_len == 0:
+                start = cursor
+                end = cursor
+            elif cursor.x >= line_len:
+                start = Offset(max(line_len - 1, 0), cursor.y)
+                end = Offset(line_len, cursor.y)
+            else:
+                start = cursor
+                end = Offset(cursor.x + 1, cursor.y)
+            return start, end
+
+        def _move_cursor(
+            self,
+            *,
+            dx: int = 0,
+            dy: int = 0,
+            extend: bool = False,
+        ) -> None:
+            scroll_x, scroll_y = self.scroll_offset
+            if self._selection_cursor is None:
+                self._selection_cursor = Offset(scroll_x, scroll_y)
+            if extend and self._selection_anchor is None:
+                self._selection_anchor = self._selection_cursor
+            cursor = self._selection_cursor
+            max_y = max(self.line_count - 1, 0)
+            new_y = min(max(cursor.y + dy, 0), max_y)
+            line = self.lines[new_y] if self.lines else ""
+            max_x = len(line)
+            new_x = min(max(cursor.x + dx, 0), max_x)
+            self._selection_cursor = Offset(new_x, new_y)
+
+            if extend:
+                self._cursor_only = False
+                assert self._selection_anchor is not None
+                self._set_selection(
+                    self._selection_anchor,
+                    self._selection_cursor,
+                )
+            else:
+                self._cursor_only = True
+                self._selection_anchor = self._selection_cursor
+                start, end = self._cursor_span()
+                self._set_selection(start, end)
+
+            view_height = max(self.size.height, 1)
+            view_width = max(self.size.width, 1)
+            target_y: int | None = None
+            target_x: int | None = None
+            if new_y < scroll_y:
+                target_y = new_y
+            elif new_y >= scroll_y + view_height:
+                target_y = new_y - view_height + 1
+            if new_x < scroll_x:
+                target_x = new_x
+            elif new_x >= scroll_x + view_width:
+                target_x = new_x - view_width + 1
+            if target_x is not None or target_y is not None:
+                self.scroll_to(
+                    x=target_x,
+                    y=target_y,
+                    animate=False,
+                    immediate=True,
+                )
+
+        def show_cursor(self) -> None:
+            if self.line_count <= 0:
+                return
+            try:
+                _ = self.screen
+            except Exception:
+                return
+            self._move_cursor(dx=0, dy=0, extend=False)
+
+        def on_mouse_down(
+            self,
+            event: events.MouseDown,
+        ) -> None:  # pragma: no cover - UI behaviour
+            scroll_x, scroll_y = self.scroll_offset
+            self._selection_cursor = Offset(
+                scroll_x + event.x,
+                scroll_y + event.y,
+            )
+            self._selection_anchor = self._selection_cursor
+            self._cursor_only = False
+            super().on_mouse_down(event)
+
+        def on_key(
+            self,
+            event: events.Key,
+        ) -> None:  # pragma: no cover - UI behaviour
+            aliases = set(event.aliases)
+            if not aliases.intersection(
+                {
+                    "shift+up",
+                    "shift+down",
+                    "shift+left",
+                    "shift+right",
+                }
+            ):
+                if aliases.intersection({"up", "down", "left", "right"}):
+                    dx, dy = 0, 0
+                    if "up" in aliases:
+                        dy = -1
+                    elif "down" in aliases:
+                        dy = 1
+                    elif "left" in aliases:
+                        dx = -1
+                    elif "right" in aliases:
+                        dx = 1
+                    self._move_cursor(dx=dx, dy=dy, extend=False)
+                    event.stop()
+                return
+
+            dx, dy = 0, 0
+            if "shift+up" in aliases:
+                dy = -1
+            elif "shift+down" in aliases:
+                dy = 1
+            elif "shift+left" in aliases:
+                dx = -1
+            elif "shift+right" in aliases:
+                dx = 1
+            self._move_cursor(dx=dx, dy=dy, extend=True)
+            event.stop()
+            return
 
 else:
 
     class OutputLog(Static):  # type: ignore[no-redef]
         """Fallback when neither TextLog nor Log widgets are available."""
 
-        def __init__(self, *, id: str | None = None) -> None:
-            super().__init__("", id=id)
+        def __init__(
+            self,
+            *,
+            id: str | None = None,
+            classes: str | None = None,
+        ) -> None:
+            super().__init__("", id=id, classes=classes)
             self._lines: list[str] = []
 
         def write(self, text: str) -> None:  # type: ignore[override]
@@ -74,6 +261,9 @@ else:
         def clear(self) -> None:  # type: ignore[override]
             self._lines.clear()
             self.update("")
+
+        def clear_selection(self) -> None:
+            return
 
 
 class WizardStep(Enum):
@@ -160,6 +350,189 @@ class DateSelectionChanged(Message):
         super().__init__()
         self.sender = sender
         self.infos = infos
+
+
+class WizardBody(Vertical):
+    can_focus = True
+    BINDINGS = [
+        Binding(
+            "ctrl+u",
+            "app.menu",
+            "Menu",
+            show=True,
+            key_display="CTRL+U",
+            priority=True,
+        ),
+        Binding(
+            "ctrl+q",
+            "app.quit",
+            "Quit",
+            show=True,
+            key_display="CTRL+Q",
+            priority=True,
+        ),
+        Binding(
+            "ctrl+r",
+            "app.reset",
+            "Reset Search",
+            show=True,
+            key_display="CTRL+R",
+        ),
+        Binding(
+            "ctrl+f",
+            "app.focus_search",
+            "Focus search",
+            show=True,
+            key_display="CTRL+F",
+        ),
+    ]
+
+
+class SearchInput(Input, inherit_bindings=False):
+    BINDINGS = [
+        Binding("left", "cursor_left", show=False),
+        Binding("right", "cursor_right", show=False),
+        Binding("home", "home", show=False),
+        Binding("end", "end", show=False),
+        Binding("backspace", "delete_left", show=False),
+        Binding("delete", "delete_right", show=False),
+        Binding("enter", "submit", show=False),
+    ]
+
+
+class MnemonicFooterKey(FooterKey):
+    def __init__(
+        self,
+        *args: object,
+        mnemonic_index: int | None = None,
+        **kwargs: object,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._mnemonic_index = mnemonic_index
+
+    def render(self) -> Text:
+        key_style = self.get_component_rich_style("footer-key--key")
+        description_style = self.get_component_rich_style(
+            "footer-key--description"
+        )
+        key_display = self.key_display
+        key_padding = self.get_component_styles("footer-key--key").padding
+        description_padding = self.get_component_styles(
+            "footer-key--description"
+        ).padding
+
+        description = self.description
+        if description:
+            key_text = Text(
+                " " * key_padding.left + key_display + " " * key_padding.right,
+                style=key_style,
+            )
+            desc_text = Text(
+                " " * description_padding.left
+                + description
+                + " " * description_padding.right,
+                style=description_style,
+            )
+            if self._mnemonic_index is not None:
+                bold_pos = description_padding.left + self._mnemonic_index
+                if 0 <= bold_pos < len(desc_text):
+                    desc_text.stylize(
+                        "bold",
+                        bold_pos,
+                        bold_pos + 1,
+                    )
+            label_text = Text.assemble(key_text, desc_text)
+        else:
+            label_text = Text.assemble((key_display, key_style))
+
+        label_text.stylize_before(self.rich_style)
+        return label_text
+
+
+class MenuFooter(Footer):
+    def _mnemonic_index(self, binding: Binding) -> int | None:
+        description = binding.description
+        if not description:
+            return None
+        letters = [char for char in binding.key if char.isalpha()]
+        if not letters:
+            return None
+        target = letters[-1]
+        for idx, char in enumerate(description):
+            if char.lower() == target.lower():
+                return idx
+        return None
+
+    def _build_footer_key(
+        self,
+        binding: Binding,
+        enabled: bool,
+        tooltip: str,
+        *,
+        grouped: bool = False,
+    ) -> FooterKey:
+        key_display = self.app.get_key_display(binding)
+        classes = "-grouped" if grouped else ""
+        mnemonic_index = self._mnemonic_index(binding)
+        if mnemonic_index is not None and binding.description:
+            return MnemonicFooterKey(
+                binding.key,
+                key_display,
+                binding.description,
+                binding.action,
+                disabled=not enabled,
+                tooltip=tooltip or binding.description,
+                classes=classes,
+                mnemonic_index=mnemonic_index,
+            ).data_bind(compact=Footer.compact)
+        return FooterKey(
+            binding.key,
+            key_display,
+            "" if grouped else binding.description,
+            binding.action,
+            disabled=not enabled,
+            tooltip=tooltip,
+            classes=classes,
+        ).data_bind(compact=Footer.compact)
+
+    def compose(self) -> ComposeResult:
+        if not self._bindings_ready:
+            return
+        active_bindings = self.screen.active_bindings
+        bindings = [
+            (binding, enabled, tooltip)
+            for (_, binding, enabled, tooltip) in active_bindings.values()
+            if binding.show
+        ]
+        action_to_bindings: defaultdict[str, list[tuple[Binding, bool, str]]]
+        action_to_bindings = defaultdict(list)
+        for binding, enabled, tooltip in bindings:
+            action_to_bindings[binding.action].append(
+                (binding, enabled, tooltip)
+            )
+
+        self.styles.grid_size_columns = len(action_to_bindings)
+
+        for group, multi_bindings_iterable in groupby(
+            action_to_bindings.values(),
+            lambda multi_bindings_: multi_bindings_[0][0].group,
+        ):
+            multi_bindings = list(multi_bindings_iterable)
+            if group is not None and len(multi_bindings) > 1:
+                with KeyGroup(classes="-compact" if group.compact else ""):
+                    for multi_bindings in multi_bindings:
+                        binding, enabled, tooltip = multi_bindings[0]
+                        yield self._build_footer_key(
+                            binding,
+                            enabled,
+                            tooltip,
+                            grouped=True,
+                        )
+                yield FooterLabel(group.description)
+            else:
+                for multi_bindings in multi_bindings:
+                    binding, enabled, tooltip = multi_bindings[0]
+                    yield self._build_footer_key(binding, enabled, tooltip)
 
 
 class DateListView(ListView):
@@ -326,6 +699,10 @@ class LogBrowser(App):
         padding: 1 0;
     }
 
+    .button-row {
+        height: auto;
+    }
+
     .button-row Button {
         margin-right: 1;
     }
@@ -356,16 +733,41 @@ class LogBrowser(App):
         color: black;
     }
 
-    #result-log {
+    .result-log {
+        height: 1fr;
+        width: 1fr;
+    }
+
+    .results-header {
+        height: auto;
+    }
+
+    .results-spacer {
+        width: 1fr;
+    }
+
+    .results-help {
+        text-align: right;
+    }
+
+    .results-body {
         height: 1fr;
     }
-    """
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit", show=True),
-        Binding("r", "reset", "Reset Search", show=True),
-        Binding("/", "focus_search", "Focus search", show=True),
-    ]
+    .button-spacer {
+        width: 1fr;
+        height: 1;
+    }
+
+    .button-row > Horizontal {
+        height: auto;
+    }
+
+    .right-buttons Button {
+        margin-left: 1;
+        margin-right: 0;
+    }
+    """
 
     logs_dir: reactive[Path] = reactive(Path.cwd() / "sample_logs")
     staging_dir: reactive[Optional[Path]] = reactive(None)
@@ -390,12 +792,21 @@ class LogBrowser(App):
         self.search_input: Input | None = None
         self.output_log: OutputLog | None = None
         self.footer: Footer | None = None
+        self.subsearch_path: Path | None = None
+        self.subsearch_active = False
+        self.subsearch_kind: str | None = None
+        self.subsearch_depth = 0
+        self.last_rendered_lines: list[str] | None = None
+        self.subsearch_terms: list[str] = []
+        self.subsearch_paths: list[Path] = []
+        self.subsearch_rendered: list[list[str]] = []
+        self._result_log_counter = 0
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
-        yield Header(show_clock=False)
-        self.wizard = Vertical(id="wizard-body")
+        yield Header(show_clock=False, icon="Menu")
+        self.wizard = WizardBody(id="wizard-body")
         yield self.wizard
-        self.footer = Footer()
+        self.footer = MenuFooter(show_command_palette=False)
         yield self.footer
 
     def on_mount(self) -> None:
@@ -406,6 +817,7 @@ class LogBrowser(App):
     def _show_step_kind(self) -> None:
         self.step = WizardStep.KIND
         self._clear_wizard()
+        self._reset_subsearch()
         self.wizard.mount(
             Static("Step 1: Choose a log type", classes="instruction")
         )
@@ -486,19 +898,27 @@ class LogBrowser(App):
     def _show_step_search(self) -> None:
         self.step = WizardStep.SEARCH
         self._clear_wizard()
-        summary_text = (
-            "Step 3: Enter a search term for "
-            f"{self.current_kind} across {len(self.selected_logs)} log(s)"
-        )
+        if self.subsearch_active:
+            summary_text = "Step 3: Enter a sub-search term"
+        else:
+            summary_text = (
+                "Step 3: Enter a search term for "
+                f"{self.current_kind} across {len(self.selected_logs)} log(s)"
+            )
         summary = Static(summary_text, classes="instruction")
         self.wizard.mount(summary)
-        self.search_input = Input(
+        self.search_input = SearchInput(
             placeholder="Enter search term",
             id="search-term",
         )
         self.wizard.mount(self.search_input)
+        back_label = "Back"
+        back_id = "back-search"
+        if self.subsearch_active:
+            back_label = "Back to Results"
+            back_id = "back-results"
         button_row = Horizontal(
-            Button("Back", id="back-search"),
+            Button(back_label, id=back_id),
             Button("Search", id="do-search"),
             classes="button-row",
         )
@@ -509,17 +929,52 @@ class LogBrowser(App):
     def _show_step_results(self, rendered: str | None = None) -> None:
         self.step = WizardStep.RESULTS
         self._clear_wizard()
-        self.wizard.mount(Static("Search results", classes="instruction"))
-        self.output_log = OutputLog(id="result-log")
-        self.wizard.mount(self.output_log)
-        button_row = Horizontal(
-            Button("Back", id="back-results"),
-            Button("New Search", id="new-search"),
-            classes="button-row",
+        title = self._results_title()
+        help_text = (
+            "Selection: arrows move, Shift+arrows select, "
+            "mouse drag works."
         )
-        self.wizard.mount(button_row)
+        header_row = Horizontal(
+            Static(title, classes="instruction"),
+            Static("", classes="results-spacer"),
+            Static(help_text, classes="results-help"),
+            classes="results-header",
+            id="results-header",
+        )
+        self.wizard.mount(header_row)
+        self._result_log_counter += 1
+        result_id = f"result-log-{self._result_log_counter}"
+        self.output_log = OutputLog(id=result_id, classes="result-log")
+        self.output_log.styles.height = "1fr"
+        self.output_log.styles.min_height = 5
+        show_back = len(self.subsearch_terms) > 1
+        left_buttons: list[Static] = [
+            Button("New Search", id="new-search"),
+            Button("Sub-search", id="sub-search"),
+        ]
+        if show_back:
+            left_buttons.append(Button("Back", id="back-subsearch"))
+        left_buttons.append(Button("Quit", id="quit-results"))
+        right_buttons = [
+            Button("Copy", id="copy-selection"),
+            Button("Copy All", id="copy-all"),
+        ]
+        button_row = Horizontal(
+            Horizontal(*left_buttons),
+            Static("", classes="button-spacer"),
+            Horizontal(*right_buttons, classes="right-buttons"),
+            classes="button-row",
+            id="results-buttons",
+        )
+        results_body = Vertical(
+            self.output_log,
+            button_row,
+            classes="results-body",
+        )
+        self.wizard.mount(results_body)
         if rendered:
             self._write_output_lines(rendered.splitlines())
+        self.call_after_refresh(self._focus_results)
         self._refresh_footer_bindings()
 
     # Step helpers -------------------------------------------------------
@@ -571,12 +1026,23 @@ class LogBrowser(App):
                 self._show_step_search()
         elif button_id == "back-search":
             self._show_step_date()
+        elif button_id == "back-results":
+            self._show_last_results()
         elif button_id == "do-search":
             self._perform_search()
-        elif button_id == "back-results":
-            self._show_step_search()
         elif button_id == "new-search":
+            self._reset_subsearch()
             self._show_step_kind()
+        elif button_id == "sub-search":
+            self._start_subsearch()
+        elif button_id == "back-subsearch":
+            self._step_back_subsearch()
+        elif button_id == "quit-results":
+            self.exit()
+        elif button_id == "copy-selection":
+            self._copy_results(selection_only=True)
+        elif button_id == "copy-all":
+            self._copy_results(selection_only=False)
 
         self._refresh_footer_bindings()
 
@@ -662,13 +1128,26 @@ class LogBrowser(App):
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
 
+    def action_menu(self) -> None:
+        self.action_command_palette()
+
     def action_quit(self) -> None:
         self.exit()
+
+    def check_action(
+        self,
+        action: str,
+        parameters: tuple[object, ...],
+    ) -> bool | None:
+        if action == "focus_search":
+            return self.step == WizardStep.SEARCH
+        return True
 
     def action_reset(self) -> None:
         self._refresh_logs()
         self.selected_logs = []
         self.current_kind = None
+        self._reset_subsearch()
         self._show_step_kind()
         self._refresh_footer_bindings()
 
@@ -705,6 +1184,8 @@ class LogBrowser(App):
         kinds: Dict[str, List[LogFileInfo]] = {}
         if self.logs_dir.exists():
             for path in self.logs_dir.iterdir():
+                if not path.is_file():
+                    continue
                 info = parse_log_filename(path)
                 if not info.kind:
                     continue
@@ -716,49 +1197,54 @@ class LogBrowser(App):
             self.current_kind = None
 
     def _perform_search(self) -> None:
-        if not self.selected_logs:
-            self._notify("Select at least one log date before searching.")
+        if self.subsearch_active:
+            if self.subsearch_path is None:
+                self._notify("No prior results available for sub-search.")
+                return
+            search_targets = [self.subsearch_path]
+        else:
+            if not self.selected_logs:
+                self._notify("Select at least one log date before searching.")
+                return
+            search_targets = []
+            for info in self.selected_logs:
+                try:
+                    staged = stage_log(
+                        info.path,
+                        staging_dir=self.staging_dir or DEFAULT_STAGING_ROOT,
+                    )
+                except Exception as exc:
+                    # pragma: no cover - filesystem feedback
+                    self._notify(f"Failed to stage {info.path.name}: {exc}")
+                    return
+                search_targets.append(staged.staged_path)
+        search_kind = self.subsearch_kind if self.subsearch_active else None
+        if search_kind is None:
+            search_kind = self.current_kind
+        if search_kind is None:
+            self._notify("Select a log type before searching.")
+            return
+        search_fn = get_search_function(search_kind)
+        if search_fn is None:
+            self._notify(f"No search handler for log kind: {search_kind}")
             return
         term = (self.search_input.value if self.search_input else "").strip()
         if not term:
             self._notify("Enter a search term.")
             return
 
-        rendered_lines: list[str] = []
-        for info in self.selected_logs:
-            try:
-                staged = stage_log(
-                    info.path,
-                    staging_dir=self.staging_dir or DEFAULT_STAGING_ROOT,
-                )
-            except Exception as exc:  # pragma: no cover - filesystem feedback
-                self._notify(f"Failed to stage {info.path.name}: {exc}")
-                return
-            result = search_smtp_conversations(staged.staged_path, term)
-            rendered_lines.append(f"=== {info.path.name} ===")
-            summary = (
-                f"Search term '{result.term}' -> "
-                f"{result.total_conversations} conversation(s)"
-            )
-            rendered_lines.append(summary)
-            if not result.conversations and not result.orphan_matches:
-                rendered_lines.append("No matches found.")
-            for conversation in result.conversations:
-                rendered_lines.append("")
-                header = (
-                    f"[{conversation.message_id}] first seen on line "
-                    f"{conversation.first_line_number}"
-                )
-                rendered_lines.append(header)
-                rendered_lines.extend(conversation.lines)
-            if result.orphan_matches:
-                rendered_lines.append("")
-                rendered_lines.append(
-                    "Lines without message identifiers that matched:"
-                )
-                for line_number, line in result.orphan_matches:
-                    rendered_lines.append(f"{line_number}: {line}")
-            rendered_lines.append("")
+        results = [
+            search_fn(target, term)
+            for target in search_targets
+        ]
+        rendered_lines = self._render_results(
+            results,
+            search_targets,
+            search_kind,
+        )
+        self.last_rendered_lines = rendered_lines
+        self._write_subsearch_snapshot(results, term, rendered_lines)
+        self.subsearch_kind = search_kind
 
         self._show_step_results()
         self._write_output_lines(rendered_lines)
@@ -780,6 +1266,8 @@ class LogBrowser(App):
             return
         if hasattr(self.output_log, 'clear'):
             self.output_log.clear()  # type: ignore[call-arg]
+        if hasattr(self.output_log, "clear_selection"):
+            self.output_log.clear_selection()  # type: ignore[call-arg]
         else:  # pragma: no cover - safety for unknown widgets
             self.output_log.update('')
         if hasattr(self.output_log, 'write'):
@@ -795,6 +1283,199 @@ class LogBrowser(App):
                 self.output_log.scroll_end()
             except Exception:
                 pass
+        if isinstance(self.output_log, OutputLog):
+            self.output_log.show_cursor()
+
+    def _copy_results(self, *, selection_only: bool) -> None:
+        text: str | None = None
+        had_selection = False
+        if selection_only:
+            text = self._get_selected_text()
+            had_selection = bool(text)
+        if not text:
+            text = self._get_full_results_text()
+        if not text:
+            self._notify("No results available to copy.")
+            return
+        self.copy_to_clipboard(text)
+        if selection_only and had_selection:
+            self._notify("Copied selection to clipboard.")
+        else:
+            self._notify("Copied full results to clipboard.")
+
+    def _get_selected_text(self) -> str | None:
+        if self.screen is None:
+            return None
+        if isinstance(self.output_log, OutputLog):
+            if self.output_log.cursor_only_selection():
+                return None
+        selected = self.screen.get_selected_text()
+        if not selected:
+            return None
+        return selected
+
+    def _get_full_results_text(self) -> str | None:
+        if self.last_rendered_lines:
+            return "\n".join(self.last_rendered_lines).rstrip("\n")
+        return None
+
+
+    def _render_results(
+        self,
+        results: list,
+        targets: list[Path],
+        kind: str,
+    ) -> list[str]:
+        rendered_lines: list[str] = []
+        kind_key = kind.lower()
+        ungrouped_kinds = {
+            "administrative",
+            "activation",
+            "autocleanfolders",
+            "calendars",
+            "contentfilter",
+            "event",
+            "generalerrors",
+            "indexing",
+            "ldaplog",
+            "maintenance",
+            "profiler",
+            "spamchecks",
+            "webdav",
+        }
+        is_ungrouped = kind_key in ungrouped_kinds
+        for result, target in zip(results, targets):
+            rendered_lines.append(f"=== {target.name} ===")
+            label = "entry" if is_ungrouped else "conversation"
+            summary = (
+                f"Search term '{result.term}' -> "
+                f"{result.total_conversations} {label}(s)"
+            )
+            rendered_lines.append(summary)
+            if not result.conversations and not result.orphan_matches:
+                rendered_lines.append("No matches found.")
+            widths = collect_widths(kind, result.conversations)
+            for conversation in result.conversations:
+                formatted = format_conversation_lines(
+                    kind,
+                    conversation.lines,
+                    widths,
+                )
+                if not is_ungrouped:
+                    rendered_lines.append("")
+                    header = (
+                        f"[{conversation.message_id}] first seen on line "
+                        f"{conversation.first_line_number}"
+                    )
+                    rendered_lines.append(header)
+                rendered_lines.extend(formatted)
+            if result.orphan_matches:
+                if not is_ungrouped:
+                    rendered_lines.append("")
+                    rendered_lines.append(
+                        "Lines without message identifiers that matched:"
+                    )
+                for line_number, line in result.orphan_matches:
+                    if is_ungrouped:
+                        rendered_lines.append(line)
+                    else:
+                        rendered_lines.append(f"{line_number}: {line}")
+            if not is_ungrouped:
+                rendered_lines.append("")
+        return rendered_lines
+
+    def _subsearch_output_path(self) -> Path:
+        staging_dir = self.staging_dir or DEFAULT_STAGING_ROOT
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        depth = self.subsearch_depth + 1
+        name = f"subsearch_{depth:02d}_{timestamp}.log"
+        return staging_dir / name
+
+    def _write_subsearch_snapshot(
+        self,
+        results: list,
+        term: str,
+        rendered_lines: list[str],
+    ) -> None:
+        if not self.subsearch_active:
+            self._reset_subsearch()
+        output_path = self._subsearch_output_path()
+        lines: list[str] = []
+        for result in results:
+            for conversation in result.conversations:
+                lines.extend(conversation.lines)
+            for _line_number, line in result.orphan_matches:
+                lines.append(line)
+        with output_path.open("w", encoding="utf-8") as handle:
+            for line in lines:
+                handle.write(f"{line}\n")
+        self.subsearch_path = output_path
+        self.subsearch_depth += 1
+        self.subsearch_terms.append(term)
+        self.subsearch_paths.append(output_path)
+        self.subsearch_rendered.append(rendered_lines)
+
+    def _start_subsearch(self) -> None:
+        if self.subsearch_path is None:
+            self._notify("No prior results available for sub-search.")
+            return
+        self.subsearch_active = True
+        self._show_step_search()
+
+    def _show_last_results(self) -> None:
+        if not self.last_rendered_lines:
+            self._notify("No prior results to display.")
+            return
+        rendered = "\n".join(self.last_rendered_lines)
+        self._show_step_results(rendered)
+
+    def _step_back_subsearch(self) -> None:
+        if len(self.subsearch_terms) <= 1:
+            return
+        self.subsearch_terms.pop()
+        self.subsearch_paths.pop()
+        self.subsearch_rendered.pop()
+        self.subsearch_depth = len(self.subsearch_paths)
+        self.subsearch_path = (
+            self.subsearch_paths[-1] if self.subsearch_paths else None
+        )
+        self.last_rendered_lines = (
+            self.subsearch_rendered[-1] if self.subsearch_rendered else None
+        )
+        if self.last_rendered_lines:
+            rendered = "\n".join(self.last_rendered_lines)
+            self._show_step_results(rendered)
+        else:
+            self._show_step_kind()
+
+    def _reset_subsearch(self) -> None:
+        self.subsearch_active = False
+        self.subsearch_path = None
+        self.subsearch_kind = None
+        self.subsearch_depth = 0
+        self.last_rendered_lines = None
+        self.subsearch_terms = []
+        self.subsearch_paths = []
+        self.subsearch_rendered = []
+
+    def _results_title(self) -> str:
+        if not self.subsearch_terms:
+            return "Search results"
+        crumb = " » ".join(self.subsearch_terms)
+        return f"Search results: {crumb}"
+
+    def _focus_results(self) -> None:
+        if self.output_log is not None:
+            try:
+                self.output_log.focus()
+                return
+            except Exception:
+                pass
+        try:
+            self.wizard.focus()
+        except Exception:
+            return
 
 
 def list_log_files(logs_dir: Path) -> list[Path]:
