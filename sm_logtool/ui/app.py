@@ -198,7 +198,9 @@ if _BaseLog is not None:
             )
             self._selection_anchor = self._selection_cursor
             self._cursor_only = False
-            super().on_mouse_down(event)
+            handler = getattr(super(), "on_mouse_down", None)
+            if handler is not None:
+                handler(event)
 
         def on_key(
             self,
