@@ -27,7 +27,6 @@ class AppConfig:
     logs_dir: Optional[Path] = None
     staging_dir: Optional[Path] = None
     default_kind: str = "smtpLog"
-    mouse: bool = True
 
     @property
     def exists(self) -> bool:
@@ -74,13 +73,9 @@ def load_config(path: Path | None = None) -> AppConfig:
     logs_dir = _coerce_path(raw.get("logs_dir"))
     staging_dir = _coerce_path(raw.get("staging_dir"))
     default_kind = raw.get("default_kind", "smtpLog")
-    mouse = raw.get("mouse", True)
 
     if not isinstance(default_kind, str):
         message = "Config key 'default_kind' must be a string"
-        raise ConfigError(f"{message} (file: {config_path}).")
-    if not isinstance(mouse, bool):
-        message = "Config key 'mouse' must be a boolean"
         raise ConfigError(f"{message} (file: {config_path}).")
 
     return AppConfig(
@@ -88,7 +83,6 @@ def load_config(path: Path | None = None) -> AppConfig:
         logs_dir=logs_dir,
         staging_dir=staging_dir,
         default_kind=default_kind,
-        mouse=mouse,
     )
 
 

@@ -1742,7 +1742,6 @@ def run(
     logs_dir: Path,
     staging_dir: Path | None = None,
     default_kind: str | None = None,
-    mouse: bool = True,
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
@@ -1751,5 +1750,5 @@ def run(
         staging_dir=staging_dir,
         default_kind=default_kind,
     )
-    app.run(mouse=mouse)
+    app.run()
     return 0

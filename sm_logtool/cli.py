@@ -65,12 +65,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path containing SmarterMail log files (overrides config).",
     )
-    browse_parser.add_argument(
-        "--mouse",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Enable or disable mouse support (overrides config).",
-    )
     browse_parser.set_defaults(handler=_run_browse)
 
     search_parser = subparsers.add_parser(
@@ -156,11 +150,6 @@ def main(argv: list[str] | None = None) -> int:
 def _run_browse(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     logs_dir = _resolve_logs_dir(args, config)
-    mouse_enabled = (
-        args.mouse
-        if args.mouse is not None
-        else config.mouse
-    )
 
     # Lazy import so tests can import this module without textual installed.
     try:
@@ -177,7 +166,6 @@ def _run_browse(args: argparse.Namespace) -> int:
         logs_dir,
         staging_dir=staging_dir,
         default_kind=config.default_kind,
-        mouse=mouse_enabled,
     )
 
 

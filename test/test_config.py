@@ -16,7 +16,6 @@ def test_load_config_missing_file(tmp_path):
     assert not app_config.exists
     assert app_config.logs_dir is None
     assert app_config.default_kind == "smtpLog"
-    assert app_config.mouse is True
 
 
 def test_load_config_reads_values(tmp_path):
@@ -26,8 +25,7 @@ def test_load_config_reads_values(tmp_path):
     cfg_path.write_text(
         f"logs_dir: {logs_dir}\n"
         f"staging_dir: {staging_dir}\n"
-        "default_kind: imapLog\n"
-        "mouse: false\n",
+        "default_kind: imapLog\n",
         encoding="utf-8",
     )
 
@@ -36,7 +34,6 @@ def test_load_config_reads_values(tmp_path):
     assert app_config.logs_dir == logs_dir
     assert app_config.staging_dir == staging_dir
     assert app_config.default_kind == "imapLog"
-    assert app_config.mouse is False
 
 
 def test_load_config_rejects_non_mapping(tmp_path):
