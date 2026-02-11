@@ -174,6 +174,13 @@ if _BaseLog is not None:
             text = "\n".join(parts)
             return text or None
 
+        def get_all_text(self) -> str | None:
+            if not self.lines:
+                return None
+            lines = [self._line_text(line) for line in self.lines]
+            text = "\n".join(lines).rstrip("\n")
+            return text or None
+
         def _cursor_span(self) -> tuple[Offset, Offset]:
             cursor = self._selection_cursor
             if cursor is None:
@@ -1543,6 +1550,8 @@ class LogBrowser(App):
     def _get_full_results_text(self) -> str | None:
         if self.last_rendered_lines:
             return "\n".join(self.last_rendered_lines).rstrip("\n")
+        if isinstance(self.output_log, OutputLog):
+            return self.output_log.get_all_text()
         return None
 
 
