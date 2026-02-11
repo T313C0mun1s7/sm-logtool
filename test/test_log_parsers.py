@@ -1,5 +1,6 @@
 from sm_logtool.log_parsers import (
     parse_bracket1_line,
+    parse_bracket1_trailing_time_line,
     parse_imap_retrieval_line,
     parse_admin_entries,
     parse_delivery_entries,
@@ -65,6 +66,18 @@ def test_parse_admin_entries_handles_continuations():
     assert not second.continuation_lines
 
 
+def test_parse_admin_entries_handles_trailing_timestamp_lines():
+    lines = [
+        "00:00:01.100 [1.2.3.4] SMTP Login failed: bad password",
+        "[9.8.7.6] IMAP Login successful 00:00:03.300",
+    ]
+    entries, orphans = parse_admin_entries(lines)
+    assert not orphans
+    assert len(entries) == 2
+    assert entries[1].ip == "9.8.7.6"
+    assert entries[1].timestamp == "00:00:03.300"
+
+
 def test_parse_bracket1_line_extracts_field():
     line = "12:00:00.000 [user@example.com] Example message"
     entry = parse_bracket1_line(line)
@@ -72,6 +85,15 @@ def test_parse_bracket1_line_extracts_field():
     assert entry.timestamp == "12:00:00.000"
     assert entry.field1 == "user@example.com"
     assert entry.message == "Example message"
+
+
+def test_parse_bracket1_trailing_time_line_extracts_field():
+    line = "[1.2.3.4] SMTP Login failed 00:01:02.003"
+    entry = parse_bracket1_trailing_time_line(line)
+    assert entry is not None
+    assert entry.timestamp == "00:01:02.003"
+    assert entry.field1 == "1.2.3.4"
+    assert entry.message == "SMTP Login failed"
 
 
 def test_parse_imap_retrieval_line_extracts_fields():

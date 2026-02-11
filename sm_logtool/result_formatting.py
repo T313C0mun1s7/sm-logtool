@@ -8,6 +8,7 @@ from typing import Iterable, Sequence
 from .log_parsers import (
     TimeLogLine,
     parse_bracket1_line,
+    parse_bracket1_trailing_time_line,
     parse_delivery_line,
     parse_imap_retrieval_line,
     parse_smtp_line,
@@ -124,6 +125,8 @@ def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
         "webdav",
     }:
         entry = parse_bracket1_line(line)
+        if entry is None:
+            entry = parse_bracket1_trailing_time_line(line)
         if entry is None:
             return None
         return {

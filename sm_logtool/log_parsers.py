@@ -25,6 +25,11 @@ _BRACKET1_PATTERN = re.compile(
     r"\[(?P<field1>[^\]]*)\] (?P<message>.*)$"
 )
 
+_BRACKET1_TRAILING_TIME_PATTERN = re.compile(
+    rf"^\[(?P<field1>[^\]]+)\]\s+(?P<message>.*)\s+"
+    rf"(?P<time>{_TIME_PATTERN})$"
+)
+
 _DELIVERY_PATTERN = re.compile(
     rf"^(?P<time>{_TIME_PATTERN}) "
     r"\[(?P<delivery_id>[^\]]+)\] (?P<message>.*)$"
@@ -190,6 +195,22 @@ def parse_bracket1_line(line: str) -> Bracket1LogLine | None:
     )
 
 
+def parse_bracket1_trailing_time_line(
+    line: str,
+) -> Bracket1LogLine | None:
+    """Parse a log line with one bracketed field and trailing timestamp."""
+
+    match = _BRACKET1_TRAILING_TIME_PATTERN.match(line)
+    if not match:
+        return None
+    return Bracket1LogLine(
+        timestamp=match.group("time"),
+        field1=match.group("field1"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
 def parse_time_line(line: str) -> TimeLogLine | None:
     """Parse a log line with timestamp only."""
 
@@ -226,13 +247,15 @@ def parse_delivery_line(line: str) -> DeliveryLogLine | None:
 def parse_admin_line(line: str) -> AdminLogLine | None:
     """Parse a single administrative log line."""
 
-    match = _ADMIN_PATTERN.match(line)
-    if not match:
+    entry = parse_bracket1_line(line)
+    if entry is None:
+        entry = parse_bracket1_trailing_time_line(line)
+    if entry is None:
         return None
     return AdminLogLine(
-        timestamp=match.group("time"),
-        ip=match.group("ip"),
-        message=match.group("message"),
+        timestamp=entry.timestamp,
+        ip=entry.field1,
+        message=entry.message,
         raw=line,
     )
 
@@ -301,12 +324,12 @@ def parse_admin_entries(
     current: AdminLogEntry | None = None
 
     for line in lines:
-        match = _ADMIN_PATTERN.match(line)
-        if match:
+        entry = parse_admin_line(line)
+        if entry is not None:
             current = AdminLogEntry(
-                timestamp=match.group("time"),
-                ip=match.group("ip"),
-                message=match.group("message"),
+                timestamp=entry.timestamp,
+                ip=entry.ip,
+                message=entry.message,
                 raw_lines=[line],
             )
             entries.append(current)
