@@ -600,12 +600,6 @@ def _clamp_index(value: int, upper: int) -> int:
         return upper
     return value
 
-        def write_line(self, line: str | Text) -> None:
-            if isinstance(line, Text):
-                self.write(line.plain)
-            else:
-                self.write(line)
-
 
 class ContextMenuScreen(ModalScreen[str | None]):
     """Modal context menu used for result copy actions."""
