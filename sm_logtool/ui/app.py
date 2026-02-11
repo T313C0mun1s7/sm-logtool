@@ -405,21 +405,25 @@ else:
             return
 
 
-class ContextMenu(Vertical):
+class ContextMenu(Horizontal):
     """Context menu used for result copy actions."""
 
     DEFAULT_CSS = """
     ContextMenu {
         position: absolute;
+        layer: overlay;
         background: #1f1f1f;
         border: solid #5f5f5f;
-        padding: 1 1;
+        padding: 0 1;
+        height: auto;
+        width: auto;
     }
 
     ContextMenu Button {
-        width: 100%;
+        width: auto;
         height: auto;
-        margin: 0;
+        margin-right: 1;
+        padding: 0 1;
     }
     """
 
@@ -429,9 +433,11 @@ class ContextMenu(Vertical):
             ("Copy", "context-copy"),
             ("Copy All", "context-copy-all"),
         ]
-        self.menu_width = max(len(label) for label, _ in self._items) + 4
-        self.menu_height = len(self._items) + 2
+        labels = [label for label, _ in self._items]
+        self.menu_width = sum(len(label) for label in labels) + 12
+        self.menu_height = 3
         self.styles.width = self.menu_width
+        self.styles.height = self.menu_height
 
     def compose(self) -> ComposeResult:
         for label, button_id in self._items:
