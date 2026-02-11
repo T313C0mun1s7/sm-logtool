@@ -24,7 +24,6 @@ from .search import get_search_function
 from .staging import DEFAULT_STAGING_ROOT, stage_log
 
 
-DEFAULT_LOGS_DIR = Path("/var/lib/smartermail/Logs")
 CONFIG_ATTR = "_config"
 
 
@@ -149,7 +148,11 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_browse(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
-    logs_dir = _resolve_logs_dir(args, config)
+    try:
+        logs_dir = _resolve_logs_dir(args, config)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     # Lazy import so tests can import this module without textual installed.
     try:
@@ -171,7 +174,11 @@ def _run_browse(args: argparse.Namespace) -> int:
 
 def _run_search(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
-    logs_dir = _resolve_logs_dir(args, config)
+    try:
+        logs_dir = _resolve_logs_dir(args, config)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     staging_dir = _resolve_staging_dir(args, config)
     log_kind = args.kind or config.default_kind
     if log_kind is None:
@@ -317,11 +324,12 @@ def _list_logs(logs_dir: Path, kind: str) -> int:
 
 
 def _resolve_logs_dir(args: argparse.Namespace, config: AppConfig) -> Path:
-    candidate = (
-        getattr(args, "logs_dir", None)
-        or config.logs_dir
-        or DEFAULT_LOGS_DIR
-    )
+    candidate = getattr(args, "logs_dir", None) or config.logs_dir
+    if candidate is None:
+        raise ValueError(
+            "Log directory is not configured. Set 'logs_dir' in config.yaml "
+            "or pass --logs-dir."
+        )
     return candidate
 
 

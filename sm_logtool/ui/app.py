@@ -1246,7 +1246,7 @@ class LogBrowser(App):
     }
     """
 
-    logs_dir: reactive[Path] = reactive(Path("/var/lib/smartermail/Logs"))
+    logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive("smtpLog")
 
