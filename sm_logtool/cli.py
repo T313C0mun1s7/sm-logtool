@@ -19,6 +19,7 @@ from .logfiles import (
     parse_stamp,
     summarize_logs,
 )
+from .result_formatting import collect_widths, format_conversation_lines
 from .search import get_search_function
 from .staging import DEFAULT_STAGING_ROOT, stage_log
 
@@ -258,6 +259,7 @@ def _print_search_summary(
         f"Search term '{result.term}' -> "
         f"{result.total_conversations} {label}(s) in {source_path.name}"
     )
+    widths = collect_widths(log_kind, result.conversations)
     for conversation in result.conversations:
         if not is_admin:
             print()
@@ -265,7 +267,12 @@ def _print_search_summary(
                 f"[{conversation.message_id}] first seen on line "
                 f"{conversation.first_line_number}"
             )
-        for line in conversation.lines:
+        formatted = format_conversation_lines(
+            log_kind,
+            conversation.lines,
+            widths,
+        )
+        for line in formatted:
             print(line)
 
     if result.orphan_matches:

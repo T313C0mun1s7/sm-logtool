@@ -33,6 +33,10 @@ from ..logfiles import (
     parse_log_filename,
     summarize_logs,
 )
+from ..result_formatting import (
+    collect_widths,
+    format_conversation_lines,
+)
 from ..search import get_search_function
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
@@ -1066,7 +1070,13 @@ class LogBrowser(App):
             rendered_lines.append(summary)
             if not result.conversations and not result.orphan_matches:
                 rendered_lines.append("No matches found.")
+            widths = collect_widths(kind, result.conversations)
             for conversation in result.conversations:
+                formatted = format_conversation_lines(
+                    kind,
+                    conversation.lines,
+                    widths,
+                )
                 if not is_admin:
                     rendered_lines.append("")
                     header = (
@@ -1074,7 +1084,7 @@ class LogBrowser(App):
                         f"{conversation.first_line_number}"
                     )
                     rendered_lines.append(header)
-                rendered_lines.extend(conversation.lines)
+                rendered_lines.extend(formatted)
             if result.orphan_matches:
                 if not is_admin:
                     rendered_lines.append("")
