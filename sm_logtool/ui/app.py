@@ -62,6 +62,8 @@ if _BaseLog is not None:
     class OutputLog(_BaseLog):
         """Text log widget that adapts to Textual version differences."""
 
+        can_focus = True
+
         def __init__(
             self,
             *,
@@ -91,6 +93,8 @@ if _BaseLog is not None:
             self._use_custom_selection = not callable(
                 getattr(_BaseLog, "on_mouse_down", None),
             )
+            if getattr(_BaseLog, "__name__", "") == "RichLog":
+                self._use_custom_selection = True
             self._plain_lines: list[str] = []
             if hasattr(self, "markup"):
                 try:
@@ -321,6 +325,10 @@ if _BaseLog is not None:
             self,
             event: events.MouseDown,
         ) -> None:  # pragma: no cover - UI behaviour
+            try:
+                self.focus()
+            except Exception:
+                pass
             if getattr(event, "button", None) == 3:
                 app = getattr(self, "app", None)
                 show_menu = getattr(app, "_show_context_menu", None)
