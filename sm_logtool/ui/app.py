@@ -76,6 +76,7 @@ if _BaseLog is not None:
             super().__init__(**kwargs)  # type: ignore[arg-type]
             self._selection_anchor: Offset | None = None
             self._selection_cursor: Offset | None = None
+            self._cursor_only = False
 
         def clear_selection(self) -> None:
             try:
@@ -88,6 +89,92 @@ if _BaseLog is not None:
                 screen.selections = selections
             self._selection_anchor = None
             self._selection_cursor = None
+            self._cursor_only = False
+
+        def cursor_only_selection(self) -> bool:
+            return self._cursor_only
+
+        def _set_selection(
+            self,
+            start: Offset,
+            end: Offset,
+        ) -> None:
+            if self.screen is None:
+                return
+            selections = dict(self.screen.selections)
+            selections[self] = Selection.from_offsets(start, end)
+            self.screen.selections = selections
+
+        def _cursor_span(self) -> tuple[Offset, Offset]:
+            cursor = self._selection_cursor
+            if cursor is None:
+                cursor = Offset(0, 0)
+                self._selection_cursor = cursor
+            line = self.lines[cursor.y] if self.lines else ""
+            line_len = len(line)
+            if line_len == 0:
+                start = cursor
+                end = cursor
+            elif cursor.x >= line_len:
+                start = Offset(max(line_len - 1, 0), cursor.y)
+                end = Offset(line_len, cursor.y)
+            else:
+                start = cursor
+                end = Offset(cursor.x + 1, cursor.y)
+            return start, end
+
+        def _move_cursor(
+            self,
+            *,
+            dx: int = 0,
+            dy: int = 0,
+            extend: bool = False,
+        ) -> None:
+            scroll_x, scroll_y = self.scroll_offset
+            if self._selection_cursor is None:
+                self._selection_cursor = Offset(scroll_x, scroll_y)
+            if extend and self._selection_anchor is None:
+                self._selection_anchor = self._selection_cursor
+            cursor = self._selection_cursor
+            max_y = max(self.line_count - 1, 0)
+            new_y = min(max(cursor.y + dy, 0), max_y)
+            line = self.lines[new_y] if self.lines else ""
+            max_x = len(line)
+            new_x = min(max(cursor.x + dx, 0), max_x)
+            self._selection_cursor = Offset(new_x, new_y)
+
+            if extend:
+                self._cursor_only = False
+                assert self._selection_anchor is not None
+                self._set_selection(
+                    self._selection_anchor,
+                    self._selection_cursor,
+                )
+            else:
+                self._cursor_only = True
+                self._selection_anchor = self._selection_cursor
+                start, end = self._cursor_span()
+                self._set_selection(start, end)
+
+            view_height = max(self.size.height, 1)
+            view_width = max(self.size.width, 1)
+            target_y: int | None = None
+            target_x: int | None = None
+            if new_y < scroll_y:
+                target_y = new_y
+            elif new_y >= scroll_y + view_height:
+                target_y = new_y - view_height + 1
+            if new_x < scroll_x:
+                target_x = new_x
+            elif new_x >= scroll_x + view_width:
+                target_x = new_x - view_width + 1
+            if target_x is not None or target_y is not None:
+                self.scroll_to(
+                    x=target_x,
+                    y=target_y,
+                    animate=False,
+                    immediate=True,
+                )
 
         def on_mouse_down(
             self,
@@ -99,6 +186,7 @@ if _BaseLog is not None:
                 scroll_y + event.y,
             )
             self._selection_anchor = self._selection_cursor
+            self._cursor_only = False
             super().on_mouse_down(event)
 
         def on_key(
@@ -114,12 +202,19 @@ if _BaseLog is not None:
                     "shift+right",
                 }
             ):
+                if aliases.intersection({"up", "down", "left", "right"}):
+                    dx, dy = 0, 0
+                    if "up" in aliases:
+                        dy = -1
+                    elif "down" in aliases:
+                        dy = 1
+                    elif "left" in aliases:
+                        dx = -1
+                    elif "right" in aliases:
+                        dx = 1
+                    self._move_cursor(dx=dx, dy=dy, extend=False)
+                    event.stop()
                 return
-            if self._selection_cursor is None:
-                scroll_x, scroll_y = self.scroll_offset
-                self._selection_cursor = Offset(scroll_x, scroll_y)
-            if self._selection_anchor is None:
-                self._selection_anchor = self._selection_cursor
 
             dx, dy = 0, 0
             if "shift+up" in aliases:
@@ -130,29 +225,7 @@ if _BaseLog is not None:
                 dx = -1
             elif "shift+right" in aliases:
                 dx = 1
-
-            cursor = self._selection_cursor
-            max_y = max(self.line_count - 1, 0)
-            new_y = min(max(cursor.y + dy, 0), max_y)
-            line = self.lines[new_y] if self.lines else ""
-            max_x = len(line)
-            new_x = min(max(cursor.x + dx, 0), max_x)
-
-            self._selection_cursor = Offset(new_x, new_y)
-            selection = Selection.from_offsets(
-                self._selection_anchor,
-                self._selection_cursor,
-            )
-            if self.screen is not None:
-                selections = dict(self.screen.selections)
-                selections[self] = selection
-                self.screen.selections = selections
-            self.scroll_to(
-                x=new_x,
-                y=new_y,
-                animate=False,
-                immediate=True,
-            )
+            self._move_cursor(dx=dx, dy=dy, extend=True)
             event.stop()
             return
 
@@ -654,23 +727,25 @@ class LogBrowser(App):
         width: 1fr;
     }
 
-    .results-row {
-        height: 1fr;
+    .results-header {
+        height: auto;
     }
 
-    .results-panel {
-        width: 30;
-        min-width: 26;
-        margin-left: 1;
+    .results-spacer {
+        width: 1fr;
     }
 
     .results-help {
-        padding: 1 0;
+        text-align: right;
     }
 
-    .results-panel Button {
-        width: 100%;
-        margin-top: 1;
+    .button-spacer {
+        width: 1fr;
+    }
+
+    .right-buttons Button {
+        margin-left: 1;
+        margin-right: 0;
     }
     """
 
@@ -835,42 +910,41 @@ class LogBrowser(App):
         self.step = WizardStep.RESULTS
         self._clear_wizard()
         title = self._results_title()
-        self.wizard.mount(Static(title, classes="instruction"))
+        help_text = (
+            "Selection: arrows move, Shift+arrows select, "
+            "mouse drag works."
+        )
+        header_row = Horizontal(
+            Static(title, classes="instruction"),
+            Static("", classes="results-spacer"),
+            Static(help_text, classes="results-help"),
+            classes="results-header",
+        )
+        self.wizard.mount(header_row)
         self._result_log_counter += 1
         result_id = f"result-log-{self._result_log_counter}"
         self.output_log = OutputLog(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        help_text = (
-            "Selection:\n"
-            "Mouse drag to highlight.\n"
-            "Shift + arrows to extend.\n"
-            "\n"
-            "Copy:\n"
-            "Copy uses selection or all.\n"
-            "Copy All copies full results."
-        )
-        results_panel = Vertical(
-            Static(help_text, classes="results-help"),
-            Button("Copy", id="copy-selection"),
-            Button("Copy All", id="copy-all"),
-            classes="results-panel",
-        )
-        results_row = Horizontal(
-            self.output_log,
-            results_panel,
-            classes="results-row",
-        )
-        self.wizard.mount(results_row)
+        self.wizard.mount(self.output_log)
         show_back = len(self.subsearch_terms) > 1
-        buttons: list[Static] = [
+        left_buttons: list[Static] = [
             Button("New Search", id="new-search"),
             Button("Sub-search", id="sub-search"),
         ]
         if show_back:
-            buttons.append(Button("Back", id="back-subsearch"))
-        buttons.append(Button("Quit", id="quit-results"))
-        button_row = Horizontal(*buttons, classes="button-row")
+            left_buttons.append(Button("Back", id="back-subsearch"))
+        left_buttons.append(Button("Quit", id="quit-results"))
+        right_buttons = [
+            Button("Copy", id="copy-selection"),
+            Button("Copy All", id="copy-all"),
+        ]
+        button_row = Horizontal(
+            Horizontal(*left_buttons),
+            Static("", classes="button-spacer"),
+            Horizontal(*right_buttons, classes="right-buttons"),
+            classes="button-row",
+        )
         self.wizard.mount(button_row)
         if rendered:
             self._write_output_lines(rendered.splitlines())
@@ -1204,6 +1278,9 @@ class LogBrowser(App):
     def _get_selected_text(self) -> str | None:
         if self.screen is None:
             return None
+        if isinstance(self.output_log, OutputLog):
+            if self.output_log.cursor_only_selection():
+                return None
         selected = self.screen.get_selected_text()
         if not selected:
             return None
