@@ -562,7 +562,7 @@ class ResultsArea(TextArea):
         self._build_highlight_map()
         self.refresh()
 
-    def on_mouse_down(
+    async def _on_mouse_down(
         self,
         event: events.MouseDown,
     ) -> None:  # pragma: no cover - UI behaviour
@@ -573,7 +573,7 @@ class ResultsArea(TextArea):
                 show_menu(event.screen_x, event.screen_y)
             event.stop()
             return
-        super().on_mouse_down(event)
+        await super()._on_mouse_down(event)
 
     def _build_highlight_map(self) -> None:
         highlights = self._highlights
