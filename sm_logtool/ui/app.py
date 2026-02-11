@@ -542,6 +542,7 @@ class ResultsArea(TextArea):
         id: str | None = None,
         classes: str | None = None,
     ) -> None:
+        self._log_kind = log_kind or ""
         super().__init__(
             text="",
             language=None,
@@ -553,7 +554,6 @@ class ResultsArea(TextArea):
             id=id,
             classes=classes,
         )
-        self._log_kind = log_kind or ""
         self.register_theme(_SMLOG_THEME)
         self.theme = "smlog"
 
@@ -566,7 +566,7 @@ class ResultsArea(TextArea):
         highlights = self._highlights
         highlights.clear()
         document = self.document
-        kind = self._log_kind
+        kind = getattr(self, "_log_kind", "")
         for row in range(document.line_count):
             line = document.get_line(row)
             spans = spans_for_line(kind, line)
