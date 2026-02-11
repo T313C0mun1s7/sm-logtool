@@ -756,6 +756,11 @@ class LogBrowser(App):
 
     .button-spacer {
         width: 1fr;
+        height: 1;
+    }
+
+    .button-row > Horizontal {
+        height: auto;
     }
 
     .right-buttons Button {
@@ -969,7 +974,6 @@ class LogBrowser(App):
         self.wizard.mount(results_body)
         if rendered:
             self._write_output_lines(rendered.splitlines())
-        self.call_after_refresh(self._resize_results_log)
         self.call_after_refresh(self._focus_results)
         self._refresh_footer_bindings()
 
@@ -1315,26 +1319,6 @@ class LogBrowser(App):
             return "\n".join(self.last_rendered_lines).rstrip("\n")
         return None
 
-    def _resize_results_log(self) -> None:
-        if self.step != WizardStep.RESULTS or self.output_log is None:
-            return
-        try:
-            header = self.wizard.query_one("#results-header")
-            buttons = self.wizard.query_one("#results-buttons")
-        except Exception:
-            return
-        available = (
-            self.wizard.size.height
-            - header.size.height
-            - buttons.size.height
-        )
-        if available < 5:
-            available = 5
-        self.output_log.styles.height = available
-
-    def on_resize(self, event: events.Resize) -> None:
-        if self.step == WizardStep.RESULTS:
-            self._resize_results_log()
 
     def _render_results(
         self,
