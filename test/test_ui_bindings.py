@@ -1,6 +1,9 @@
 from pathlib import Path
 
-import pytest
+try:
+    import pytest
+except ModuleNotFoundError:  # pragma: no cover - fallback for unittest
+    from test import _pytest_stub as pytest
 
 from sm_logtool.ui.app import LogBrowser, WizardStep
 

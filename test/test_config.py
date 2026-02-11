@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
+try:
+    import pytest
+except ModuleNotFoundError:  # pragma: no cover - fallback for unittest
+    from test import _pytest_stub as pytest
 
 from sm_logtool import config
 
@@ -42,4 +45,3 @@ def test_load_config_rejects_non_mapping(tmp_path):
 
     with pytest.raises(config.ConfigError):
         config.load_config(cfg_path)
-
