@@ -577,10 +577,21 @@ class ResultsArea(TextArea):
                 self.release_mouse()
             except Exception:
                 pass
-            app = getattr(self, "app", None)
-            show_menu = getattr(app, "_show_context_menu", None)
-            if show_menu is not None:
-                show_menu(event.screen_x, event.screen_y)
+            region = getattr(self, "region", None)
+            if region is not None:
+                screen_x = int(region.x + event.x)
+                screen_y = int(region.y + event.y)
+            else:
+                screen_x = int(event.screen_x)
+                screen_y = int(event.screen_y)
+
+            def _open_menu() -> None:
+                app = getattr(self, "app", None)
+                show_menu = getattr(app, "_show_context_menu", None)
+                if show_menu is not None:
+                    show_menu(screen_x, screen_y)
+
+            self.call_after_refresh(_open_menu)
             event.stop()
             return
         await super()._on_mouse_down(event)
