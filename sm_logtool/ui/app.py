@@ -562,6 +562,19 @@ class ResultsArea(TextArea):
         self._build_highlight_map()
         self.refresh()
 
+    def on_mouse_down(
+        self,
+        event: events.MouseDown,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if getattr(event, "button", None) == 3:
+            app = getattr(self, "app", None)
+            show_menu = getattr(app, "_show_context_menu", None)
+            if show_menu is not None:
+                show_menu(event.screen_x, event.screen_y)
+            event.stop()
+            return
+        super().on_mouse_down(event)
+
     def _build_highlight_map(self) -> None:
         highlights = self._highlights
         highlights.clear()
@@ -1349,7 +1362,6 @@ class LogBrowser(App):
             Static("", classes="results-spacer"),
             Static(help_text, classes="results-help"),
             classes="results-header",
-            id="results-header",
         )
         self.wizard.mount(header_row)
         self._result_log_counter += 1
