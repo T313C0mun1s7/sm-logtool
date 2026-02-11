@@ -91,6 +91,7 @@ if _BaseLog is not None:
             self._use_custom_selection = not callable(
                 getattr(_BaseLog, "on_mouse_down", None),
             )
+            self._plain_lines: list[str] = []
             if hasattr(self, "markup"):
                 try:
                     self.markup = True  # type: ignore[attr-defined]
@@ -113,7 +114,21 @@ if _BaseLog is not None:
             self._selection_cursor = None
             self._cursor_only = False
 
+        def clear(self) -> None:  # type: ignore[override]
+            try:
+                super().clear()  # type: ignore[misc]
+            except Exception:
+                pass
+            self._plain_lines = []
+
         def write_line(self, line: str | Text) -> None:
+            if isinstance(line, Text):
+                plain = line.plain
+            else:
+                plain = str(line)
+            if plain.endswith("\n"):
+                plain = plain[:-1]
+            self._plain_lines.append(plain)
             if isinstance(line, Text) and self._prefer_markup:
                 to_markup = getattr(line, "to_markup", None)
                 if callable(to_markup):
@@ -143,12 +158,25 @@ if _BaseLog is not None:
                 return plain
             return str(line)
 
+        def _get_lines(self) -> list[object]:
+            lines = getattr(self, "lines", None)
+            if isinstance(lines, list):
+                return lines
+            return self._plain_lines
+
+        def _line_count(self) -> int:
+            count = getattr(self, "line_count", None)
+            if isinstance(count, int):
+                return count
+            return len(self._plain_lines)
+
         def _clamp_offset(self, offset: Offset) -> Offset:
-            if self.line_count <= 0:
+            if self._line_count() <= 0:
                 return Offset(0, 0)
-            max_y = max(self.line_count - 1, 0)
+            max_y = max(self._line_count() - 1, 0)
             y = min(max(offset.y, 0), max_y)
-            line = self.lines[y] if self.lines else ""
+            lines = self._get_lines()
+            line = lines[y] if lines else ""
             max_x = len(line)
             x = min(max(offset.x, 0), max_x)
             return Offset(x, y)
@@ -172,7 +200,7 @@ if _BaseLog is not None:
             return end, start
 
         def get_selection_text(self) -> str | None:
-            if self.line_count <= 0:
+            if self._line_count() <= 0:
                 return None
             if self._selection_anchor is None:
                 return None
@@ -183,26 +211,28 @@ if _BaseLog is not None:
             start, end = self._order_offsets(start, end)
             if (start.y, start.x) == (end.y, end.x):
                 return None
-            if not self.lines:
+            lines = self._get_lines()
+            if not lines:
                 return None
             if start.y == end.y:
-                line = self._line_text(self.lines[start.y])
+                line = self._line_text(lines[start.y])
                 return line[start.x:end.x] or None
             parts: list[str] = []
-            first_line = self._line_text(self.lines[start.y])
+            first_line = self._line_text(lines[start.y])
             parts.append(first_line[start.x:])
             for line_idx in range(start.y + 1, end.y):
-                parts.append(self._line_text(self.lines[line_idx]))
-            last_line = self._line_text(self.lines[end.y])
+                parts.append(self._line_text(lines[line_idx]))
+            last_line = self._line_text(lines[end.y])
             parts.append(last_line[:end.x])
             text = "\n".join(parts)
             return text or None
 
         def get_all_text(self) -> str | None:
-            if not self.lines:
+            lines = self._get_lines()
+            if not lines:
                 return None
-            lines = [self._line_text(line) for line in self.lines]
-            text = "\n".join(lines).rstrip("\n")
+            plain_lines = [self._line_text(line) for line in lines]
+            text = "\n".join(plain_lines).rstrip("\n")
             return text or None
 
         def _cursor_span(self) -> tuple[Offset, Offset]:
@@ -210,7 +240,8 @@ if _BaseLog is not None:
             if cursor is None:
                 cursor = Offset(0, 0)
                 self._selection_cursor = cursor
-            line = self.lines[cursor.y] if self.lines else ""
+            lines = self._get_lines()
+            line = lines[cursor.y] if lines else ""
             line_len = len(line)
             if line_len == 0:
                 start = cursor
@@ -236,9 +267,10 @@ if _BaseLog is not None:
             if extend and self._selection_anchor is None:
                 self._selection_anchor = self._selection_cursor
             cursor = self._selection_cursor
-            max_y = max(self.line_count - 1, 0)
+            max_y = max(self._line_count() - 1, 0)
             new_y = min(max(cursor.y + dy, 0), max_y)
-            line = self.lines[new_y] if self.lines else ""
+            lines = self._get_lines()
+            line = lines[new_y] if lines else ""
             max_x = len(line)
             new_x = min(max(cursor.x + dx, 0), max_x)
             self._selection_cursor = Offset(new_x, new_y)
@@ -277,7 +309,7 @@ if _BaseLog is not None:
                 )
 
         def show_cursor(self) -> None:
-            if self.line_count <= 0:
+            if self._line_count() <= 0:
                 return
             try:
                 _ = self.screen
