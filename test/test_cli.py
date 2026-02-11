@@ -414,6 +414,10 @@ def test_search_help_mentions_latest_and_supported_kinds(capsys):
     captured = capsys.readouterr()
     assert "newest available log for --kind is searched." in captured.out
     assert "Available kinds:" in captured.out
+    assert "logs_dir is set in" in captured.out
+    assert "staging_dir is set in" in captured.out
+    assert "default_kind is set" in captured.out
+    assert "config.yaml." in captured.out
     assert "smtp" in captured.out
 
 

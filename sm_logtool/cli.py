@@ -43,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
             The `browse` subcommand launches the Textual UI.
             The `search` subcommand performs a console-based search across
             supported SmarterMail log kinds.
+
+            Config-aware defaults:
+              - logs_dir and staging_dir come from config.yaml when present.
+              - Command-line flags override config values.
             """
         ).strip(),
     )
@@ -67,7 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--logs-dir",
         type=Path,
         default=None,
-        help="Path containing SmarterMail log files (overrides config).",
+        help=(
+            "Path containing SmarterMail log files. Optional when logs_dir "
+            "is set in config.yaml."
+        ),
     )
     browse_parser.set_defaults(handler=_run_browse)
 
@@ -90,13 +97,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--logs-dir",
         type=Path,
         default=None,
-        help="Directory containing the original logs (overrides config).",
+        help=(
+            "Directory containing source logs. Optional when logs_dir is "
+            "set in config.yaml."
+        ),
     )
     search_parser.add_argument(
         "--staging-dir",
         type=Path,
         default=None,
-        help="Directory where logs are copied before analysis.",
+        help=(
+            "Directory where logs are copied/extracted before analysis. "
+            "Optional when staging_dir is set in config.yaml."
+        ),
     )
     search_parser.add_argument(
         "--log-file",
@@ -112,7 +125,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind",
         default=None,
         help=(
-            "Log kind to search (overrides config default). "
+            "Log kind to search. Optional when default_kind is set in "
+            "config.yaml. "
             "Use --list-kinds to show supported values."
         ),
     )
