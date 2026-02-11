@@ -4,12 +4,21 @@ import pytest
 
 from sm_logtool.ui.app import LogBrowser, WizardStep
 
-SAMPLE_LOGS = Path(__file__).resolve().parent.parent / "sample_logs"
+
+def write_sample_logs(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    log_path = root / "2024.01.01-smtpLog.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.mark.asyncio
-async def test_footer_shows_global_keys_on_results_step():
-    app = LogBrowser(logs_dir=SAMPLE_LOGS)
+async def test_footer_shows_global_keys_on_results_step(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
     async with app.run_test() as pilot:
         app._refresh_logs()
         kind, infos = next(iter(app._logs_by_kind.items()))
@@ -31,8 +40,10 @@ async def test_footer_shows_global_keys_on_results_step():
 
 
 @pytest.mark.asyncio
-async def test_reset_shortcut_returns_to_kind_step():
-    app = LogBrowser(logs_dir=SAMPLE_LOGS)
+async def test_reset_shortcut_returns_to_kind_step(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
     async with app.run_test() as pilot:
         app._refresh_logs()
         kind, infos = next(iter(app._logs_by_kind.items()))
@@ -47,8 +58,10 @@ async def test_reset_shortcut_returns_to_kind_step():
 
 
 @pytest.mark.asyncio
-async def test_quit_shortcut_sets_exit_flag():
-    app = LogBrowser(logs_dir=SAMPLE_LOGS)
+async def test_quit_shortcut_sets_exit_flag(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
     async with app.run_test() as pilot:
         app._refresh_logs()
         kind, infos = next(iter(app._logs_by_kind.items()))
