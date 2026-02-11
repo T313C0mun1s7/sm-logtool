@@ -27,8 +27,11 @@ from textual.widgets import (
     ListItem,
     ListView,
     Static,
+    TextArea,
 )
 from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
+from textual._text_area_theme import TextAreaTheme
+from rich.style import Style
 from rich.text import Text
 
 from ..logfiles import (
@@ -41,7 +44,23 @@ from ..result_formatting import (
     format_conversation_lines,
 )
 from ..search import get_search_function
-from ..syntax import highlight_result_line
+from ..syntax import (
+    TOKEN_BRACKET,
+    TOKEN_COMMAND,
+    TOKEN_EMAIL,
+    TOKEN_HEADER,
+    TOKEN_ID,
+    TOKEN_IP,
+    TOKEN_LINE_NUMBER,
+    TOKEN_MESSAGE_ID,
+    TOKEN_RESPONSE,
+    TOKEN_SECTION,
+    TOKEN_SUMMARY,
+    TOKEN_TAG,
+    TOKEN_TERM,
+    TOKEN_TIMESTAMP,
+    spans_for_line,
+)
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
 try:  # Prefer selection-capable logs when available.
@@ -52,7 +71,9 @@ except ImportError:  # pragma: no cover - textual>=6 renames widgets
         _BaseLog = Log
     except ImportError:  # pragma: no cover - older Textual
         try:
-            from textual.widgets import RichLog as _BaseLog  # type: ignore[attr-defined]
+            from textual.widgets import (  # type: ignore[attr-defined]
+                RichLog as _BaseLog,
+            )
         except ImportError:  # pragma: no cover - final fallback
             _BaseLog = None
 
@@ -488,6 +509,96 @@ else:
 
         def clear_selection(self) -> None:
             return
+
+
+_SMLOG_THEME = TextAreaTheme(
+    name="smlog",
+    syntax_styles={
+        TOKEN_HEADER: Style(bold=True),
+        TOKEN_SECTION: Style(bold=True),
+        TOKEN_SUMMARY: Style(bold=True),
+        TOKEN_TERM: Style(color="magenta", bold=True),
+        TOKEN_TIMESTAMP: Style(color="cyan", bold=True),
+        TOKEN_BRACKET: Style(dim=True),
+        TOKEN_IP: Style(color="bright_blue"),
+        TOKEN_ID: Style(color="magenta"),
+        TOKEN_TAG: Style(color="cyan"),
+        TOKEN_EMAIL: Style(color="bright_magenta"),
+        TOKEN_COMMAND: Style(color="green"),
+        TOKEN_RESPONSE: Style(color="yellow"),
+        TOKEN_LINE_NUMBER: Style(dim=True),
+        TOKEN_MESSAGE_ID: Style(color="bright_cyan"),
+    },
+)
+
+
+class ResultsArea(TextArea):
+    """Read-only results viewer with log-aware highlights."""
+
+    def __init__(
+        self,
+        *,
+        log_kind: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(
+            text="",
+            language=None,
+            theme="css",
+            soft_wrap=True,
+            tab_behavior="focus",
+            read_only=True,
+            show_line_numbers=False,
+            id=id,
+            classes=classes,
+        )
+        self._log_kind = log_kind or ""
+        self.register_theme(_SMLOG_THEME)
+        self.theme = "smlog"
+
+    def set_log_kind(self, log_kind: str | None) -> None:
+        self._log_kind = log_kind or ""
+        self._build_highlight_map()
+        self.refresh()
+
+    def _build_highlight_map(self) -> None:
+        highlights = self._highlights
+        highlights.clear()
+        document = self.document
+        kind = self._log_kind
+        for row in range(document.line_count):
+            line = document.get_line(row)
+            spans = spans_for_line(kind, line)
+            if not spans:
+                continue
+            offsets = _byte_offsets(line)
+            line_highlights = highlights[row]
+            for span in spans:
+                start = _clamp_index(span.start, len(line))
+                end = _clamp_index(span.end, len(line))
+                if start >= end:
+                    continue
+                line_highlights.append(
+                    (offsets[start], offsets[end], span.token),
+                )
+
+
+def _byte_offsets(line: str) -> list[int]:
+    offsets = [0]
+    total = 0
+    for ch in line:
+        total += len(ch.encode("utf-8"))
+        offsets.append(total)
+    return offsets
+
+
+def _clamp_index(value: int, upper: int) -> int:
+    if value < 0:
+        return 0
+    if value > upper:
+        return upper
+    return value
 
         def write_line(self, line: str | Text) -> None:
             if isinstance(line, Text):
@@ -1093,7 +1204,7 @@ class LogBrowser(App):
         self.kind_list: KindListView | None = None
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
-        self.output_log: OutputLog | None = None
+        self.output_log: ResultsArea | None = None
         self.footer: Footer | None = None
         self.subsearch_path: Path | None = None
         self.subsearch_active = False
@@ -1249,7 +1360,7 @@ class LogBrowser(App):
         self.wizard.mount(header_row)
         self._result_log_counter += 1
         result_id = f"result-log-{self._result_log_counter}"
-        self.output_log = OutputLog(id=result_id, classes="result-log")
+        self.output_log = ResultsArea(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
         show_back = len(self.subsearch_terms) > 1
@@ -1581,46 +1692,17 @@ class LogBrowser(App):
             status = Static(message, id='status')
             self.wizard.mount(status)
 
-    def _write_output_lines(self, lines: list[str | Text]) -> None:
+    def _write_output_lines(self, lines: list[str]) -> None:
         if self.output_log is None:
             return
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.text = "\n".join(lines)
+            return
 
-        if hasattr(self.output_log, 'clear'):
+        if hasattr(self.output_log, "clear"):
             self.output_log.clear()  # type: ignore[call-arg]
-        if hasattr(self.output_log, "clear_selection"):
-            self.output_log.clear_selection()  # type: ignore[call-arg]
-        else:  # pragma: no cover - safety for unknown widgets
-            self.output_log.update('')
-        writer = getattr(self.output_log, "write_line", None)
-        if callable(writer):
-            for line in lines:
-                try:
-                    writer(line)
-                except Exception:
-                    writer(str(line))
-        elif hasattr(self.output_log, 'write'):
-            for line in lines:
-                if isinstance(line, Text):
-                    payload = line.plain
-                else:
-                    payload = str(line)
-                try:
-                    self.output_log.write(payload)
-                except Exception:
-                    self.output_log.write(str(payload))
-        else:
-            plain_lines = [
-                line.plain if isinstance(line, Text) else str(line)
-                for line in lines
-            ]
-            self.output_log.update("\n".join(plain_lines))
-        if hasattr(self.output_log, 'scroll_end'):
-            try:
-                self.output_log.scroll_end()
-            except Exception:
-                pass
-        if isinstance(self.output_log, OutputLog):
-            self.output_log.show_cursor()
+        if hasattr(self.output_log, "update"):
+            self.output_log.update("\n".join(lines))
 
     def _copy_results(self, *, selection_only: bool) -> None:
         if selection_only:
@@ -1639,8 +1721,9 @@ class LogBrowser(App):
         self._notify("Copied full results to clipboard.")
 
     def _get_selected_text(self) -> str | None:
-        if isinstance(self.output_log, OutputLog):
-            return self.output_log.get_selection_text()
+        if isinstance(self.output_log, ResultsArea):
+            text = self.output_log.selected_text
+            return text or None
         if self.screen is None:
             return None
         selected = self.screen.get_selected_text()
@@ -1649,21 +1732,9 @@ class LogBrowser(App):
     def _get_full_results_text(self) -> str | None:
         if self.last_rendered_lines:
             return "\n".join(self.last_rendered_lines).rstrip("\n")
-        if isinstance(self.output_log, OutputLog):
-            return self.output_log.get_all_text()
+        if isinstance(self.output_log, ResultsArea):
+            return self.output_log.text
         return None
-
-    def _highlight_results(
-        self,
-        lines: list[str],
-        kind: str | None,
-    ) -> list[Text]:
-        highlight_kind = kind or self.subsearch_kind or self.current_kind
-        safe_kind = highlight_kind or ""
-        return [
-            highlight_result_line(safe_kind, line)
-            for line in lines
-        ]
 
     def _display_results(
         self,
@@ -1673,8 +1744,9 @@ class LogBrowser(App):
         self._show_step_results()
         if not lines:
             return
-        highlighted = self._highlight_results(lines, kind)
-        self._write_output_lines(highlighted)
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.set_log_kind(kind)
+        self._write_output_lines(lines)
 
 
     def _render_results(

@@ -1,27 +1,24 @@
-"""Syntax highlighting helpers for log output."""
+"""Syntax tokenization for SmarterMail log highlighting."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 
-from rich.text import Text
-
-
-STYLE_HEADER = "bold"
-STYLE_SECTION = "bold"
-STYLE_SUMMARY = "bold"
-STYLE_TERM = "bold magenta"
-STYLE_TIMESTAMP = "bold cyan"
-STYLE_BRACKET = "dim"
-STYLE_IP = "bright_blue"
-STYLE_ID = "magenta"
-STYLE_TAG = "cyan"
-STYLE_EMAIL = "bright_magenta"
-STYLE_COMMAND = "green"
-STYLE_RESPONSE = "yellow"
-STYLE_LINE_NUMBER = "dim"
-STYLE_MESSAGE_ID = "bright_cyan"
-
+TOKEN_HEADER = "header"
+TOKEN_SECTION = "section"
+TOKEN_SUMMARY = "summary"
+TOKEN_TERM = "term"
+TOKEN_TIMESTAMP = "timestamp"
+TOKEN_BRACKET = "bracket"
+TOKEN_IP = "ip"
+TOKEN_ID = "id"
+TOKEN_TAG = "tag"
+TOKEN_EMAIL = "email"
+TOKEN_COMMAND = "command"
+TOKEN_RESPONSE = "response"
+TOKEN_LINE_NUMBER = "line_number"
+TOKEN_MESSAGE_ID = "message_id"
 
 _TIME_START = re.compile(
     r"^(?P<time>\d{2}:\d{2}:\d{2}(?:\.\d{3})?)"
@@ -43,72 +40,136 @@ _STATUS_CODE = re.compile(r"(?<!\d)([245]\d{2})(?=[ -])")
 _BRACKET_TAG = re.compile(r"\[[A-Za-z][^\]]*\]")
 
 
-def highlight_result_line(kind: str, line: str) -> Text:
-    """Return a Rich Text line with syntax styling applied."""
+@dataclass(frozen=True)
+class HighlightSpan:
+    """A highlighted span for a single line."""
 
-    stripped = line.strip()
-    if not stripped:
-        return Text("")
-
-    if line.startswith("===") and line.endswith("==="):
-        return _style_file_header(line)
-
-    if line.startswith("Search term "):
-        return _style_summary(line)
-
-    if line.startswith("Lines without message identifiers"):
-        return _style_label(line)
-
-    if line.startswith("[") and "first seen on line" in line:
-        return _style_section(line)
-
-    match = _LINE_NUMBER.match(line)
-    if match:
-        prefix = line[: match.end()]
-        remainder = line[match.end():]
-        text = Text(prefix)
-        text.stylize(STYLE_LINE_NUMBER, 0, len(prefix))
-        text.append(highlight_log_line(kind, remainder))
-        return text
-
-    return highlight_log_line(kind, line)
+    start: int
+    end: int
+    token: str
 
 
-def highlight_log_line(kind: str, line: str) -> Text:
-    """Highlight a formatted log line with structural tokens."""
+def spans_for_line(kind: str, line: str) -> list[HighlightSpan]:
+    """Return highlight spans for a log line."""
 
     _ = kind
+    stripped = line.strip()
+    if not stripped:
+        return []
+
+    if line.startswith("===") and line.endswith("==="):
+        return _header_spans(line)
+
+    if line.startswith("Search term "):
+        return _summary_spans(line)
+
+    if line.startswith("Lines without message identifiers"):
+        return [HighlightSpan(0, len(line), TOKEN_SECTION)]
+
+    if line.startswith("[") and "first seen on line" in line:
+        return _section_spans(line)
+
+    line_match = _LINE_NUMBER.match(line)
+    if line_match:
+        spans = [
+            HighlightSpan(0, line_match.end(), TOKEN_LINE_NUMBER),
+        ]
+        spans.extend(
+            _log_line_spans(line[line_match.end():], line_match.end())
+        )
+        return spans
+
+    return _log_line_spans(line, 0)
+
+
+def _header_spans(line: str) -> list[HighlightSpan]:
+    spans = [HighlightSpan(0, len(line), TOKEN_HEADER)]
+    match = re.match(r"^===\s+(?P<name>.+?)\s+===$", line)
+    if match:
+        spans.append(
+            HighlightSpan(
+                match.start("name"),
+                match.end("name"),
+                TOKEN_TAG,
+            )
+        )
+    return spans
+
+
+def _summary_spans(line: str) -> list[HighlightSpan]:
+    spans = [HighlightSpan(0, len(line), TOKEN_SUMMARY)]
+    match = re.search(r"'([^']+)'", line)
+    if match:
+        spans.append(
+            HighlightSpan(
+                match.start(1),
+                match.end(1),
+                TOKEN_TERM,
+            )
+        )
+    return spans
+
+
+def _section_spans(line: str) -> list[HighlightSpan]:
+    spans = [HighlightSpan(0, len(line), TOKEN_SECTION)]
+    for match in _BRACKET_FIELD.finditer(line):
+        spans.append(
+            HighlightSpan(match.start(), match.start() + 1, TOKEN_BRACKET)
+        )
+        spans.append(
+            HighlightSpan(
+                match.start("field"),
+                match.end("field"),
+                TOKEN_MESSAGE_ID,
+            )
+        )
+        spans.append(
+            HighlightSpan(match.end() - 1, match.end(), TOKEN_BRACKET)
+        )
+    return spans
+
+
+def _log_line_spans(line: str, offset: int) -> list[HighlightSpan]:
+    spans: list[HighlightSpan] = []
     time_match = _TIME_START.match(line)
     if not time_match:
-        text = Text(line)
-        _stylize_message(text)
-        return text
+        spans.extend(_message_spans(line, offset))
+        return spans
 
-    text = Text()
-    time_end = time_match.end("time")
-    text.append(line[:time_end], style=STYLE_TIMESTAMP)
+    spans.append(
+        HighlightSpan(
+            offset + time_match.start("time"),
+            offset + time_match.end("time"),
+            TOKEN_TIMESTAMP,
+        )
+    )
     pos = time_match.end()
     fields, message_start = _leading_bracket_fields(line, pos)
-    text.append(line[time_end:fields[0][0]] if fields else line[time_end:pos])
-
-    for idx, (start, end, field_start, field_end) in enumerate(fields):
-        text.append("[", style=STYLE_BRACKET)
-        field_value = line[field_start:field_end]
-        style = _field_style(field_value)
-        text.append(field_value, style=style)
-        text.append("]", style=STYLE_BRACKET)
-        pos = end
-        if idx + 1 < len(fields):
-            next_start = fields[idx + 1][0]
-            text.append(line[pos:next_start])
-            pos = next_start
-
-    if message_start > pos:
-        text.append(line[pos:message_start])
-    message_text = Text(line[message_start:])
-    _stylize_message(message_text)
-    text.append(message_text)
-    return text
+    for start, end, field_start, field_end in fields:
+        spans.append(
+            HighlightSpan(
+                offset + start,
+                offset + start + 1,
+                TOKEN_BRACKET,
+            )
+        )
+        value = line[field_start:field_end]
+        spans.append(
+            HighlightSpan(
+                offset + field_start,
+                offset + field_end,
+                _field_token(value),
+            )
+        )
+        spans.append(
+            HighlightSpan(
+                offset + end - 1,
+                offset + end,
+                TOKEN_BRACKET,
+            )
+        )
+    spans.extend(_message_spans(line[message_start:], offset + message_start))
+    return spans
 
 
 def _leading_bracket_fields(
@@ -143,70 +204,41 @@ def _leading_bracket_fields(
     return fields, message_start
 
 
-def _field_style(value: str) -> str:
+def _field_token(value: str) -> str:
     if _IP.fullmatch(value):
-        return STYLE_IP
+        return TOKEN_IP
     if _EMAIL.fullmatch(value):
-        return STYLE_EMAIL
+        return TOKEN_EMAIL
     if value.isdigit():
-        return STYLE_ID
-    return STYLE_TAG
+        return TOKEN_ID
+    return TOKEN_TAG
 
 
-def _stylize_message(text: Text) -> None:
-    for pattern, style in (
-        (_CMD_RSP, STYLE_COMMAND),
-        (_SMTP_VERB, STYLE_COMMAND),
-        (_STATUS_CODE, STYLE_RESPONSE),
-        (_EMAIL, STYLE_EMAIL),
-        (_IP, STYLE_IP),
-        (_MESSAGE_ID, STYLE_MESSAGE_ID),
-        (_BRACKET_TAG, STYLE_TAG),
+def _message_spans(line: str, offset: int) -> list[HighlightSpan]:
+    spans: list[HighlightSpan] = []
+    for pattern, token in (
+        (_CMD_RSP, TOKEN_COMMAND),
+        (_SMTP_VERB, TOKEN_COMMAND),
+        (_STATUS_CODE, TOKEN_RESPONSE),
+        (_EMAIL, TOKEN_EMAIL),
+        (_IP, TOKEN_IP),
+        (_MESSAGE_ID, TOKEN_MESSAGE_ID),
+        (_BRACKET_TAG, TOKEN_TAG),
     ):
-        _apply_regex(text, pattern, style)
+        spans.extend(_regex_spans(pattern, line, token, offset))
+    return spans
 
 
-def _apply_regex(text: Text, pattern: re.Pattern[str], style: str) -> None:
-    for match in pattern.finditer(text.plain):
+def _regex_spans(
+    pattern: re.Pattern[str],
+    line: str,
+    token: str,
+    offset: int,
+) -> list[HighlightSpan]:
+    spans: list[HighlightSpan] = []
+    for match in pattern.finditer(line):
         start, end = match.span(0)
         if start == end:
             continue
-        text.stylize(style, start, end)
-
-
-def _style_file_header(line: str) -> Text:
-    text = Text(line)
-    text.stylize(STYLE_HEADER, 0, len(line))
-    match = re.match(r"^===\s+(?P<name>.+?)\s+===$", line)
-    if match:
-        text.stylize(STYLE_TAG, match.start("name"), match.end("name"))
-    return text
-
-
-def _style_summary(line: str) -> Text:
-    text = Text(line)
-    text.stylize(STYLE_SUMMARY, 0, len(line))
-    match = re.search(r"'([^']+)'", line)
-    if match:
-        text.stylize(STYLE_TERM, match.start(1), match.end(1))
-    return text
-
-
-def _style_label(line: str) -> Text:
-    text = Text(line)
-    text.stylize(STYLE_SECTION, 0, len(line))
-    return text
-
-
-def _style_section(line: str) -> Text:
-    text = Text(line)
-    text.stylize(STYLE_SECTION, 0, len(line))
-    for match in _BRACKET_FIELD.finditer(line):
-        text.stylize(STYLE_BRACKET, match.start(), match.start() + 1)
-        text.stylize(
-            STYLE_MESSAGE_ID,
-            match.start("field"),
-            match.end("field"),
-        )
-        text.stylize(STYLE_BRACKET, match.end() - 1, match.end())
-    return text
+        spans.append(HighlightSpan(offset + start, offset + end, token))
+    return spans
