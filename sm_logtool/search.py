@@ -216,14 +216,16 @@ def search_admin_entries(
             entry = parse_admin_line(line)
             line_owner_id: str | None = None
             if entry is not None:
-                message_id = f"{entry.ip} {entry.timestamp} #{line_number}"
+                message_id = f"{entry.ip} {entry.timestamp}"
                 current_id = message_id
                 line_owner_id = current_id
-                builder = _ConversationBuilder(
-                    message_id=message_id,
-                    first_line_number=line_number,
-                )
-                builders[message_id] = builder
+                builder = builders.get(message_id)
+                if builder is None:
+                    builder = _ConversationBuilder(
+                        message_id=message_id,
+                        first_line_number=line_number,
+                    )
+                    builders[message_id] = builder
                 builder.add_line(line)
             else:
                 if starts_with_timestamp(line):

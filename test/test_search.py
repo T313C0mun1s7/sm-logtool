@@ -135,3 +135,20 @@ def test_search_admin_entries_continuations(tmp_path):
     assert result.total_conversations == 1
     assert result.orphan_matches == []
     assert result.conversations[0].lines[1].startswith("\tneedle")
+
+
+def test_search_admin_entries_groups_same_timestamp(tmp_path):
+    log_path = tmp_path / "admin.log"
+    log_path.write_text(
+        "10:13:13.367 [23.127.140.125] IMAP Attempting login\n"
+        "10:13:13.367 [23.127.140.125] IMAP Login successful\n"
+        "10:13:15.337 [23.127.140.125] IMAP Logout\n"
+    )
+
+    result = search.search_admin_entries(log_path, "IMAP")
+
+    assert result.total_conversations == 2
+    assert result.conversations[0].lines == [
+        "10:13:13.367 [23.127.140.125] IMAP Attempting login",
+        "10:13:13.367 [23.127.140.125] IMAP Login successful",
+    ]
