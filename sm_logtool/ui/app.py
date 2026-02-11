@@ -33,7 +33,7 @@ from ..logfiles import (
     parse_log_filename,
     summarize_logs,
 )
-from ..search import search_smtp_conversations
+from ..search import get_search_function
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
 try:
@@ -589,6 +589,7 @@ class LogBrowser(App):
         self.footer: Footer | None = None
         self.subsearch_path: Path | None = None
         self.subsearch_active = False
+        self.subsearch_kind: str | None = None
         self.subsearch_depth = 0
         self.last_rendered_lines: list[str] | None = None
         self.subsearch_terms: list[str] = []
@@ -983,18 +984,29 @@ class LogBrowser(App):
                     self._notify(f"Failed to stage {info.path.name}: {exc}")
                     return
                 search_targets.append(staged.staged_path)
+        search_kind = self.subsearch_kind if self.subsearch_active else None
+        if search_kind is None:
+            search_kind = self.current_kind
+        if search_kind is None:
+            self._notify("Select a log type before searching.")
+            return
+        search_fn = get_search_function(search_kind)
+        if search_fn is None:
+            self._notify(f"No search handler for log kind: {search_kind}")
+            return
         term = (self.search_input.value if self.search_input else "").strip()
         if not term:
             self._notify("Enter a search term.")
             return
 
         results = [
-            search_smtp_conversations(target, term)
+            search_fn(target, term)
             for target in search_targets
         ]
         rendered_lines = self._render_results(results, search_targets)
         self.last_rendered_lines = rendered_lines
         self._write_subsearch_snapshot(results, term, rendered_lines)
+        self.subsearch_kind = search_kind
 
         self._show_step_results()
         self._write_output_lines(rendered_lines)
@@ -1133,6 +1145,7 @@ class LogBrowser(App):
     def _reset_subsearch(self) -> None:
         self.subsearch_active = False
         self.subsearch_path = None
+        self.subsearch_kind = None
         self.subsearch_depth = 0
         self.last_rendered_lines = None
         self.subsearch_terms = []

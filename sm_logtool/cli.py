@@ -19,7 +19,7 @@ from .logfiles import (
     parse_stamp,
     summarize_logs,
 )
-from .search import search_smtp_conversations
+from .search import get_search_function
 from .staging import DEFAULT_STAGING_ROOT, stage_log
 
 
@@ -172,7 +172,10 @@ def _run_search(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     logs_dir = _resolve_logs_dir(args, config)
     staging_dir = _resolve_staging_dir(args, config)
-    log_kind: str = args.kind or config.default_kind
+    log_kind = args.kind or config.default_kind
+    if log_kind is None:
+        print("Log kind is required.", file=sys.stderr)
+        return 2
 
     if args.list:
         return _list_logs(logs_dir, log_kind)
@@ -229,7 +232,12 @@ def _run_search(args: argparse.Namespace) -> int:
         print(f"Failed to stage log {log_path}: {exc}", file=sys.stderr)
         return 1
 
-    result = search_smtp_conversations(
+    search_fn = get_search_function(log_kind)
+    if search_fn is None:
+        print(f"Unsupported log kind: {log_kind}", file=sys.stderr)
+        return 2
+
+    result = search_fn(
         staged.staged_path,
         args.term,
         ignore_case=not args.case_sensitive,

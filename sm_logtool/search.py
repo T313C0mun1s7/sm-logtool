@@ -1,19 +1,22 @@
-"""Search helpers for SmarterMail SMTP logs."""
+"""Search helpers for SmarterMail logs."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import List, Tuple
+from typing import List, Protocol, Tuple
 
-from .log_parsers import parse_smtp_line
-
-
+from .log_parsers import (
+    parse_admin_line,
+    parse_delivery_line,
+    parse_smtp_line,
+    starts_with_timestamp,
+)
 
 @dataclass
 class Conversation:
-    """SMTP conversation grouped by message identifier."""
+    """Log conversation grouped by message identifier."""
 
     message_id: str
     lines: List[str]
@@ -35,6 +38,16 @@ class SmtpSearchResult:
         return len(self.conversations)
 
 
+class SearchFunction(Protocol):
+    def __call__(
+        self,
+        log_path: Path,
+        term: str,
+        *,
+        ignore_case: bool = True,
+    ) -> SmtpSearchResult: ...
+
+
 def search_smtp_conversations(
     log_path: Path,
     term: str,
@@ -54,25 +67,42 @@ def search_smtp_conversations(
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
     total_lines = 0
+    current_id: str | None = None
 
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             total_lines += 1
             line = raw_line.rstrip("\n")
-            message_id = _extract_message_id(line)
-            if message_id:
-                builder = builders.get(message_id)
+            entry = parse_smtp_line(line)
+            line_owner_id: str | None = None
+            if entry is not None:
+                current_id = entry.log_id
+                line_owner_id = current_id
+                builder = builders.get(current_id)
                 if builder is None:
                     builder = _ConversationBuilder(
-                        message_id=message_id,
+                        message_id=current_id,
                         first_line_number=line_number,
                     )
-                    builders[message_id] = builder
+                    builders[current_id] = builder
                 builder.add_line(line)
+            else:
+                if starts_with_timestamp(line):
+                    current_id = None
+                elif current_id is not None:
+                    line_owner_id = current_id
+                    builder = builders.get(current_id)
+                    if builder is None:
+                        builder = _ConversationBuilder(
+                            message_id=current_id,
+                            first_line_number=line_number,
+                        )
+                        builders[current_id] = builder
+                    builder.add_line(line)
 
             if pattern.search(line):
-                if message_id:
-                    matched_ids.add(message_id)
+                if line_owner_id is not None:
+                    matched_ids.add(line_owner_id)
                 else:
                     orphan_matches.append((line_number, line))
 
@@ -92,11 +122,158 @@ def search_smtp_conversations(
     )
 
 
-def _extract_message_id(line: str) -> str | None:
-    entry = parse_smtp_line(line)
-    if entry is None:
-        return None
-    return entry.log_id
+def search_delivery_conversations(
+    log_path: Path,
+    term: str,
+    *,
+    ignore_case: bool = True,
+) -> SmtpSearchResult:
+    """Return delivery conversations containing ``term``."""
+
+    flags = re.IGNORECASE if ignore_case else 0
+    pattern = re.compile(re.escape(term), flags)
+
+    builders: dict[str, _ConversationBuilder] = {}
+    matched_ids: set[str] = set()
+    orphan_matches: list[tuple[int, str]] = []
+    total_lines = 0
+    current_id: str | None = None
+
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            total_lines += 1
+            line = raw_line.rstrip("\n")
+            entry = parse_delivery_line(line)
+            line_owner_id: str | None = None
+            if entry is not None:
+                current_id = entry.delivery_id
+                line_owner_id = current_id
+                builder = builders.get(current_id)
+                if builder is None:
+                    builder = _ConversationBuilder(
+                        message_id=current_id,
+                        first_line_number=line_number,
+                    )
+                    builders[current_id] = builder
+                builder.add_line(line)
+            else:
+                if starts_with_timestamp(line):
+                    current_id = None
+                elif current_id is not None:
+                    line_owner_id = current_id
+                    builder = builders.get(current_id)
+                    if builder is None:
+                        builder = _ConversationBuilder(
+                            message_id=current_id,
+                            first_line_number=line_number,
+                        )
+                        builders[current_id] = builder
+                    builder.add_line(line)
+
+            if pattern.search(line):
+                if line_owner_id is not None:
+                    matched_ids.add(line_owner_id)
+                else:
+                    orphan_matches.append((line_number, line))
+
+    conversations = [
+        builders[mid].as_conversation()
+        for mid in matched_ids
+        if mid in builders
+    ]
+    conversations.sort(key=lambda conv: conv.first_line_number)
+
+    return SmtpSearchResult(
+        term=term,
+        log_path=log_path,
+        conversations=conversations,
+        total_lines=total_lines,
+        orphan_matches=orphan_matches,
+    )
+
+
+def search_admin_entries(
+    log_path: Path,
+    term: str,
+    *,
+    ignore_case: bool = True,
+) -> SmtpSearchResult:
+    """Return administrative log entries containing ``term``."""
+
+    flags = re.IGNORECASE if ignore_case else 0
+    pattern = re.compile(re.escape(term), flags)
+
+    builders: dict[str, _ConversationBuilder] = {}
+    matched_ids: set[str] = set()
+    orphan_matches: list[tuple[int, str]] = []
+    total_lines = 0
+    current_id: str | None = None
+
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            total_lines += 1
+            line = raw_line.rstrip("\n")
+            entry = parse_admin_line(line)
+            line_owner_id: str | None = None
+            if entry is not None:
+                message_id = f"{entry.ip} {entry.timestamp} #{line_number}"
+                current_id = message_id
+                line_owner_id = current_id
+                builder = _ConversationBuilder(
+                    message_id=message_id,
+                    first_line_number=line_number,
+                )
+                builders[message_id] = builder
+                builder.add_line(line)
+            else:
+                if starts_with_timestamp(line):
+                    current_id = None
+                elif current_id is not None:
+                    line_owner_id = current_id
+                    builder = builders.get(current_id)
+                    if builder is None:
+                        builder = _ConversationBuilder(
+                            message_id=current_id,
+                            first_line_number=line_number,
+                        )
+                        builders[current_id] = builder
+                    builder.add_line(line)
+
+            if pattern.search(line):
+                if line_owner_id is not None:
+                    matched_ids.add(line_owner_id)
+                else:
+                    orphan_matches.append((line_number, line))
+
+    conversations = [
+        builders[mid].as_conversation()
+        for mid in matched_ids
+        if mid in builders
+    ]
+    conversations.sort(key=lambda conv: conv.first_line_number)
+
+    return SmtpSearchResult(
+        term=term,
+        log_path=log_path,
+        conversations=conversations,
+        total_lines=total_lines,
+        orphan_matches=orphan_matches,
+    )
+
+
+def get_search_function(
+    kind: str,
+) -> SearchFunction | None:
+    """Return the search function for the given log kind."""
+
+    kind_key = kind.lower()
+    if kind_key == "smtplog":
+        return search_smtp_conversations
+    if kind_key == "delivery":
+        return search_delivery_conversations
+    if kind_key == "administrative":
+        return search_admin_entries
+    return None
 
 
 @dataclass

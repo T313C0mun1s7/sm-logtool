@@ -8,6 +8,7 @@ from typing import Iterable, List, Tuple
 
 
 _TIME_PATTERN = r"\d{2}:\d{2}:\d{2}(?:\.\d{3})?"
+_TIME_PREFIX = re.compile(rf"^{_TIME_PATTERN}")
 
 _SMTP_PATTERN = re.compile(
     rf"^(?P<time>{_TIME_PATTERN}) "
@@ -32,6 +33,26 @@ class SmtpLogEntry:
     timestamp: str
     ip: str
     log_id: str
+    message: str
+    raw: str
+
+
+@dataclass(frozen=True)
+class DeliveryLogLine:
+    """Structured delivery log line."""
+
+    timestamp: str
+    delivery_id: str
+    message: str
+    raw: str
+
+
+@dataclass(frozen=True)
+class AdminLogLine:
+    """Structured administrative log line."""
+
+    timestamp: str
+    ip: str
     message: str
     raw: str
 
@@ -80,6 +101,40 @@ def parse_smtp_line(line: str) -> SmtpLogEntry | None:
         timestamp=match.group("time"),
         ip=match.group("ip"),
         log_id=match.group("log_id"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
+def starts_with_timestamp(line: str) -> bool:
+    """Return True when a line begins with the timestamp format."""
+
+    return bool(_TIME_PREFIX.match(line))
+
+
+def parse_delivery_line(line: str) -> DeliveryLogLine | None:
+    """Parse a single delivery log line."""
+
+    match = _DELIVERY_PATTERN.match(line)
+    if not match:
+        return None
+    return DeliveryLogLine(
+        timestamp=match.group("time"),
+        delivery_id=match.group("delivery_id"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
+def parse_admin_line(line: str) -> AdminLogLine | None:
+    """Parse a single administrative log line."""
+
+    match = _ADMIN_PATTERN.match(line)
+    if not match:
+        return None
+    return AdminLogLine(
+        timestamp=match.group("time"),
+        ip=match.group("ip"),
         message=match.group("message"),
         raw=line,
     )
