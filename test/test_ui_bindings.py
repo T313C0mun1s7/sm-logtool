@@ -24,7 +24,7 @@ async def test_footer_shows_global_keys_on_results_step(tmp_path):
         kind, infos = next(iter(app._logs_by_kind.items()))
         app.current_kind = kind
         app.selected_logs = infos[:1]
-        app._show_step_results("Example\n")
+        app._show_step_results()
         await pilot.pause()
         bindings = [
             binding
@@ -49,7 +49,7 @@ async def test_reset_shortcut_returns_to_kind_step(tmp_path):
         kind, infos = next(iter(app._logs_by_kind.items()))
         app.current_kind = kind
         app.selected_logs = infos[:1]
-        app._show_step_results("Example\n")
+        app._show_step_results()
         await pilot.pause()
         assert app.step == WizardStep.RESULTS
         await pilot.press("ctrl+r")
@@ -67,7 +67,7 @@ async def test_quit_shortcut_sets_exit_flag(tmp_path):
         kind, infos = next(iter(app._logs_by_kind.items()))
         app.current_kind = kind
         app.selected_logs = infos[:1]
-        app._show_step_results("Example\n")
+        app._show_step_results()
         await pilot.pause()
         await pilot.press("ctrl+q")
         await pilot.pause()

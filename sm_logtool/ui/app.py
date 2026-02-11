@@ -41,6 +41,7 @@ from ..result_formatting import (
     format_conversation_lines,
 )
 from ..search import get_search_function
+from ..syntax import highlight_result_line
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
 try:
@@ -96,6 +97,9 @@ if _BaseLog is not None:
             self._selection_anchor = None
             self._selection_cursor = None
             self._cursor_only = False
+
+        def write_line(self, line: str | Text) -> None:
+            self.write(line)  # type: ignore[arg-type]
 
         def cursor_only_selection(self) -> bool:
             return self._cursor_only
@@ -410,6 +414,12 @@ else:
 
         def clear_selection(self) -> None:
             return
+
+        def write_line(self, line: str | Text) -> None:
+            if isinstance(line, Text):
+                self.write(line.plain)
+            else:
+                self.write(line)
 
 
 class ContextMenuScreen(ModalScreen[str | None]):
@@ -1016,6 +1026,7 @@ class LogBrowser(App):
         self.subsearch_kind: str | None = None
         self.subsearch_depth = 0
         self.last_rendered_lines: list[str] | None = None
+        self.last_rendered_kind: str | None = None
         self.subsearch_terms: list[str] = []
         self.subsearch_paths: list[Path] = []
         self.subsearch_rendered: list[list[str]] = []
@@ -1146,7 +1157,7 @@ class LogBrowser(App):
         self.search_input.focus()
         self._refresh_footer_bindings()
 
-    def _show_step_results(self, rendered: str | None = None) -> None:
+    def _show_step_results(self) -> None:
         self.step = WizardStep.RESULTS
         self._clear_wizard()
         title = self._results_title()
@@ -1192,8 +1203,6 @@ class LogBrowser(App):
             classes="results-body",
         )
         self.wizard.mount(results_body)
-        if rendered:
-            self._write_output_lines(rendered.splitlines())
         self.call_after_refresh(self._focus_results)
         self._refresh_footer_bindings()
 
@@ -1480,11 +1489,11 @@ class LogBrowser(App):
             search_kind,
         )
         self.last_rendered_lines = rendered_lines
+        self.last_rendered_kind = search_kind
         self._write_subsearch_snapshot(results, term, rendered_lines)
         self.subsearch_kind = search_kind
 
-        self._show_step_results()
-        self._write_output_lines(rendered_lines)
+        self._display_results(rendered_lines, search_kind)
         self._notify("Search complete.")
 
     def _notify(self, message: str) -> None:
@@ -1498,23 +1507,46 @@ class LogBrowser(App):
             status = Static(message, id='status')
             self.wizard.mount(status)
 
-    def _write_output_lines(self, lines: list[str]) -> None:
+    def _write_output_lines(self, lines: list[str | Text]) -> None:
         if self.output_log is None:
             return
+
+        def _line_with_newline(line: str | Text) -> str | Text:
+            if isinstance(line, Text):
+                styled = line.copy()
+                styled.append("\n")
+                return styled
+            return f"{line}\n"
+
         if hasattr(self.output_log, 'clear'):
             self.output_log.clear()  # type: ignore[call-arg]
         if hasattr(self.output_log, "clear_selection"):
             self.output_log.clear_selection()  # type: ignore[call-arg]
         else:  # pragma: no cover - safety for unknown widgets
             self.output_log.update('')
-        if hasattr(self.output_log, 'write'):
+        writer = getattr(self.output_log, "write_line", None)
+        if callable(writer):
             for line in lines:
                 try:
-                    self.output_log.write(f"{line}\n")
+                    writer(_line_with_newline(line))
                 except Exception:
-                    self.output_log.write(f"{str(line)}\n")
+                    writer(f"{str(line)}\n")
+        elif hasattr(self.output_log, 'write'):
+            for line in lines:
+                if isinstance(line, Text):
+                    payload = line.plain
+                else:
+                    payload = str(line)
+                try:
+                    self.output_log.write(f"{payload}\n")
+                except Exception:
+                    self.output_log.write(f"{str(payload)}\n")
         else:
-            self.output_log.update("\n".join(lines))
+            plain_lines = [
+                line.plain if isinstance(line, Text) else str(line)
+                for line in lines
+            ]
+            self.output_log.update("\n".join(plain_lines))
         if hasattr(self.output_log, 'scroll_end'):
             try:
                 self.output_log.scroll_end()
@@ -1553,6 +1585,29 @@ class LogBrowser(App):
         if isinstance(self.output_log, OutputLog):
             return self.output_log.get_all_text()
         return None
+
+    def _highlight_results(
+        self,
+        lines: list[str],
+        kind: str | None,
+    ) -> list[Text]:
+        highlight_kind = kind or self.subsearch_kind or self.current_kind
+        safe_kind = highlight_kind or ""
+        return [
+            highlight_result_line(safe_kind, line)
+            for line in lines
+        ]
+
+    def _display_results(
+        self,
+        lines: list[str],
+        kind: str | None,
+    ) -> None:
+        self._show_step_results()
+        if not lines:
+            return
+        highlighted = self._highlight_results(lines, kind)
+        self._write_output_lines(highlighted)
 
 
     def _render_results(
@@ -1662,8 +1717,10 @@ class LogBrowser(App):
         if not self.last_rendered_lines:
             self._notify("No prior results to display.")
             return
-        rendered = "\n".join(self.last_rendered_lines)
-        self._show_step_results(rendered)
+        self._display_results(
+            self.last_rendered_lines,
+            self.last_rendered_kind,
+        )
 
     def _step_back_subsearch(self) -> None:
         if len(self.subsearch_terms) <= 1:
@@ -1678,9 +1735,12 @@ class LogBrowser(App):
         self.last_rendered_lines = (
             self.subsearch_rendered[-1] if self.subsearch_rendered else None
         )
+        self.last_rendered_kind = self.subsearch_kind
         if self.last_rendered_lines:
-            rendered = "\n".join(self.last_rendered_lines)
-            self._show_step_results(rendered)
+            self._display_results(
+                self.last_rendered_lines,
+                self.last_rendered_kind,
+            )
         else:
             self._show_step_kind()
 
@@ -1690,6 +1750,7 @@ class LogBrowser(App):
         self.subsearch_kind = None
         self.subsearch_depth = 0
         self.last_rendered_lines = None
+        self.last_rendered_kind = None
         self.subsearch_terms = []
         self.subsearch_paths = []
         self.subsearch_rendered = []
