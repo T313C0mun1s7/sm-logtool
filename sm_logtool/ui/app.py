@@ -133,12 +133,26 @@ if _BaseLog is not None:
             if plain.endswith("\n"):
                 plain = plain[:-1]
             self._plain_lines.append(plain)
-            if isinstance(line, Text) and self._prefer_markup:
-                to_markup = getattr(line, "to_markup", None)
-                if callable(to_markup):
-                    self.write(to_markup())
-                    return
-            self.write(line)  # type: ignore[arg-type]
+
+            payload: str | Text = line
+            if isinstance(line, Text):
+                if self._prefer_markup:
+                    to_markup = getattr(line, "to_markup", None)
+                    if callable(to_markup):
+                        payload = to_markup()
+                    else:
+                        payload = plain
+                else:
+                    payload = plain
+
+            needs_newline = getattr(_BaseLog, "__name__", "") in {
+                "TextLog",
+                "Log",
+            }
+            if needs_newline and isinstance(payload, str):
+                if not payload.endswith("\n"):
+                    payload = f"{payload}\n"
+            self.write(payload)  # type: ignore[arg-type]
 
         def cursor_only_selection(self) -> bool:
             return self._cursor_only
