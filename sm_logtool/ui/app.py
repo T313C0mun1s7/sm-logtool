@@ -77,6 +77,11 @@ if _BaseLog is not None:
             self._selection_anchor: Offset | None = None
             self._selection_cursor: Offset | None = None
             self._cursor_only = False
+            self._mouse_selecting = False
+            self._mouse_dragged = False
+            self._use_custom_selection = not callable(
+                getattr(_BaseLog, "on_mouse_down", None),
+            )
 
         def clear_selection(self) -> None:
             try:
@@ -106,6 +111,25 @@ if _BaseLog is not None:
             selections = dict(screen.selections)
             selections[self] = Selection.from_offsets(start, end)
             screen.selections = selections
+
+        def _clamp_offset(self, offset: Offset) -> Offset:
+            if self.line_count <= 0:
+                return Offset(0, 0)
+            max_y = max(self.line_count - 1, 0)
+            y = min(max(offset.y, 0), max_y)
+            line = self.lines[y] if self.lines else ""
+            max_x = len(line)
+            x = min(max(offset.x, 0), max_x)
+            return Offset(x, y)
+
+        def _offset_from_event(
+            self,
+            event: events.MouseDown | events.MouseMove | events.MouseUp,
+        ) -> Offset:
+            scroll_x, scroll_y = self.scroll_offset
+            return self._clamp_offset(
+                Offset(scroll_x + event.x, scroll_y + event.y),
+            )
 
         def _cursor_span(self) -> tuple[Offset, Offset]:
             cursor = self._selection_cursor
@@ -191,14 +215,71 @@ if _BaseLog is not None:
             self,
             event: events.MouseDown,
         ) -> None:  # pragma: no cover - UI behaviour
-            scroll_x, scroll_y = self.scroll_offset
-            self._selection_cursor = Offset(
-                scroll_x + event.x,
-                scroll_y + event.y,
-            )
-            self._selection_anchor = self._selection_cursor
-            self._cursor_only = False
+            offset = self._offset_from_event(event)
+            self._selection_cursor = offset
+            self._selection_anchor = offset
+            self._cursor_only = True
+            self._mouse_selecting = True
+            self._mouse_dragged = False
+            if self._use_custom_selection:
+                start, end = self._cursor_span()
+                self._set_selection(start, end)
             handler = getattr(super(), "on_mouse_down", None)
+            if handler is not None:
+                handler(event)
+
+        def on_mouse_move(
+            self,
+            event: events.MouseMove,
+        ) -> None:  # pragma: no cover - UI behaviour
+            if not self._mouse_selecting:
+                handler = getattr(super(), "on_mouse_move", None)
+                if handler is not None:
+                    handler(event)
+                return
+
+            offset = self._offset_from_event(event)
+            self._selection_cursor = offset
+            if self._selection_anchor is None:
+                self._selection_anchor = offset
+            if offset != self._selection_anchor:
+                self._mouse_dragged = True
+            if self._mouse_dragged:
+                self._cursor_only = False
+                if self._use_custom_selection:
+                    self._set_selection(
+                        self._selection_anchor,
+                        self._selection_cursor,
+                    )
+            handler = getattr(super(), "on_mouse_move", None)
+            if handler is not None:
+                handler(event)
+
+        def on_mouse_up(
+            self,
+            event: events.MouseUp,
+        ) -> None:  # pragma: no cover - UI behaviour
+            if not self._mouse_selecting:
+                handler = getattr(super(), "on_mouse_up", None)
+                if handler is not None:
+                    handler(event)
+                return
+
+            offset = self._offset_from_event(event)
+            self._selection_cursor = offset
+            if self._selection_anchor is None:
+                self._selection_anchor = offset
+            if offset != self._selection_anchor:
+                self._mouse_dragged = True
+            if self._mouse_dragged:
+                self._cursor_only = False
+                if self._use_custom_selection:
+                    self._set_selection(
+                        self._selection_anchor,
+                        self._selection_cursor,
+                    )
+            self._mouse_selecting = False
+            handler = getattr(super(), "on_mouse_up", None)
             if handler is not None:
                 handler(event)
 
