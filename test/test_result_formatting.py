@@ -40,6 +40,8 @@ def test_format_smtp_aligns_columns_and_continuations():
     msg_col = formatted[0].index("Start")
     assert formatted[1].index("continuation") == msg_col
     assert formatted[2].index("Next") == msg_col
+    assert "[1.2.3.4]" in formatted[0]
+    assert "[1.2.3.4 " not in formatted[0]
 
 
 def test_format_admin_aligns_continuations():

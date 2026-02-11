@@ -14,8 +14,10 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.geometry import Offset
 from textual.message import Message
 from textual.reactive import reactive
+from textual.selection import Selection
 from textual.widgets import (
     Button,
     Footer,
@@ -72,6 +74,87 @@ if _BaseLog is not None:
             if "classes" in init_sig.parameters:
                 kwargs["classes"] = classes
             super().__init__(**kwargs)  # type: ignore[arg-type]
+            self._selection_anchor: Offset | None = None
+            self._selection_cursor: Offset | None = None
+
+        def clear_selection(self) -> None:
+            try:
+                screen = self.screen
+            except Exception:
+                return
+            selections = dict(screen.selections)
+            if self in selections:
+                del selections[self]
+                screen.selections = selections
+            self._selection_anchor = None
+            self._selection_cursor = None
+
+        def on_mouse_down(
+            self,
+            event: events.MouseDown,
+        ) -> None:  # pragma: no cover - UI behaviour
+            scroll_x, scroll_y = self.scroll_offset
+            self._selection_cursor = Offset(
+                scroll_x + event.x,
+                scroll_y + event.y,
+            )
+            self._selection_anchor = self._selection_cursor
+            super().on_mouse_down(event)
+
+        def on_key(
+            self,
+            event: events.Key,
+        ) -> None:  # pragma: no cover - UI behaviour
+            aliases = set(event.aliases)
+            if not aliases.intersection(
+                {
+                    "shift+up",
+                    "shift+down",
+                    "shift+left",
+                    "shift+right",
+                }
+            ):
+                return
+            if self._selection_cursor is None:
+                scroll_x, scroll_y = self.scroll_offset
+                self._selection_cursor = Offset(scroll_x, scroll_y)
+            if self._selection_anchor is None:
+                self._selection_anchor = self._selection_cursor
+
+            dx, dy = 0, 0
+            if "shift+up" in aliases:
+                dy = -1
+            elif "shift+down" in aliases:
+                dy = 1
+            elif "shift+left" in aliases:
+                dx = -1
+            elif "shift+right" in aliases:
+                dx = 1
+
+            cursor = self._selection_cursor
+            max_y = max(self.line_count - 1, 0)
+            new_y = min(max(cursor.y + dy, 0), max_y)
+            line = self.lines[new_y] if self.lines else ""
+            max_x = len(line)
+            new_x = min(max(cursor.x + dx, 0), max_x)
+
+            self._selection_cursor = Offset(new_x, new_y)
+            selection = Selection.from_offsets(
+                self._selection_anchor,
+                self._selection_cursor,
+            )
+            if self.screen is not None:
+                selections = dict(self.screen.selections)
+                selections[self] = selection
+                self.screen.selections = selections
+            self.scroll_to(
+                x=new_x,
+                y=new_y,
+                animate=False,
+                immediate=True,
+            )
+            event.stop()
+            return
 
 else:
 
@@ -94,6 +177,9 @@ else:
         def clear(self) -> None:  # type: ignore[override]
             self._lines.clear()
             self.update("")
+
+        def clear_selection(self) -> None:
+            return
 
 
 class WizardStep(Enum):
@@ -565,6 +651,26 @@ class LogBrowser(App):
 
     .result-log {
         height: 1fr;
+        width: 1fr;
+    }
+
+    .results-row {
+        height: 1fr;
+    }
+
+    .results-panel {
+        width: 30;
+        min-width: 26;
+        margin-left: 1;
+    }
+
+    .results-help {
+        padding: 1 0;
+    }
+
+    .results-panel Button {
+        width: 100%;
+        margin-top: 1;
     }
     """
 
@@ -735,7 +841,27 @@ class LogBrowser(App):
         self.output_log = OutputLog(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        self.wizard.mount(self.output_log)
+        help_text = (
+            "Selection:\n"
+            "Mouse drag to highlight.\n"
+            "Shift + arrows to extend.\n"
+            "\n"
+            "Copy:\n"
+            "Copy uses selection or all.\n"
+            "Copy All copies full results."
+        )
+        results_panel = Vertical(
+            Static(help_text, classes="results-help"),
+            Button("Copy", id="copy-selection"),
+            Button("Copy All", id="copy-all"),
+            classes="results-panel",
+        )
+        results_row = Horizontal(
+            self.output_log,
+            results_panel,
+            classes="results-row",
+        )
+        self.wizard.mount(results_row)
         show_back = len(self.subsearch_terms) > 1
         buttons: list[Static] = [
             Button("New Search", id="new-search"),
@@ -813,6 +939,10 @@ class LogBrowser(App):
             self._step_back_subsearch()
         elif button_id == "quit-results":
             self.exit()
+        elif button_id == "copy-selection":
+            self._copy_results(selection_only=True)
+        elif button_id == "copy-all":
+            self._copy_results(selection_only=False)
 
         self._refresh_footer_bindings()
 
@@ -1036,6 +1166,8 @@ class LogBrowser(App):
             return
         if hasattr(self.output_log, 'clear'):
             self.output_log.clear()  # type: ignore[call-arg]
+        if hasattr(self.output_log, "clear_selection"):
+            self.output_log.clear_selection()  # type: ignore[call-arg]
         else:  # pragma: no cover - safety for unknown widgets
             self.output_log.update('')
         if hasattr(self.output_log, 'write'):
@@ -1051,6 +1183,36 @@ class LogBrowser(App):
                 self.output_log.scroll_end()
             except Exception:
                 pass
+
+    def _copy_results(self, *, selection_only: bool) -> None:
+        text: str | None = None
+        had_selection = False
+        if selection_only:
+            text = self._get_selected_text()
+            had_selection = bool(text)
+        if not text:
+            text = self._get_full_results_text()
+        if not text:
+            self._notify("No results available to copy.")
+            return
+        self.copy_to_clipboard(text)
+        if selection_only and had_selection:
+            self._notify("Copied selection to clipboard.")
+        else:
+            self._notify("Copied full results to clipboard.")
+
+    def _get_selected_text(self) -> str | None:
+        if self.screen is None:
+            return None
+        selected = self.screen.get_selected_text()
+        if not selected:
+            return None
+        return selected
+
+    def _get_full_results_text(self) -> str | None:
+        if self.last_rendered_lines:
+            return "\n".join(self.last_rendered_lines).rstrip("\n")
+        return None
 
     def _render_results(
         self,
