@@ -415,13 +415,13 @@ class ContextMenu(Horizontal):
         background: #1f1f1f;
         border: solid #5f5f5f;
         padding: 0 1;
-        height: auto;
+        height: 3;
         width: auto;
     }
 
     ContextMenu Button {
         width: auto;
-        height: auto;
+        height: 1;
         margin-right: 1;
         padding: 0 1;
     }
