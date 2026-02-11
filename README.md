@@ -14,6 +14,15 @@ with:
 - Python 3.10+
 - Linux (project classifiers currently target POSIX/Linux)
 
+## Deployment Model
+
+`sm-logtool` does not require installation on the same host as SmarterMail,
+but it is designed for that workflow. In practice, you typically SSH to the
+mail server and run searches there.
+
+The tool stages logs into a separate working directory so the original
+SmarterMail logs remain untouched during analysis and sub-searches.
+
 ## Install
 
 Install from this repository:
@@ -37,10 +46,12 @@ Configuration is YAML with these keys:
 Example:
 
 ```yaml
-logs_dir: /var/tmp/sm-logtool
-staging_dir: /var/tmp/sm-logtool/Temp
+logs_dir: /var/lib/smartermail/Logs
+staging_dir: /var/tmp/sm-tool/logs
 default_kind: smtpLog
 ```
+
+If `staging_dir` does not exist yet, the app creates it automatically.
 
 Config resolution order:
 
