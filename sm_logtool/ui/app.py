@@ -69,6 +69,10 @@ if _BaseLog is not None:
             init_sig = inspect.signature(_BaseLog.__init__)
             if "highlight" in init_sig.parameters:
                 kwargs["highlight"] = False
+            self._prefer_markup = False
+            if "markup" in init_sig.parameters:
+                kwargs["markup"] = True
+                self._prefer_markup = True
             if "wrap" in init_sig.parameters:
                 kwargs["wrap"] = True
             if "id" in init_sig.parameters:
@@ -99,6 +103,11 @@ if _BaseLog is not None:
             self._cursor_only = False
 
         def write_line(self, line: str | Text) -> None:
+            if isinstance(line, Text) and self._prefer_markup:
+                to_markup = getattr(line, "to_markup", None)
+                if callable(to_markup):
+                    self.write(to_markup())
+                    return
             self.write(line)  # type: ignore[arg-type]
 
         def cursor_only_selection(self) -> bool:
