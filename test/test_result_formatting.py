@@ -66,6 +66,28 @@ def test_format_admin_aligns_continuations():
     assert formatted[1].index("details") == msg_col
 
 
+def test_format_admin_moves_trailing_timestamp():
+    conversation = Conversation(
+        message_id="admin",
+        first_line_number=1,
+        lines=[
+            "[1.2.3.4] SMTP Login failed 00:01:02.003",
+        ],
+    )
+
+    widths = collect_widths("administrative", [conversation])
+    assert widths is not None
+    formatted = format_conversation_lines(
+        "administrative",
+        conversation.lines,
+        widths,
+    )
+
+    assert formatted[0].startswith("00:01:02.003 ")
+    assert "[1.2.3.4]" in formatted[0]
+    assert "SMTP Login failed" in formatted[0]
+
+
 def test_format_imap_retrieval_aligns_context():
     conversation = Conversation(
         message_id="72",

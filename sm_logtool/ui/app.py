@@ -27,8 +27,11 @@ from textual.widgets import (
     ListItem,
     ListView,
     Static,
+    TextArea,
 )
 from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
+from textual._text_area_theme import TextAreaTheme
+from rich.style import Style
 from rich.text import Text
 
 from ..logfiles import (
@@ -41,22 +44,59 @@ from ..result_formatting import (
     format_conversation_lines,
 )
 from ..search import get_search_function
+from ..syntax import (
+    TOKEN_BRACKET,
+    TOKEN_COMMAND,
+    TOKEN_EMAIL,
+    TOKEN_HEADER,
+    TOKEN_ID,
+    TOKEN_IP,
+    TOKEN_LINE_NUMBER,
+    TOKEN_MESSAGE_ID,
+    TOKEN_PROTO_ACTIVESYNC,
+    TOKEN_PROTO_API,
+    TOKEN_PROTO_CALDAV,
+    TOKEN_PROTO_CARDDAV,
+    TOKEN_PROTO_EAS,
+    TOKEN_PROTO_IMAP,
+    TOKEN_PROTO_POP,
+    TOKEN_PROTO_SMTP,
+    TOKEN_PROTO_USER,
+    TOKEN_PROTO_WEBMAIL,
+    TOKEN_PROTO_XMPP,
+    TOKEN_RESPONSE,
+    TOKEN_SECTION,
+    TOKEN_STATUS_BAD,
+    TOKEN_STATUS_GOOD,
+    TOKEN_SUMMARY,
+    TOKEN_TAG,
+    TOKEN_TERM,
+    TOKEN_TIMESTAMP,
+    spans_for_line,
+)
 from ..staging import DEFAULT_STAGING_ROOT, stage_log
 
-try:
+try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
 except ImportError:  # pragma: no cover - textual>=6 renames widgets
     try:
         from textual.widgets import Log  # type: ignore[attr-defined]
         _BaseLog = Log
-    except ImportError:  # pragma: no cover - final fallback
-        _BaseLog = None
+    except ImportError:  # pragma: no cover - older Textual
+        try:
+            from textual.widgets import (  # type: ignore[attr-defined]
+                RichLog as _BaseLog,
+            )
+        except ImportError:  # pragma: no cover - final fallback
+            _BaseLog = None
 
 
 if _BaseLog is not None:
 
     class OutputLog(_BaseLog):
         """Text log widget that adapts to Textual version differences."""
+
+        can_focus = True
 
         def __init__(
             self,
@@ -68,6 +108,10 @@ if _BaseLog is not None:
             init_sig = inspect.signature(_BaseLog.__init__)
             if "highlight" in init_sig.parameters:
                 kwargs["highlight"] = False
+            self._prefer_markup = False
+            if "markup" in init_sig.parameters:
+                kwargs["markup"] = True
+                self._prefer_markup = True
             if "wrap" in init_sig.parameters:
                 kwargs["wrap"] = True
             if "id" in init_sig.parameters:
@@ -83,6 +127,17 @@ if _BaseLog is not None:
             self._use_custom_selection = not callable(
                 getattr(_BaseLog, "on_mouse_down", None),
             )
+            if getattr(_BaseLog, "__name__", "") == "RichLog":
+                self._use_custom_selection = True
+            self._plain_lines: list[str] = []
+            if hasattr(self, "markup"):
+                try:
+                    self.markup = True  # type: ignore[attr-defined]
+                    self._prefer_markup = True
+                except Exception:
+                    self._prefer_markup = bool(
+                        getattr(self, "markup", False),
+                    )
 
         def clear_selection(self) -> None:
             try:
@@ -96,6 +151,42 @@ if _BaseLog is not None:
             self._selection_anchor = None
             self._selection_cursor = None
             self._cursor_only = False
+
+        def clear(self) -> None:  # type: ignore[override]
+            try:
+                super().clear()  # type: ignore[misc]
+            except Exception:
+                pass
+            self._plain_lines = []
+
+        def write_line(self, line: str | Text) -> None:
+            if isinstance(line, Text):
+                plain = line.plain
+            else:
+                plain = str(line)
+            if plain.endswith("\n"):
+                plain = plain[:-1]
+            self._plain_lines.append(plain)
+
+            payload: str | Text = line
+            if isinstance(line, Text):
+                if self._prefer_markup:
+                    to_markup = getattr(line, "to_markup", None)
+                    if callable(to_markup):
+                        payload = to_markup()
+                    else:
+                        payload = plain
+                else:
+                    payload = plain
+
+            needs_newline = getattr(_BaseLog, "__name__", "") in {
+                "TextLog",
+                "Log",
+            }
+            if needs_newline and isinstance(payload, str):
+                if not payload.endswith("\n"):
+                    payload = f"{payload}\n"
+            self.write(payload)  # type: ignore[arg-type]
 
         def cursor_only_selection(self) -> bool:
             return self._cursor_only
@@ -119,12 +210,25 @@ if _BaseLog is not None:
                 return plain
             return str(line)
 
+        def _get_lines(self) -> list[object]:
+            lines = getattr(self, "lines", None)
+            if isinstance(lines, list):
+                return lines
+            return self._plain_lines
+
+        def _line_count(self) -> int:
+            count = getattr(self, "line_count", None)
+            if isinstance(count, int):
+                return count
+            return len(self._plain_lines)
+
         def _clamp_offset(self, offset: Offset) -> Offset:
-            if self.line_count <= 0:
+            if self._line_count() <= 0:
                 return Offset(0, 0)
-            max_y = max(self.line_count - 1, 0)
+            max_y = max(self._line_count() - 1, 0)
             y = min(max(offset.y, 0), max_y)
-            line = self.lines[y] if self.lines else ""
+            lines = self._get_lines()
+            line = lines[y] if lines else ""
             max_x = len(line)
             x = min(max(offset.x, 0), max_x)
             return Offset(x, y)
@@ -148,7 +252,7 @@ if _BaseLog is not None:
             return end, start
 
         def get_selection_text(self) -> str | None:
-            if self.line_count <= 0:
+            if self._line_count() <= 0:
                 return None
             if self._selection_anchor is None:
                 return None
@@ -159,26 +263,28 @@ if _BaseLog is not None:
             start, end = self._order_offsets(start, end)
             if (start.y, start.x) == (end.y, end.x):
                 return None
-            if not self.lines:
+            lines = self._get_lines()
+            if not lines:
                 return None
             if start.y == end.y:
-                line = self._line_text(self.lines[start.y])
+                line = self._line_text(lines[start.y])
                 return line[start.x:end.x] or None
             parts: list[str] = []
-            first_line = self._line_text(self.lines[start.y])
+            first_line = self._line_text(lines[start.y])
             parts.append(first_line[start.x:])
             for line_idx in range(start.y + 1, end.y):
-                parts.append(self._line_text(self.lines[line_idx]))
-            last_line = self._line_text(self.lines[end.y])
+                parts.append(self._line_text(lines[line_idx]))
+            last_line = self._line_text(lines[end.y])
             parts.append(last_line[:end.x])
             text = "\n".join(parts)
             return text or None
 
         def get_all_text(self) -> str | None:
-            if not self.lines:
+            lines = self._get_lines()
+            if not lines:
                 return None
-            lines = [self._line_text(line) for line in self.lines]
-            text = "\n".join(lines).rstrip("\n")
+            plain_lines = [self._line_text(line) for line in lines]
+            text = "\n".join(plain_lines).rstrip("\n")
             return text or None
 
         def _cursor_span(self) -> tuple[Offset, Offset]:
@@ -186,7 +292,8 @@ if _BaseLog is not None:
             if cursor is None:
                 cursor = Offset(0, 0)
                 self._selection_cursor = cursor
-            line = self.lines[cursor.y] if self.lines else ""
+            lines = self._get_lines()
+            line = lines[cursor.y] if lines else ""
             line_len = len(line)
             if line_len == 0:
                 start = cursor
@@ -212,9 +319,10 @@ if _BaseLog is not None:
             if extend and self._selection_anchor is None:
                 self._selection_anchor = self._selection_cursor
             cursor = self._selection_cursor
-            max_y = max(self.line_count - 1, 0)
+            max_y = max(self._line_count() - 1, 0)
             new_y = min(max(cursor.y + dy, 0), max_y)
-            line = self.lines[new_y] if self.lines else ""
+            lines = self._get_lines()
+            line = lines[new_y] if lines else ""
             max_x = len(line)
             new_x = min(max(cursor.x + dx, 0), max_x)
             self._selection_cursor = Offset(new_x, new_y)
@@ -253,7 +361,7 @@ if _BaseLog is not None:
                 )
 
         def show_cursor(self) -> None:
-            if self.line_count <= 0:
+            if self._line_count() <= 0:
                 return
             try:
                 _ = self.screen
@@ -265,6 +373,10 @@ if _BaseLog is not None:
             self,
             event: events.MouseDown,
         ) -> None:  # pragma: no cover - UI behaviour
+            try:
+                self.focus()
+            except Exception:
+                pass
             if getattr(event, "button", None) == 3:
                 app = getattr(self, "app", None)
                 show_menu = getattr(app, "_show_context_menu", None)
@@ -412,6 +524,148 @@ else:
             return
 
 
+_SMLOG_THEME = TextAreaTheme(
+    name="smlog",
+    syntax_styles={
+        TOKEN_HEADER: Style(bold=True),
+        TOKEN_SECTION: Style(bold=True),
+        TOKEN_SUMMARY: Style(bold=True),
+        TOKEN_TERM: Style(color="magenta", bold=True),
+        TOKEN_TIMESTAMP: Style(color="cyan", bold=True),
+        TOKEN_BRACKET: Style(dim=True),
+        TOKEN_IP: Style(color="bright_blue"),
+        TOKEN_ID: Style(color="magenta"),
+        TOKEN_TAG: Style(color="cyan"),
+        TOKEN_EMAIL: Style(color="bright_magenta"),
+        TOKEN_COMMAND: Style(color="green"),
+        TOKEN_RESPONSE: Style(color="yellow"),
+        TOKEN_LINE_NUMBER: Style(dim=True),
+        TOKEN_MESSAGE_ID: Style(color="bright_cyan"),
+        TOKEN_STATUS_BAD: Style(color="bright_red", bold=True),
+        TOKEN_STATUS_GOOD: Style(color="bright_green", bold=True),
+        TOKEN_PROTO_SMTP: Style(color="#7bd88f", bold=True),
+        TOKEN_PROTO_IMAP: Style(color="#4aa3ff", bold=True),
+        TOKEN_PROTO_POP: Style(color="#ffcc66", bold=True),
+        TOKEN_PROTO_USER: Style(color="#ff8ec7", bold=True),
+        TOKEN_PROTO_WEBMAIL: Style(color="#6be0ff", bold=True),
+        TOKEN_PROTO_ACTIVESYNC: Style(color="#ff6b6b", bold=True),
+        TOKEN_PROTO_EAS: Style(color="#ffd166", bold=True),
+        TOKEN_PROTO_CALDAV: Style(color="#8b7bff", bold=True),
+        TOKEN_PROTO_CARDDAV: Style(color="#b388ff", bold=True),
+        TOKEN_PROTO_XMPP: Style(color="#4ef0b7", bold=True),
+        TOKEN_PROTO_API: Style(color="#ff9f1c", bold=True),
+    },
+)
+
+
+class ResultsArea(TextArea):
+    """Read-only results viewer with log-aware highlights."""
+
+    def __init__(
+        self,
+        *,
+        log_kind: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        self._log_kind = log_kind or ""
+        super().__init__(
+            text="",
+            language=None,
+            theme="css",
+            soft_wrap=True,
+            tab_behavior="focus",
+            read_only=True,
+            show_line_numbers=False,
+            id=id,
+            classes=classes,
+        )
+        self.register_theme(_SMLOG_THEME)
+        self.theme = "smlog"
+
+    def set_log_kind(self, log_kind: str | None) -> None:
+        self._log_kind = log_kind or ""
+        self._build_highlight_map()
+        self.refresh()
+
+    async def _on_mouse_down(
+        self,
+        event: events.MouseDown,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if getattr(event, "button", None) == 3:
+            selection = self.selected_text or None
+            end_selection = getattr(self, "_end_mouse_selection", None)
+            if callable(end_selection):
+                try:
+                    end_selection()
+                except Exception:
+                    pass
+            try:
+                self.release_mouse()
+            except Exception:
+                pass
+            region = getattr(self, "region", None)
+            if region is not None:
+                screen_x = int(region.x + event.x)
+                screen_y = int(region.y + event.y)
+            else:
+                screen_x = int(event.screen_x)
+                screen_y = int(event.screen_y)
+
+            def _open_menu() -> None:
+                app = getattr(self, "app", None)
+                show_menu = getattr(app, "_show_context_menu", None)
+                if show_menu is not None:
+                    show_menu(
+                        screen_x,
+                        screen_y,
+                        selection=selection,
+                    )
+
+            self.call_after_refresh(_open_menu)
+            event.stop()
+            return
+        await super()._on_mouse_down(event)
+
+    def _build_highlight_map(self) -> None:
+        highlights = self._highlights
+        highlights.clear()
+        document = self.document
+        kind = getattr(self, "_log_kind", "")
+        for row in range(document.line_count):
+            line = document.get_line(row)
+            spans = spans_for_line(kind, line)
+            if not spans:
+                continue
+            offsets = _byte_offsets(line)
+            line_highlights = highlights[row]
+            for span in spans:
+                start = _clamp_index(span.start, len(line))
+                end = _clamp_index(span.end, len(line))
+                if start >= end:
+                    continue
+                line_highlights.append(
+                    (offsets[start], offsets[end], span.token),
+                )
+
+
+def _byte_offsets(line: str) -> list[int]:
+    offsets = [0]
+    total = 0
+    for ch in line:
+        total += len(ch.encode("utf-8"))
+        offsets.append(total)
+    return offsets
+
+
+def _clamp_index(value: int, upper: int) -> int:
+    if value < 0:
+        return 0
+    if value > upper:
+        return upper
+    return value
+
+
 class ContextMenuScreen(ModalScreen[str | None]):
     """Modal context menu used for result copy actions."""
 
@@ -450,6 +704,10 @@ class ContextMenuScreen(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._position_menu)
+        try:
+            self.query_one("#context-copy").focus()
+        except Exception:
+            pass
 
     def on_mouse_down(
         self,
@@ -1009,13 +1267,14 @@ class LogBrowser(App):
         self.kind_list: KindListView | None = None
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
-        self.output_log: OutputLog | None = None
+        self.output_log: ResultsArea | None = None
         self.footer: Footer | None = None
         self.subsearch_path: Path | None = None
         self.subsearch_active = False
         self.subsearch_kind: str | None = None
         self.subsearch_depth = 0
         self.last_rendered_lines: list[str] | None = None
+        self.last_rendered_kind: str | None = None
         self.subsearch_terms: list[str] = []
         self.subsearch_paths: list[Path] = []
         self.subsearch_rendered: list[list[str]] = []
@@ -1146,7 +1405,7 @@ class LogBrowser(App):
         self.search_input.focus()
         self._refresh_footer_bindings()
 
-    def _show_step_results(self, rendered: str | None = None) -> None:
+    def _show_step_results(self) -> None:
         self.step = WizardStep.RESULTS
         self._clear_wizard()
         title = self._results_title()
@@ -1159,12 +1418,11 @@ class LogBrowser(App):
             Static("", classes="results-spacer"),
             Static(help_text, classes="results-help"),
             classes="results-header",
-            id="results-header",
         )
         self.wizard.mount(header_row)
         self._result_log_counter += 1
         result_id = f"result-log-{self._result_log_counter}"
-        self.output_log = OutputLog(id=result_id, classes="result-log")
+        self.output_log = ResultsArea(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
         show_back = len(self.subsearch_terms) > 1
@@ -1192,8 +1450,6 @@ class LogBrowser(App):
             classes="results-body",
         )
         self.wizard.mount(results_body)
-        if rendered:
-            self._write_output_lines(rendered.splitlines())
         self.call_after_refresh(self._focus_results)
         self._refresh_footer_bindings()
 
@@ -1399,7 +1655,13 @@ class LogBrowser(App):
             for child in list(self.wizard.children):
                 child.remove()
 
-    def _show_context_menu(self, x: float, y: float) -> None:
+    def _show_context_menu(
+        self,
+        x: float,
+        y: float,
+        *,
+        selection: str | None = None,
+    ) -> None:
         if self._context_menu_open:
             return
         self._context_menu_open = True
@@ -1407,7 +1669,10 @@ class LogBrowser(App):
         def handle_choice(result: str | None) -> None:
             self._context_menu_open = False
             if result == "copy":
-                self._copy_results(selection_only=True)
+                self._copy_results(
+                    selection_only=True,
+                    fallback_text=selection,
+                )
             elif result == "copy-all":
                 self._copy_results(selection_only=False)
 
@@ -1480,11 +1745,11 @@ class LogBrowser(App):
             search_kind,
         )
         self.last_rendered_lines = rendered_lines
+        self.last_rendered_kind = search_kind
         self._write_subsearch_snapshot(results, term, rendered_lines)
         self.subsearch_kind = search_kind
 
-        self._show_step_results()
-        self._write_output_lines(rendered_lines)
+        self._display_results(rendered_lines, search_kind)
         self._notify("Search complete.")
 
     def _notify(self, message: str) -> None:
@@ -1501,31 +1766,25 @@ class LogBrowser(App):
     def _write_output_lines(self, lines: list[str]) -> None:
         if self.output_log is None:
             return
-        if hasattr(self.output_log, 'clear'):
-            self.output_log.clear()  # type: ignore[call-arg]
-        if hasattr(self.output_log, "clear_selection"):
-            self.output_log.clear_selection()  # type: ignore[call-arg]
-        else:  # pragma: no cover - safety for unknown widgets
-            self.output_log.update('')
-        if hasattr(self.output_log, 'write'):
-            for line in lines:
-                try:
-                    self.output_log.write(f"{line}\n")
-                except Exception:
-                    self.output_log.write(f"{str(line)}\n")
-        else:
-            self.output_log.update("\n".join(lines))
-        if hasattr(self.output_log, 'scroll_end'):
-            try:
-                self.output_log.scroll_end()
-            except Exception:
-                pass
-        if isinstance(self.output_log, OutputLog):
-            self.output_log.show_cursor()
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.text = "\n".join(lines)
+            return
 
-    def _copy_results(self, *, selection_only: bool) -> None:
+        if hasattr(self.output_log, "clear"):
+            self.output_log.clear()  # type: ignore[call-arg]
+        if hasattr(self.output_log, "update"):
+            self.output_log.update("\n".join(lines))
+
+    def _copy_results(
+        self,
+        *,
+        selection_only: bool,
+        fallback_text: str | None = None,
+    ) -> None:
         if selection_only:
             text = self._get_selected_text()
+            if not text and fallback_text:
+                text = fallback_text
             if not text:
                 self._notify("Select text to copy.")
                 return
@@ -1540,8 +1799,9 @@ class LogBrowser(App):
         self._notify("Copied full results to clipboard.")
 
     def _get_selected_text(self) -> str | None:
-        if isinstance(self.output_log, OutputLog):
-            return self.output_log.get_selection_text()
+        if isinstance(self.output_log, ResultsArea):
+            text = self.output_log.selected_text
+            return text or None
         if self.screen is None:
             return None
         selected = self.screen.get_selected_text()
@@ -1550,9 +1810,21 @@ class LogBrowser(App):
     def _get_full_results_text(self) -> str | None:
         if self.last_rendered_lines:
             return "\n".join(self.last_rendered_lines).rstrip("\n")
-        if isinstance(self.output_log, OutputLog):
-            return self.output_log.get_all_text()
+        if isinstance(self.output_log, ResultsArea):
+            return self.output_log.text
         return None
+
+    def _display_results(
+        self,
+        lines: list[str],
+        kind: str | None,
+    ) -> None:
+        self._show_step_results()
+        if not lines:
+            return
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.set_log_kind(kind)
+        self._write_output_lines(lines)
 
 
     def _render_results(
@@ -1662,8 +1934,10 @@ class LogBrowser(App):
         if not self.last_rendered_lines:
             self._notify("No prior results to display.")
             return
-        rendered = "\n".join(self.last_rendered_lines)
-        self._show_step_results(rendered)
+        self._display_results(
+            self.last_rendered_lines,
+            self.last_rendered_kind,
+        )
 
     def _step_back_subsearch(self) -> None:
         if len(self.subsearch_terms) <= 1:
@@ -1678,9 +1952,12 @@ class LogBrowser(App):
         self.last_rendered_lines = (
             self.subsearch_rendered[-1] if self.subsearch_rendered else None
         )
+        self.last_rendered_kind = self.subsearch_kind
         if self.last_rendered_lines:
-            rendered = "\n".join(self.last_rendered_lines)
-            self._show_step_results(rendered)
+            self._display_results(
+                self.last_rendered_lines,
+                self.last_rendered_kind,
+            )
         else:
             self._show_step_kind()
 
@@ -1690,6 +1967,7 @@ class LogBrowser(App):
         self.subsearch_kind = None
         self.subsearch_depth = 0
         self.last_rendered_lines = None
+        self.last_rendered_kind = None
         self.subsearch_terms = []
         self.subsearch_paths = []
         self.subsearch_rendered = []
