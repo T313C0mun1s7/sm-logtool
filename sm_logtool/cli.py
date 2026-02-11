@@ -21,7 +21,7 @@ from .logfiles import (
 )
 from .result_formatting import collect_widths, format_conversation_lines
 from .search import get_search_function
-from .staging import DEFAULT_STAGING_ROOT, stage_log
+from .staging import stage_log
 
 
 CONFIG_ATTR = "_config"
@@ -86,10 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--staging-dir",
         type=Path,
         default=None,
-        help=(
-            "Directory where logs are copied before analysis. Overrides the "
-            f"configuration; defaults to {DEFAULT_STAGING_ROOT}."
-        ),
+        help="Directory where logs are copied before analysis.",
     )
     search_parser.add_argument(
         "--log-file",
@@ -150,6 +147,7 @@ def _run_browse(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     try:
         logs_dir = _resolve_logs_dir(args, config)
+        staging_dir = _resolve_staging_dir(args, config)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -164,7 +162,6 @@ def _run_browse(args: argparse.Namespace) -> int:
             f"Details: {exc}"
         ) from exc
 
-    staging_dir = _resolve_staging_dir(args, config)
     return run_tui(
         logs_dir,
         staging_dir=staging_dir,
@@ -176,10 +173,10 @@ def _run_search(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     try:
         logs_dir = _resolve_logs_dir(args, config)
+        staging_dir = _resolve_staging_dir(args, config)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    staging_dir = _resolve_staging_dir(args, config)
     log_kind = args.kind or config.default_kind
     if log_kind is None:
         print("Log kind is required.", file=sys.stderr)
@@ -336,8 +333,14 @@ def _resolve_logs_dir(args: argparse.Namespace, config: AppConfig) -> Path:
 def _resolve_staging_dir(
     args: argparse.Namespace,
     config: AppConfig,
-) -> Path | None:
-    return getattr(args, "staging_dir", None) or config.staging_dir
+) -> Path:
+    candidate = getattr(args, "staging_dir", None) or config.staging_dir
+    if candidate is None:
+        raise ValueError(
+            "Staging directory is not configured. Set 'staging_dir' in "
+            "config.yaml or pass --staging-dir."
+        )
+    return candidate
 
 
 def scan_logs(logs_dir: Path) -> list[Path]:

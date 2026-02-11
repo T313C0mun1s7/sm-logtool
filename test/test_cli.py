@@ -101,3 +101,34 @@ def test_run_search_requires_logs_dir_from_config_or_flag(capsys):
     assert exit_code == 2
     captured = capsys.readouterr()
     assert "Log directory is not configured." in captured.err
+
+
+def test_run_search_requires_staging_dir_from_config_or_flag(
+    tmp_path,
+    capsys,
+):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date=None,
+        list=True,
+        case_sensitive=False,
+        term=None,
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=None,
+        default_kind="smtpLog",
+    )
+
+    exit_code = cli._run_search(args)
+
+    assert exit_code == 2
+    captured = capsys.readouterr()
+    assert "Staging directory is not configured." in captured.err
