@@ -1003,7 +1003,11 @@ class LogBrowser(App):
             search_fn(target, term)
             for target in search_targets
         ]
-        rendered_lines = self._render_results(results, search_targets)
+        rendered_lines = self._render_results(
+            results,
+            search_targets,
+            search_kind,
+        )
         self.last_rendered_lines = rendered_lines
         self._write_subsearch_snapshot(results, term, rendered_lines)
         self.subsearch_kind = search_kind
@@ -1048,33 +1052,42 @@ class LogBrowser(App):
         self,
         results: list,
         targets: list[Path],
+        kind: str,
     ) -> list[str]:
         rendered_lines: list[str] = []
+        is_admin = kind.lower() == "administrative"
         for result, target in zip(results, targets):
             rendered_lines.append(f"=== {target.name} ===")
+            label = "entry" if is_admin else "conversation"
             summary = (
                 f"Search term '{result.term}' -> "
-                f"{result.total_conversations} conversation(s)"
+                f"{result.total_conversations} {label}(s)"
             )
             rendered_lines.append(summary)
             if not result.conversations and not result.orphan_matches:
                 rendered_lines.append("No matches found.")
             for conversation in result.conversations:
-                rendered_lines.append("")
-                header = (
-                    f"[{conversation.message_id}] first seen on line "
-                    f"{conversation.first_line_number}"
-                )
-                rendered_lines.append(header)
+                if not is_admin:
+                    rendered_lines.append("")
+                    header = (
+                        f"[{conversation.message_id}] first seen on line "
+                        f"{conversation.first_line_number}"
+                    )
+                    rendered_lines.append(header)
                 rendered_lines.extend(conversation.lines)
             if result.orphan_matches:
-                rendered_lines.append("")
-                rendered_lines.append(
-                    "Lines without message identifiers that matched:"
-                )
+                if not is_admin:
+                    rendered_lines.append("")
+                    rendered_lines.append(
+                        "Lines without message identifiers that matched:"
+                    )
                 for line_number, line in result.orphan_matches:
-                    rendered_lines.append(f"{line_number}: {line}")
-            rendered_lines.append("")
+                    if is_admin:
+                        rendered_lines.append(line)
+                    else:
+                        rendered_lines.append(f"{line_number}: {line}")
+            if not is_admin:
+                rendered_lines.append("")
         return rendered_lines
 
     def _subsearch_output_path(self) -> Path:

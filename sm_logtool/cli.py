@@ -243,29 +243,40 @@ def _run_search(args: argparse.Namespace) -> int:
         ignore_case=not args.case_sensitive,
     )
 
-    _print_search_summary(result, info_source)
+    _print_search_summary(result, info_source, log_kind)
     return 0
 
 
-def _print_search_summary(result, source_path: Path) -> None:
+def _print_search_summary(
+    result,
+    source_path: Path,
+    log_kind: str,
+) -> None:
+    is_admin = log_kind.lower() == "administrative"
+    label = "entry" if is_admin else "conversation"
     print(
         f"Search term '{result.term}' -> "
-        f"{result.total_conversations} conversation(s) in {source_path.name}"
+        f"{result.total_conversations} {label}(s) in {source_path.name}"
     )
     for conversation in result.conversations:
-        print()
-        print(
-            f"[{conversation.message_id}] first seen on line "
-            f"{conversation.first_line_number}"
-        )
+        if not is_admin:
+            print()
+            print(
+                f"[{conversation.message_id}] first seen on line "
+                f"{conversation.first_line_number}"
+            )
         for line in conversation.lines:
             print(line)
 
     if result.orphan_matches:
-        print()
-        print("Lines without message identifiers that matched:")
+        if not is_admin:
+            print()
+            print("Lines without message identifiers that matched:")
         for line_number, line in result.orphan_matches:
-            print(f"{line_number}: {line}")
+            if is_admin:
+                print(line)
+            else:
+                print(f"{line_number}: {line}")
 
 
 def _list_logs(logs_dir: Path, kind: str) -> int:
