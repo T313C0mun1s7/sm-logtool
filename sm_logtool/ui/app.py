@@ -1563,13 +1563,6 @@ class LogBrowser(App):
         if self.output_log is None:
             return
 
-        def _line_with_newline(line: str | Text) -> str | Text:
-            if isinstance(line, Text):
-                styled = line.copy()
-                styled.append("\n")
-                return styled
-            return f"{line}\n"
-
         if hasattr(self.output_log, 'clear'):
             self.output_log.clear()  # type: ignore[call-arg]
         if hasattr(self.output_log, "clear_selection"):
@@ -1580,9 +1573,9 @@ class LogBrowser(App):
         if callable(writer):
             for line in lines:
                 try:
-                    writer(_line_with_newline(line))
+                    writer(line)
                 except Exception:
-                    writer(f"{str(line)}\n")
+                    writer(str(line))
         elif hasattr(self.output_log, 'write'):
             for line in lines:
                 if isinstance(line, Text):
@@ -1590,9 +1583,9 @@ class LogBrowser(App):
                 else:
                     payload = str(line)
                 try:
-                    self.output_log.write(f"{payload}\n")
+                    self.output_log.write(payload)
                 except Exception:
-                    self.output_log.write(f"{str(payload)}\n")
+                    self.output_log.write(str(payload))
         else:
             plain_lines = [
                 line.plain if isinstance(line, Text) else str(line)
