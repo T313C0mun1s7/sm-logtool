@@ -77,37 +77,37 @@ Thank you for considering contributing to the **SmarterMail Log Tool** project! 
 
 ## Coding Standards
 
-- **Limit conditional depth**: Avoid nesting `if` statements deeper than two levels. Favor guard clauses, combined conditions, `if`/`elif` chains, dispatch dictionaries, or polymorphism to keep logic flat and readable.
-- **Follow PEP 8**:
-  - Use `snake_case` for functions and variables, `PascalCase` for classes, and `UPPER_SNAKE_CASE` for constants.
-  - Indent with four spaces and surround binary operators with a single space (e.g., `a = b + c`).
-  - Keep lines at or below 79 characters unless a documented exception applies.
-- **Write modular, focused code**:
-  - Apply the Single Responsibility Principle—each function or class should do one thing well.
-  - Keep functions short (aim for ≤20 lines) and factor shared logic into helpers.
-  - Use classes to organize related behavior and data instead of relying on global state.
-- **Prefer Pythonic readability**:
-  - Use list comprehensions or generator expressions for concise sequence transformations.
-  - Manage resources with context managers (e.g., `with open(...) as handle:`).
-  - Favor f-strings for formatting unless you have a specific reason to use another style.
-- **Name things descriptively**: Choose intention-revealing names (e.g., `total_sales`), and avoid ambiguous single-letter identifiers such as `l`, `O`, or `I`.
-- **Document thoughtfully**:
-  - Provide concise docstrings for public modules, classes, functions, and methods in line with PEP 257.
-  - Add comments when nuance or non-obvious decisions need to be explained.
-- **Handle errors deliberately**:
-  - Catch specific exceptions instead of using bare `except` clauses.
-  - Log exceptions with helpful context to aid debugging.
-  - Reach for `try`/`except`/`else`/`finally` to manage alternate flows and cleanup explicitly.
-- **Test rigorously**:
-  - Add unit tests for each new behavior and edge case, using `pytest` or `unittest` as appropriate.
-  - Place test modules under `test/test_*.py` so both `pytest` and `python -m unittest discover test` can find them.
-  - Automate test runs locally and rely on CI to validate every change before merging.
-- **Optimize when data demands it**:
-  - Select the right data structures (e.g., sets/dicts for membership checks, tuples for immutable records).
-  - Profile before optimizing; measure hotspots with tools like `cProfile` or `timeit`.
-  - Minimize expensive function calls and I/O, caching results when it provides clear value.
-- **Use type hints**: Annotate function signatures and key variables to improve readability and enable static analysis tools such as `mypy`.
-- **Stay pragmatic**: Treat these practices as guidance in service of clarity and maintainability. Document intentional deviations when they improve the overall design.
+- Target Python 3.10+, follow PEP 8, and indent with four spaces.
+- Use `snake_case` for modules/functions/variables, `CapWords` for classes,
+  and `UPPER_SNAKE_CASE` for constants.
+- Keep lines at or below 79 characters unless there is a strong, documented
+  reason to exceed that limit.
+- Prefer type hints where they add clarity, and use `pathlib.Path` for
+  filesystem work.
+- Provide concise docstrings for public modules, classes, functions, and
+  methods in line with PEP 257.
+- Avoid nesting `if` statements deeper than two levels; refactor with guard
+  clauses, flattened conditionals, dispatch tables, or polymorphism instead.
+- Write modular, focused code: apply the Single Responsibility Principle, keep
+  functions short (aim for ≤20 lines), and group related behavior into classes
+  instead of relying on globals.
+- Embrace Pythonic readability: use comprehensions/generators for sequence
+  transforms, context managers for resource handling, and f-strings for
+  formatting.
+- Choose descriptive, intention-revealing names (for example `total_sales`)
+  and avoid ambiguous identifiers such as `l`, `O`, or `I`.
+- Handle errors deliberately: catch specific exceptions, log relevant context,
+  and use `try`/`except`/`else`/`finally` to manage alternate flows and
+  cleanup.
+- Test rigorously: add unit tests under `test/test_*.py`, cover edge cases,
+  and run both `pytest -q` and `python -m unittest discover test` before
+  opening a pull request.
+- Optimize when data demands it: choose the right data structures, profile
+  before tuning, and reduce expensive I/O or function calls via caching when
+  it helps.
+- Stay pragmatic: treat these standards as tools for clarity and
+  maintainability, and document intentional deviations when they improve the
+  overall design.
 
 ## Submitting a Pull Request
 1. Navigate to your fork on GitHub.

@@ -1,10 +1,17 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Core code lives in `sm_logtool/`: `cli.py` powers the CLI and `ui/` hosts the Textual TUI. Tests stay in `test/`; keep new files runnable by both pytest and unittest. Use `sample_logs/` for fixtures, stage real logs before analysis, and park references in `docs/`.
+Core code lives in `sm_logtool/`: `cli.py` powers the CLI and `ui/` hosts the
+Textual TUI. Tests stay in `test/`; keep new files runnable by both pytest and
+unittest. Use staged logs under `/var/lib/smartermail/Logs` for local runs and
+park references in `docs/`.
 
 ## Build, Test, and Development Commands
-Create a venv (`python -m venv .venv && source .venv/bin/activate`) and install with `python -m pip install -e .`. Add pytest if needed, run `pytest -q`, and mirror CI with `python -m unittest discover test`. Launch the TUI via `python -m sm_logtool.cli --logs-dir sample_logs` or aim it at your staging folder.
+Create a venv (`python -m venv .venv && source .venv/bin/activate`) and
+install with `python -m pip install -e .`. Add pytest if needed, run
+`pytest -q`, and mirror CI with `python -m unittest discover test`. Launch the
+TUI via `python -m sm_logtool.cli --logs-dir /var/lib/smartermail/Logs` or aim
+it at your staging folder.
 
 ## Coding Style & Naming Conventions
 - Target Python 3.10+, follow PEP 8, and indent with four spaces.
@@ -53,8 +60,17 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
 
 ## Upcoming Work
-- [ ] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
-- [ ] Add syntax highlighting for SMTP conversations in CLI and TUI views.
+- [x] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
+- [x] Add syntax highlighting for supported log kinds in the TUI view.
+- [ ] Add syntax highlighting for supported log kinds in the CLI view.
+- [ ] Bring CLI search and output behavior to parity with the TUI across supported log kinds.
+- [ ] Add regex search mode with explicit CLI/TUI controls.
+- [ ] Add fuzzy search mode with configurable matching thresholds.
+- [ ] Add support for additional compressed log formats (for example `.gz`).
+- [ ] Improve large-log search performance/responsiveness (progress feedback,
+  background work, reduced memory footprint).
+- [ ] Add export controls (matched lines vs full conversations; optional
+  structured output).
 - [ ] Plan packaging/distribution (standalone binaries, pipx, release workflow).
 - [x] Introduce a YAML config file to store default log paths and other settings.
 - [x] Replace the old multipane layout with the new wizard flow so list panels size appropriately while preserving output space.
@@ -62,6 +78,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 
 
 ## Current State Notes
-- Verify toggle-only date selection works smoothly (arrows + space, enter) with the new highlight styling.
-- Confirm footer shortcuts (`Q` quit, `R` reset search, `/` focus search) display on every step and function even when the search input or results pane has focus.
-- Make sure search results display one log line per row after recent changes.
+- [x] Toggle-only date selection works with arrows, `Space`, and `Enter`.
+- [x] Footer shortcuts (`Ctrl+Q` quit, `Ctrl+R` reset, `Ctrl+F` focus search)
+  display on each step and remain functional with input/results focus.
+- [x] Search results display one log line per row after formatting updates.

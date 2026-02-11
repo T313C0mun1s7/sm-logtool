@@ -74,7 +74,7 @@ from ..syntax import (
     TOKEN_TIMESTAMP,
     spans_for_line,
 )
-from ..staging import DEFAULT_STAGING_ROOT, stage_log
+from ..staging import stage_log
 
 try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
@@ -1246,7 +1246,7 @@ class LogBrowser(App):
     }
     """
 
-    logs_dir: reactive[Path] = reactive(Path.cwd() / "sample_logs")
+    logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive("smtpLog")
 
@@ -1699,6 +1699,13 @@ class LogBrowser(App):
             self.current_kind = None
 
     def _perform_search(self) -> None:
+        if self.staging_dir is None:
+            self._notify(
+                "Staging directory is not configured. Set 'staging_dir' in "
+                "config.yaml or pass --staging-dir."
+            )
+            return
+
         if self.subsearch_active:
             if self.subsearch_path is None:
                 self._notify("No prior results available for sub-search.")
@@ -1713,7 +1720,7 @@ class LogBrowser(App):
                 try:
                     staged = stage_log(
                         info.path,
-                        staging_dir=self.staging_dir or DEFAULT_STAGING_ROOT,
+                        staging_dir=self.staging_dir,
                     )
                 except Exception as exc:
                     # pragma: no cover - filesystem feedback
@@ -1892,7 +1899,12 @@ class LogBrowser(App):
         return rendered_lines
 
     def _subsearch_output_path(self) -> Path:
-        staging_dir = self.staging_dir or DEFAULT_STAGING_ROOT
+        if self.staging_dir is None:
+            raise ValueError(
+                "Staging directory is not configured. Set 'staging_dir' in "
+                "config.yaml or pass --staging-dir."
+            )
+        staging_dir = self.staging_dir
         staging_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         depth = self.subsearch_depth + 1
