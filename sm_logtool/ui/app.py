@@ -1327,10 +1327,26 @@ class LogBrowser(App):
         kind: str,
     ) -> list[str]:
         rendered_lines: list[str] = []
-        is_admin = kind.lower() == "administrative"
+        kind_key = kind.lower()
+        ungrouped_kinds = {
+            "administrative",
+            "activation",
+            "autocleanfolders",
+            "calendars",
+            "contentfilter",
+            "event",
+            "generalerrors",
+            "indexing",
+            "ldaplog",
+            "maintenance",
+            "profiler",
+            "spamchecks",
+            "webdav",
+        }
+        is_ungrouped = kind_key in ungrouped_kinds
         for result, target in zip(results, targets):
             rendered_lines.append(f"=== {target.name} ===")
-            label = "entry" if is_admin else "conversation"
+            label = "entry" if is_ungrouped else "conversation"
             summary = (
                 f"Search term '{result.term}' -> "
                 f"{result.total_conversations} {label}(s)"
@@ -1345,7 +1361,7 @@ class LogBrowser(App):
                     conversation.lines,
                     widths,
                 )
-                if not is_admin:
+                if not is_ungrouped:
                     rendered_lines.append("")
                     header = (
                         f"[{conversation.message_id}] first seen on line "
@@ -1354,17 +1370,17 @@ class LogBrowser(App):
                     rendered_lines.append(header)
                 rendered_lines.extend(formatted)
             if result.orphan_matches:
-                if not is_admin:
+                if not is_ungrouped:
                     rendered_lines.append("")
                     rendered_lines.append(
                         "Lines without message identifiers that matched:"
                     )
                 for line_number, line in result.orphan_matches:
-                    if is_admin:
+                    if is_ungrouped:
                         rendered_lines.append(line)
                     else:
                         rendered_lines.append(f"{line_number}: {line}")
-            if not is_admin:
+            if not is_ungrouped:
                 rendered_lines.append("")
         return rendered_lines
 

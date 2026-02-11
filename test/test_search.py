@@ -152,3 +152,32 @@ def test_search_admin_entries_groups_same_timestamp(tmp_path):
         "10:13:13.367 [23.127.140.125] IMAP Attempting login",
         "10:13:13.367 [23.127.140.125] IMAP Login successful",
     ]
+
+
+def test_search_imap_retrieval_entries_groups_by_id(tmp_path):
+    log_path = tmp_path / "imapRetrieval.log"
+    log_path.write_text(
+        "00:00:01.100 [72] [user; host:other] Connection refused\n"
+        "   at System.Net.Sockets.Socket.Connect(EndPoint remoteEP)\n"
+        "00:00:02.200 [99] [user; host:other] Connection refused\n"
+    )
+
+    result = search.search_imap_retrieval_entries(log_path, "Socket.Connect")
+
+    assert result.total_conversations == 1
+    assert result.conversations[0].message_id == "72"
+    assert result.orphan_matches == []
+
+
+def test_search_ungrouped_entries_groups_continuations(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Something failed\n"
+        "   at Example.Stacktrace()\n"
+        "00:00:02.200 Another failure\n"
+    )
+
+    result = search.search_ungrouped_entries(log_path, "Stacktrace")
+
+    assert result.total_conversations == 1
+    assert result.conversations[0].lines[1].lstrip().startswith("at")

@@ -1,7 +1,10 @@
 from sm_logtool.log_parsers import (
+    parse_bracket1_line,
+    parse_imap_retrieval_line,
     parse_admin_entries,
     parse_delivery_entries,
     parse_smtp_line,
+    parse_time_line,
 )
 
 
@@ -60,3 +63,33 @@ def test_parse_admin_entries_handles_continuations():
     second = entries[1]
     assert second.ip == "5.6.7.8"
     assert not second.continuation_lines
+
+
+def test_parse_bracket1_line_extracts_field():
+    line = "12:00:00.000 [user@example.com] Example message"
+    entry = parse_bracket1_line(line)
+    assert entry is not None
+    assert entry.timestamp == "12:00:00.000"
+    assert entry.field1 == "user@example.com"
+    assert entry.message == "Example message"
+
+
+def test_parse_imap_retrieval_line_extracts_fields():
+    line = (
+        "12:00:00.000 [72] "
+        "[user@example.com; 127.0.0.1:other@example.com] "
+        "Connection refused 127.0.0.1:143"
+    )
+    entry = parse_imap_retrieval_line(line)
+    assert entry is not None
+    assert entry.retrieval_id == "72"
+    assert entry.context.startswith("user@example.com;")
+    assert entry.message.startswith("Connection refused")
+
+
+def test_parse_time_line_extracts_message():
+    line = "01:02:03.004 Something happened"
+    entry = parse_time_line(line)
+    assert entry is not None
+    assert entry.timestamp == "01:02:03.004"
+    assert entry.message == "Something happened"

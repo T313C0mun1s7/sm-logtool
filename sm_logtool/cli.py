@@ -253,15 +253,31 @@ def _print_search_summary(
     source_path: Path,
     log_kind: str,
 ) -> None:
-    is_admin = log_kind.lower() == "administrative"
-    label = "entry" if is_admin else "conversation"
+    kind_key = log_kind.lower()
+    ungrouped_kinds = {
+        "administrative",
+        "activation",
+        "autocleanfolders",
+        "calendars",
+        "contentfilter",
+        "event",
+        "generalerrors",
+        "indexing",
+        "ldaplog",
+        "maintenance",
+        "profiler",
+        "spamchecks",
+        "webdav",
+    }
+    is_ungrouped = kind_key in ungrouped_kinds
+    label = "entry" if is_ungrouped else "conversation"
     print(
         f"Search term '{result.term}' -> "
         f"{result.total_conversations} {label}(s) in {source_path.name}"
     )
     widths = collect_widths(log_kind, result.conversations)
     for conversation in result.conversations:
-        if not is_admin:
+        if not is_ungrouped:
             print()
             print(
                 f"[{conversation.message_id}] first seen on line "
@@ -276,11 +292,11 @@ def _print_search_summary(
             print(line)
 
     if result.orphan_matches:
-        if not is_admin:
+        if not is_ungrouped:
             print()
             print("Lines without message identifiers that matched:")
         for line_number, line in result.orphan_matches:
-            if is_admin:
+            if is_ungrouped:
                 print(line)
             else:
                 print(f"{line_number}: {line}")

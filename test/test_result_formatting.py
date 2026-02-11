@@ -64,3 +64,25 @@ def test_format_admin_aligns_continuations():
 
     msg_col = formatted[0].index("Login")
     assert formatted[1].index("details") == msg_col
+
+
+def test_format_imap_retrieval_aligns_context():
+    conversation = Conversation(
+        message_id="72",
+        first_line_number=1,
+        lines=[
+            "00:00:01.100 [72] [user; host:other] Connection refused",
+            "00:00:02.200 [5] [user; host:other] Connection refused",
+        ],
+    )
+
+    widths = collect_widths("imapRetrieval", [conversation])
+    assert widths is not None
+    formatted = format_conversation_lines(
+        "imapRetrieval",
+        conversation.lines,
+        widths,
+    )
+
+    msg_col = formatted[0].index("Connection")
+    assert formatted[1].index("Connection") == msg_col

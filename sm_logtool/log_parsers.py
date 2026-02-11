@@ -15,6 +15,16 @@ _SMTP_PATTERN = re.compile(
     r"\[(?P<ip>[^\]]+)\]\[(?P<log_id>[^\]]+)\] (?P<message>.*)$"
 )
 
+_BRACKET2_PATTERN = re.compile(
+    rf"^(?P<time>{_TIME_PATTERN}) "
+    r"\[(?P<field1>[^\]]*)\] \[(?P<field2>[^\]]*)\] (?P<message>.*)$"
+)
+
+_BRACKET1_PATTERN = re.compile(
+    rf"^(?P<time>{_TIME_PATTERN}) "
+    r"\[(?P<field1>[^\]]*)\] (?P<message>.*)$"
+)
+
 _DELIVERY_PATTERN = re.compile(
     rf"^(?P<time>{_TIME_PATTERN}) "
     r"\[(?P<delivery_id>[^\]]+)\] (?P<message>.*)$"
@@ -25,6 +35,10 @@ _ADMIN_PATTERN = re.compile(
     r"\[(?P<ip>[^\]]+)\] (?P<message>.*)$"
 )
 
+_TIME_ONLY_PATTERN = re.compile(
+    rf"^(?P<time>{_TIME_PATTERN}) (?P<message>.*)$"
+)
+
 
 @dataclass(frozen=True)
 class SmtpLogEntry:
@@ -33,6 +47,36 @@ class SmtpLogEntry:
     timestamp: str
     ip: str
     log_id: str
+    message: str
+    raw: str
+
+
+@dataclass(frozen=True)
+class Bracket2LogLine:
+    """Structured log line with two bracketed fields."""
+
+    timestamp: str
+    field1: str
+    field2: str
+    message: str
+    raw: str
+
+
+@dataclass(frozen=True)
+class Bracket1LogLine:
+    """Structured log line with one bracketed field."""
+
+    timestamp: str
+    field1: str
+    message: str
+    raw: str
+
+
+@dataclass(frozen=True)
+class TimeLogLine:
+    """Structured log line with timestamp only."""
+
+    timestamp: str
     message: str
     raw: str
 
@@ -53,6 +97,17 @@ class AdminLogLine:
 
     timestamp: str
     ip: str
+    message: str
+    raw: str
+
+
+@dataclass(frozen=True)
+class ImapRetrievalLogLine:
+    """Structured IMAP retrieval log line."""
+
+    timestamp: str
+    retrieval_id: str
+    context: str
     message: str
     raw: str
 
@@ -106,6 +161,48 @@ def parse_smtp_line(line: str) -> SmtpLogEntry | None:
     )
 
 
+def parse_bracket2_line(line: str) -> Bracket2LogLine | None:
+    """Parse a log line with two bracketed fields."""
+
+    match = _BRACKET2_PATTERN.match(line)
+    if not match:
+        return None
+    return Bracket2LogLine(
+        timestamp=match.group("time"),
+        field1=match.group("field1"),
+        field2=match.group("field2"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
+def parse_bracket1_line(line: str) -> Bracket1LogLine | None:
+    """Parse a log line with one bracketed field."""
+
+    match = _BRACKET1_PATTERN.match(line)
+    if not match:
+        return None
+    return Bracket1LogLine(
+        timestamp=match.group("time"),
+        field1=match.group("field1"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
+def parse_time_line(line: str) -> TimeLogLine | None:
+    """Parse a log line with timestamp only."""
+
+    match = _TIME_ONLY_PATTERN.match(line)
+    if not match:
+        return None
+    return TimeLogLine(
+        timestamp=match.group("time"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
 def starts_with_timestamp(line: str) -> bool:
     """Return True when a line begins with the timestamp format."""
 
@@ -135,6 +232,21 @@ def parse_admin_line(line: str) -> AdminLogLine | None:
     return AdminLogLine(
         timestamp=match.group("time"),
         ip=match.group("ip"),
+        message=match.group("message"),
+        raw=line,
+    )
+
+
+def parse_imap_retrieval_line(line: str) -> ImapRetrievalLogLine | None:
+    """Parse a single IMAP retrieval log line."""
+
+    match = _BRACKET2_PATTERN.match(line)
+    if not match:
+        return None
+    return ImapRetrievalLogLine(
+        timestamp=match.group("time"),
+        retrieval_id=match.group("field1"),
+        context=match.group("field2"),
         message=match.group("message"),
         raw=line,
     )
