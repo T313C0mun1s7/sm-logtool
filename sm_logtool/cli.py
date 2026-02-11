@@ -19,6 +19,7 @@ from .logfiles import (
     UnknownLogDate,
     find_log_by_date,
     newest_log,
+    parse_log_filename,
     parse_stamp,
     summarize_logs,
 )
@@ -94,10 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument(
         "--log-file",
         type=Path,
+        action="append",
         default=None,
         help=(
             "Specific log file to search. Relative paths resolve under "
-            "--logs-dir."
+            "--logs-dir. Repeat to search multiple files."
         ),
     )
     search_parser.add_argument(
@@ -107,8 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     search_parser.add_argument(
         "--date",
+        action="append",
         default=None,
-        help="Date (YYYY.MM.DD) of the log file to search.",
+        help=(
+            "Date (YYYY.MM.DD) of the log file to search. Repeat to search "
+            "multiple dates."
+        ),
     )
     search_parser.add_argument(
         "--list",
@@ -195,73 +201,52 @@ def _run_search(args: argparse.Namespace) -> int:
         )
         return 2
 
-    if args.log_file is not None:
-        log_path = (
-            args.log_file
-            if args.log_file.is_absolute()
-            else logs_dir / args.log_file
-        )
-        info_source = log_path
-        if not log_path.exists():
-            print(f"Log file not found: {log_path}", file=sys.stderr)
-            return 2
-    else:
-        if args.date is not None:
-            try:
-                target_date = parse_stamp(args.date)
-            except UnknownLogDate as exc:
-                print(str(exc), file=sys.stderr)
-                return 2
-            info = find_log_by_date(logs_dir, log_kind, target_date)
-            if info is None:
-                message = (
-                    f"No {log_kind} log found for {target_date:%Y.%m.%d} in "
-                    f"{logs_dir}"
-                )
-                print(message, file=sys.stderr)
-                return 2
-        else:
-            info = newest_log(logs_dir, log_kind)
-            if info is None:
-                print(
-                    f"No {log_kind} logs found in {logs_dir}",
-                    file=sys.stderr,
-                )
-                return 2
-        log_path = info.path
-        info_source = info.path
-
-    try:
-        staged = stage_log(
-            log_path,
-            staging_dir=staging_dir,
-        )
-    except Exception as exc:  # pragma: no cover - surface staging failure
-        print(f"Failed to stage log {log_path}: {exc}", file=sys.stderr)
-        return 1
-
     search_fn = get_search_function(log_kind)
     if search_fn is None:
         print(f"Unsupported log kind: {log_kind}", file=sys.stderr)
         return 2
 
-    result = search_fn(
-        staged.staged_path,
-        args.term,
-        ignore_case=not args.case_sensitive,
-    )
+    try:
+        targets = _resolve_search_targets(args, logs_dir, log_kind)
+    except (UnknownLogDate, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not targets:
+        print(
+            f"No {log_kind} logs found in {logs_dir}",
+            file=sys.stderr,
+        )
+        return 2
 
-    _print_search_summary(result, info_source, log_kind)
+    results = []
+    for source_path in targets:
+        try:
+            staged = stage_log(
+                source_path,
+                staging_dir=staging_dir,
+            )
+        except Exception as exc:  # pragma: no cover - surface staging failure
+            print(f"Failed to stage log {source_path}: {exc}", file=sys.stderr)
+            return 1
+        results.append(
+            search_fn(
+                staged.staged_path,
+                args.term,
+                ignore_case=not args.case_sensitive,
+            )
+        )
+
+    _print_search_summary(results, targets, log_kind)
     return 0
 
 
 def _print_search_summary(
-    result,
-    source_path: Path,
+    results,
+    source_paths: list[Path],
     log_kind: str,
 ) -> None:
     console = _build_stdout_console()
-    lines = render_search_results([result], [source_path], log_kind)
+    lines = render_search_results(results, source_paths, log_kind)
     for line in lines:
         _write_highlighted(console, log_kind, line)
 
@@ -316,6 +301,87 @@ def _resolve_staging_dir(
             "config.yaml or pass --staging-dir."
         )
     return candidate
+
+
+def _resolve_search_targets(
+    args: argparse.Namespace,
+    logs_dir: Path,
+    log_kind: str,
+) -> list[Path]:
+    log_files = _normalize_path_values(getattr(args, "log_file", None))
+    date_values = _normalize_text_values(getattr(args, "date", None))
+    if log_files and date_values:
+        raise ValueError("--log-file and --date cannot be used together.")
+
+    if log_files:
+        return _resolve_log_file_targets(logs_dir, log_kind, log_files)
+    if date_values:
+        return _resolve_date_targets(logs_dir, log_kind, date_values)
+    newest = newest_log(logs_dir, log_kind)
+    return [newest.path] if newest is not None else []
+
+
+def _resolve_log_file_targets(
+    logs_dir: Path,
+    log_kind: str,
+    log_files: list[Path],
+) -> list[Path]:
+    targets: list[Path] = []
+    seen: set[Path] = set()
+    for value in log_files:
+        target = value if value.is_absolute() else logs_dir / value
+        if not target.exists():
+            raise ValueError(f"Log file not found: {target}")
+        parsed = parse_log_filename(target)
+        if parsed.kind and parsed.kind.lower() != log_kind.lower():
+            raise ValueError(
+                f"Log file {target.name} does not match kind {log_kind}."
+            )
+        resolved = target.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        targets.append(target)
+    return targets
+
+
+def _resolve_date_targets(
+    logs_dir: Path,
+    log_kind: str,
+    date_values: list[str],
+) -> list[Path]:
+    targets: list[Path] = []
+    seen: set[Path] = set()
+    for value in date_values:
+        target_date = parse_stamp(value)
+        info = find_log_by_date(logs_dir, log_kind, target_date)
+        if info is None:
+            raise ValueError(
+                f"No {log_kind} log found for {target_date:%Y.%m.%d} in "
+                f"{logs_dir}"
+            )
+        resolved = info.path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        targets.append(info.path)
+    return targets
+
+
+def _normalize_path_values(values: object) -> list[Path]:
+    if values is None:
+        return []
+    if isinstance(values, Path):
+        return [values]
+    return list(values)
+
+
+def _normalize_text_values(values: object) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        return [values]
+    return list(values)
 
 
 def scan_logs(logs_dir: Path) -> list[Path]:
