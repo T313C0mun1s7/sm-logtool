@@ -404,3 +404,41 @@ def test_run_search_requires_staging_dir_from_config_or_flag(
     assert exit_code == 2
     captured = capsys.readouterr()
     assert "Staging directory is not configured." in captured.err
+
+
+def test_search_help_mentions_latest_and_supported_kinds(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["search", "--help"])
+    assert excinfo.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "newest available log for --kind is searched." in captured.out
+    assert "Available kinds:" in captured.out
+    assert "smtp" in captured.out
+
+
+def test_run_search_list_kinds_does_not_require_dirs(capsys):
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date=None,
+        list=False,
+        list_kinds=True,
+        case_sensitive=False,
+        term=None,
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=None,
+        staging_dir=None,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Supported log kinds:" in captured.out
+    assert "smtp" in captured.out

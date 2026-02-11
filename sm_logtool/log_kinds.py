@@ -23,6 +23,27 @@ KIND_PROFILER: Final[str] = "profiler"
 KIND_SPAMCHECKS: Final[str] = "spamchecks"
 KIND_WEBDAV: Final[str] = "webdav"
 
+SUPPORTED_KINDS: Final[tuple[str, ...]] = (
+    KIND_SMTP,
+    KIND_IMAP,
+    KIND_POP,
+    KIND_DELIVERY,
+    KIND_ADMINISTRATIVE,
+    KIND_IMAP_RETRIEVAL,
+    KIND_ACTIVATION,
+    KIND_AUTOCLEANFOLDERS,
+    KIND_CALENDARS,
+    KIND_CONTENTFILTER,
+    KIND_EVENT,
+    KIND_GENERALERRORS,
+    KIND_INDEXING,
+    KIND_LDAP,
+    KIND_MAINTENANCE,
+    KIND_PROFILER,
+    KIND_SPAMCHECKS,
+    KIND_WEBDAV,
+)
+
 _KIND_ALIASES: Final[dict[str, str]] = {
     KIND_SMTP: KIND_SMTP,
     "smtplog": KIND_SMTP,

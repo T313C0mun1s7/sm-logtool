@@ -15,7 +15,7 @@ from rich.console import Console
 
 from .config import AppConfig, ConfigError, load_config
 from .highlighting import highlight_line
-from .log_kinds import normalize_kind
+from .log_kinds import SUPPORTED_KINDS, normalize_kind
 from .logfiles import (
     UnknownLogDate,
     find_log_by_date,
@@ -74,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser = subparsers.add_parser(
         "search",
         help="Search SmarterMail logs for a term",
+        description=(
+            "Search a SmarterMail log kind for a literal substring."
+        ),
+        epilog=_search_help_epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     search_parser.add_argument(
         "term",
@@ -106,7 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument(
         "--kind",
         default=None,
-        help="Log kind to search (overrides config default).",
+        help=(
+            "Log kind to search (overrides config default). "
+            "Use --list-kinds to show supported values."
+        ),
     )
     search_parser.add_argument(
         "--date",
@@ -121,6 +129,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--list",
         action="store_true",
         help="List available logs for the selected kind and exit.",
+    )
+    search_parser.add_argument(
+        "--list-kinds",
+        action="store_true",
+        help="List supported log kinds and exit.",
     )
     search_parser.add_argument(
         "--case-sensitive",
@@ -181,6 +194,9 @@ def _run_browse(args: argparse.Namespace) -> int:
 
 def _run_search(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
+    if getattr(args, "list_kinds", False):
+        return _list_kinds()
+
     try:
         logs_dir = _resolve_logs_dir(args, config)
         staging_dir = _resolve_staging_dir(args, config)
@@ -280,6 +296,13 @@ def _list_logs(logs_dir: Path, kind: str) -> int:
         stamp = info.stamp.strftime('%Y.%m.%d') if info.stamp else 'unknown'
         suffix = ' (zip)' if info.is_zipped else ''
         print(f"  {stamp} -> {info.path.name}{suffix}")
+    return 0
+
+
+def _list_kinds() -> int:
+    print("Supported log kinds:")
+    for kind in SUPPORTED_KINDS:
+        print(f"  {kind}")
     return 0
 
 
@@ -386,6 +409,21 @@ def _normalize_text_values(values: object) -> list[str]:
     if isinstance(values, str):
         return [values]
     return list(values)
+
+
+def _search_help_epilog() -> str:
+    kinds = ", ".join(SUPPORTED_KINDS)
+    return textwrap.dedent(
+        f"""
+        Target resolution:
+          1. If --log-file is provided (repeatable), those files are searched.
+          2. Else if --date is provided (repeatable), those dates are searched.
+          3. Else the newest available log for --kind is searched.
+
+        Available kinds:
+          {kinds}
+        """
+    ).strip()
 
 
 def scan_logs(logs_dir: Path) -> list[Path]:
