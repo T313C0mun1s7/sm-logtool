@@ -64,8 +64,8 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 ## Upcoming Work
 - [x] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
 - [x] Add syntax highlighting for supported log kinds in the TUI view.
-- [ ] Add syntax highlighting for supported log kinds in the CLI view.
-- [ ] Bring CLI search and output behavior to parity with the TUI across supported log kinds.
+- [x] Add syntax highlighting for supported log kinds in the CLI view.
+- [x] Bring CLI search and output behavior to parity with the TUI across supported log kinds.
 - [ ] Add regex search mode with explicit CLI/TUI controls.
 - [ ] Add fuzzy search mode with configurable matching thresholds.
 - [ ] Add support for additional compressed log formats (for example `.gz`).
@@ -74,7 +74,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [ ] Add `--version` CLI flag to print installed package version.
 - [ ] Add export controls (matched lines vs full conversations; optional
   structured output).
-- [ ] Plan packaging/distribution (standalone binaries, pipx, release workflow).
+- [x] Plan packaging/distribution (standalone binaries, pipx, release workflow).
 - [x] Introduce a YAML config file to store default log paths and other settings.
 - [x] Replace the old multipane layout with the new wizard flow so list panels size appropriately while preserving output space.
 - [x] Add a navigation legend plus keyboard/mouse multi-select (Tab cycling, Ctrl/Shift modifiers, Space toggle).
