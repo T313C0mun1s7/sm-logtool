@@ -810,28 +810,18 @@ class WizardBody(Vertical):
             key_display="CTRL+F",
         ),
         Binding(
-            "ctrl+equal",
+            "ctrl+right",
             "app.next_search_mode",
             "Switch mode next",
             show=True,
-            key_display="CTRL++",
-        ),
-        Binding(
-            "ctrl+minus",
-            "app.prev_search_mode",
-            "Switch mode prev",
-            show=True,
-            key_display="CTRL+-",
-        ),
-        Binding(
-            "ctrl+right",
-            "app.next_search_mode",
-            show=False,
+            key_display="CTRL+RIGHT",
         ),
         Binding(
             "ctrl+left",
             "app.prev_search_mode",
-            show=False,
+            "Switch mode prev",
+            show=True,
+            key_display="CTRL+LEFT",
         ),
     ]
 
