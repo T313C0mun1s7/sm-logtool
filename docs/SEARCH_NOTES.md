@@ -58,7 +58,9 @@ Search handlers currently exist for:
 
 - [x] Bring CLI search/output behavior closer to TUI behavior where practical.
 - [ ] Add regex search mode with explicit mode flags and clear UX.
+- [ ] Add wildcard search mode with `*` and `?` support in CLI/TUI.
 - [ ] Add fuzzy/approximate search mode with configurable thresholds.
+- [ ] Add explicit search mode switching plus clear CLI/TUI help text.
 - [x] Add support for additional compressed formats (for example `.gz`)
   [Issue #20 closed as not planned; reopen if needed].
 - [ ] Improve large-log performance and responsiveness (progress feedback,
