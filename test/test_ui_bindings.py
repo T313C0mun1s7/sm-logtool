@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Button, Static
 
-from sm_logtool.ui.app import LogBrowser, ShortcutHelpScreen, WizardStep
+from sm_logtool.ui.app import LogBrowser, WizardStep
 
 
 def write_sample_logs(root: Path) -> None:
@@ -16,7 +16,22 @@ def write_sample_logs(root: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_footer_shows_global_keys_on_results_step(tmp_path):
+async def test_top_action_buttons_show_core_shortcuts(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        menu_button = app.query_one("#top-menu", Button)
+        quit_button = app.query_one("#top-quit", Button)
+        reset_button = app.query_one("#top-reset", Button)
+        assert "Ctrl+U" in str(menu_button.label)
+        assert "Ctrl+Q" in str(quit_button.label)
+        assert "Ctrl+R" in str(reset_button.label)
+
+
+@pytest.mark.asyncio
+async def test_footer_hides_core_shortcuts_outside_search_step(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
     app = LogBrowser(logs_dir=logs_dir)
@@ -35,9 +50,12 @@ async def test_footer_shows_global_keys_on_results_step(tmp_path):
             if enabled and binding.show
         ]
         descriptions = {binding.description for binding in bindings}
-        assert "Quit" in descriptions
-        assert "Reset Search" in descriptions
-        assert "Menu" in descriptions
+        assert "Quit" not in descriptions
+        assert "Reset Search" not in descriptions
+        assert "Menu" not in descriptions
+        assert "Focus" not in descriptions
+        assert "Mode next" not in descriptions
+        assert "Mode prev" not in descriptions
 
 
 @pytest.mark.asyncio
@@ -54,6 +72,25 @@ async def test_reset_shortcut_returns_to_kind_step(tmp_path):
         await pilot.pause()
         assert app.step == WizardStep.RESULTS
         await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert app.step == WizardStep.KIND
+
+
+@pytest.mark.asyncio
+async def test_top_reset_button_returns_to_kind_step(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_results()
+        await pilot.pause()
+        assert app.step == WizardStep.RESULTS
+        reset_button = app.query_one("#top-reset", Button)
+        reset_button.press()
         await pilot.pause()
         assert app.step == WizardStep.KIND
 
@@ -125,36 +162,6 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_shortcuts_help_opens_with_f1_and_ctrl_question_mark(tmp_path):
-    logs_dir = tmp_path / "logs"
-    write_sample_logs(logs_dir)
-    app = LogBrowser(logs_dir=logs_dir)
-    async with app.run_test() as pilot:
-        app._refresh_logs()
-        kind, infos = next(iter(app._logs_by_kind.items()))
-        app.current_kind = kind
-        app.selected_logs = infos[:1]
-        app._show_step_search()
-        await pilot.pause()
-
-        await pilot.press("f1")
-        await pilot.pause()
-        assert isinstance(app.screen, ShortcutHelpScreen)
-
-        await pilot.press("ctrl+slash")
-        await pilot.pause()
-        assert not isinstance(app.screen, ShortcutHelpScreen)
-
-        await pilot.press("ctrl+slash")
-        await pilot.pause()
-        assert isinstance(app.screen, ShortcutHelpScreen)
-
-        await pilot.press("escape")
-        await pilot.pause()
-        assert not isinstance(app.screen, ShortcutHelpScreen)
-
-
-@pytest.mark.asyncio
 async def test_plain_question_mark_remains_input_text(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
@@ -170,4 +177,3 @@ async def test_plain_question_mark_remains_input_text(tmp_path):
         await pilot.press("?")
         await pilot.pause()
         assert app.search_input.value == "?"
-        assert not isinstance(app.screen, ShortcutHelpScreen)
