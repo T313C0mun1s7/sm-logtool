@@ -56,14 +56,15 @@ Search handlers currently exist for:
 
 ## Roadmap Items
 
-- Bring CLI search/output behavior closer to TUI behavior where practical.
-- Add regex search mode with explicit mode flags and clear UX.
-- Add fuzzy/approximate search mode with configurable thresholds.
-- Add support for additional compressed formats (for example `.gz`).
-- Improve large-log performance and responsiveness (progress feedback,
+- [x] Bring CLI search/output behavior closer to TUI behavior where practical.
+- [ ] Add regex search mode with explicit mode flags and clear UX.
+- [ ] Add fuzzy/approximate search mode with configurable thresholds.
+- [x] Add support for additional compressed formats (for example `.gz`)
+  [Issue #20 closed as not planned; reopen if needed].
+- [ ] Improve large-log performance and responsiveness (progress feedback,
   background work, reduced memory footprint).
-- Add export controls (matched lines vs full conversations, optional
-  structured output).
+- [x] Add export controls (matched lines vs full conversations, optional
+  structured output) [Issue #23 closed as not planned; reopen if needed].
 
 ## Notes
 
