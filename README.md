@@ -112,10 +112,10 @@ Minimum examples:
 
 ```bash
 # Search newest log for default_kind from config.yaml (default: smtp)
-sm-logtool search "john@prime42.net"
+sm-logtool search "somebody@example.net"
 
 # Search newest delivery log
-sm-logtool search --kind delivery "john@prime42.net"
+sm-logtool search --kind delivery "somebody@example.net"
 ```
 
 Target resolution:
