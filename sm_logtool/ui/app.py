@@ -809,6 +809,13 @@ class WizardBody(Vertical):
             show=True,
             key_display="CTRL+F",
         ),
+        Binding(
+            "ctrl+m",
+            "app.toggle_search_mode",
+            "Toggle mode",
+            show=True,
+            key_display="CTRL+M",
+        ),
     ]
 
 
@@ -1191,6 +1198,19 @@ class LogBrowser(App):
         margin-left: 1;
         margin-right: 0;
     }
+
+    .mode-row {
+        height: auto;
+    }
+
+    .mode-row Button {
+        min-width: 18;
+        margin-right: 1;
+    }
+
+    .mode-description {
+        width: 1fr;
+    }
     """
 
     logs_dir: reactive[Path] = reactive(Path.cwd())
@@ -1344,6 +1364,7 @@ class LogBrowser(App):
         self.wizard.mount(self.search_input)
         self.search_mode_status = Static(
             self._search_mode_status_text(),
+            classes="mode-description",
             id="search-mode-status",
         )
         self.search_mode_button = Button(
@@ -1351,10 +1372,9 @@ class LogBrowser(App):
             id="cycle-search-mode",
         )
         mode_row = Horizontal(
-            self.search_mode_status,
-            Static("", classes="button-spacer"),
             self.search_mode_button,
-            classes="button-row",
+            self.search_mode_status,
+            classes="mode-row",
         )
         self.wizard.mount(mode_row)
         back_label = "Back"
@@ -1572,6 +1592,10 @@ class LogBrowser(App):
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
 
+    def action_toggle_search_mode(self) -> None:
+        if self.step == WizardStep.SEARCH:
+            self._cycle_search_mode()
+
     def action_menu(self) -> None:
         self.action_command_palette()
 
@@ -1584,6 +1608,8 @@ class LogBrowser(App):
         parameters: tuple[object, ...],
     ) -> bool | None:
         if action == "focus_search":
+            return self.step == WizardStep.SEARCH
+        if action == "toggle_search_mode":
             return self.step == WizardStep.SEARCH
         return True
 
@@ -1758,9 +1784,8 @@ class LogBrowser(App):
         return f"Mode: {label}"
 
     def _search_mode_status_text(self) -> str:
-        label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
         description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
-        return f"Search mode: {label}. {description}"
+        return f"{description} Ctrl+M toggles mode."
 
     def _notify(self, message: str) -> None:
         try:
