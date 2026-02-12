@@ -731,7 +731,8 @@ class ShortcutHelpScreen(ModalScreen[None]):
         Binding("escape", "close", show=False),
         Binding("enter", "close", show=False),
         Binding("f1", "close", show=False),
-        Binding("question_mark", "close", show=False),
+        Binding("ctrl+slash", "close", show=False),
+        Binding("ctrl+question_mark", "close", show=False),
     ]
 
     def __init__(
@@ -753,7 +754,7 @@ class ShortcutHelpScreen(ModalScreen[None]):
             Static("Keyboard Shortcuts", id="shortcut-help-title"),
             Static(
                 f"Current step: {self._step_label}. "
-                "Press F1, ?, Esc, or Enter to close.",
+                "Press F1, Ctrl+?, Esc, or Enter to close.",
                 id="shortcut-help-subtitle",
             ),
             Static("\n".join(lines), id="shortcut-help-body"),
@@ -900,7 +901,12 @@ class WizardBody(Vertical):
             show=False,
         ),
         Binding(
-            "question_mark",
+            "ctrl+slash",
+            "app.shortcuts_help",
+            show=False,
+        ),
+        Binding(
+            "ctrl+question_mark",
             "app.shortcuts_help",
             show=False,
         ),
@@ -931,19 +937,6 @@ class SearchInput(Input, inherit_bindings=False):
         Binding("delete", "delete_right", show=False),
         Binding("enter", "submit", show=False),
     ]
-
-    async def _on_key(
-        self,
-        event: events.Key,
-    ) -> None:  # pragma: no cover - UI behaviour
-        if event.key == "question_mark":
-            app = getattr(self, "app", None)
-            show_help = getattr(app, "action_shortcuts_help", None)
-            if callable(show_help):
-                show_help()
-                event.stop()
-                return
-        await super()._on_key(event)
 
 
 class MnemonicFooterKey(FooterKey):
@@ -1777,7 +1770,7 @@ class LogBrowser(App):
                 continue
             seen_actions.add(binding.action)
             entries.append((self.get_key_display(binding), binding.description))
-        entries.append(("F1 / ?", "Toggle shortcut help"))
+        entries.append(("F1 / CTRL+?", "Toggle shortcut help"))
         return entries
 
     def _apply_kind_selection(self, kind: str) -> None:

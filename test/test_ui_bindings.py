@@ -125,7 +125,7 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_shortcuts_help_opens_with_f1_and_question_mark(tmp_path):
+async def test_shortcuts_help_opens_with_f1_and_ctrl_question_mark(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
     app = LogBrowser(logs_dir=logs_dir)
@@ -141,14 +141,33 @@ async def test_shortcuts_help_opens_with_f1_and_question_mark(tmp_path):
         await pilot.pause()
         assert isinstance(app.screen, ShortcutHelpScreen)
 
-        await pilot.press("?")
+        await pilot.press("ctrl+slash")
         await pilot.pause()
         assert not isinstance(app.screen, ShortcutHelpScreen)
 
-        await pilot.press("?")
+        await pilot.press("ctrl+slash")
         await pilot.pause()
         assert isinstance(app.screen, ShortcutHelpScreen)
 
         await pilot.press("escape")
         await pilot.pause()
+        assert not isinstance(app.screen, ShortcutHelpScreen)
+
+
+@pytest.mark.asyncio
+async def test_plain_question_mark_remains_input_text(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        await pilot.press("?")
+        await pilot.pause()
+        assert app.search_input.value == "?"
         assert not isinstance(app.screen, ShortcutHelpScreen)
