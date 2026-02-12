@@ -823,6 +823,16 @@ class WizardBody(Vertical):
             show=True,
             key_display="CTRL+<",
         ),
+        Binding(
+            "ctrl+right",
+            "app.next_search_mode",
+            show=False,
+        ),
+        Binding(
+            "ctrl+left",
+            "app.prev_search_mode",
+            show=False,
+        ),
     ]
 
 
@@ -834,8 +844,6 @@ class SearchInput(Input, inherit_bindings=False):
         Binding("end", "end", show=False),
         Binding("backspace", "delete_left", show=False),
         Binding("delete", "delete_right", show=False),
-        Binding("ctrl+period", "app.next_search_mode", show=False),
-        Binding("ctrl+comma", "app.prev_search_mode", show=False),
         Binding("enter", "submit", show=False),
     ]
 
@@ -1376,24 +1384,26 @@ class LogBrowser(App):
             classes="mode-description",
             id="search-mode-status",
         )
-        self.search_mode_button = Button(
-            self._search_mode_button_text(),
-            id="cycle-search-mode",
-        )
-        mode_row = Horizontal(
-            self.search_mode_button,
-            self.search_mode_status,
-            classes="mode-row",
-        )
-        self.wizard.mount(mode_row)
+        self.wizard.mount(self.search_mode_status)
         back_label = "Back"
         back_id = "back-search"
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
+        self.search_mode_button = Button(
+            self._search_mode_button_text(),
+            id="cycle-search-mode",
+        )
         button_row = Horizontal(
-            Button(back_label, id=back_id),
-            Button("Search", id="do-search"),
+            Horizontal(
+                Button(back_label, id=back_id),
+                Button("Search", id="do-search"),
+            ),
+            Static("", classes="button-spacer"),
+            Horizontal(
+                self.search_mode_button,
+                classes="right-buttons",
+            ),
             classes="button-row",
         )
         self.wizard.mount(button_row)
