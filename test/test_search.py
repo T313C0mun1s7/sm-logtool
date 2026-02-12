@@ -4,6 +4,8 @@ from datetime import date
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
+
 from sm_logtool import search
 from sm_logtool.staging import stage_log
 
@@ -181,3 +183,37 @@ def test_search_ungrouped_entries_groups_continuations(tmp_path):
 
     assert result.total_conversations == 1
     assert result.conversations[0].lines[1].lstrip().startswith("at")
+
+
+def test_search_ungrouped_entries_supports_wildcard_mode(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Login failed: User [sales] not found\n"
+        "00:00:02.200 Login failed: User [billing] not found\n"
+        "00:00:03.300 Login successful: User [sales]\n"
+    )
+
+    result = search.search_ungrouped_entries(
+        log_path,
+        "Login failed: User [*] not found",
+        mode="wildcard",
+    )
+
+    assert result.total_conversations == 2
+
+    single_char = search.search_ungrouped_entries(
+        log_path,
+        "Login failed: User [sale?] not found",
+        mode="wildcard",
+    )
+    assert single_char.total_conversations == 1
+
+
+def test_search_rejects_unknown_mode(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+    )
+
+    with pytest.raises(ValueError):
+        search.search_smtp_conversations(log_path, "Connection", mode="bad")

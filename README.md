@@ -87,7 +87,7 @@ Wizard flow:
 
 1. Choose log kind.
 2. Select one or more log dates.
-3. Enter search term.
+3. Enter search term and choose search mode (`Literal`/`Wildcard`).
 4. Review results, copy selection/all, and optionally run sub-search.
 
 Global shortcuts shown in the footer:
@@ -117,6 +117,9 @@ sm-logtool search "somebody@example.net"
 
 # Search newest delivery log
 sm-logtool search --kind delivery "somebody@example.net"
+
+# Wildcard mode: '*' any chars, '?' single char
+sm-logtool search --mode wildcard "Login failed: User * not found"
 ```
 
 Target resolution:
@@ -136,10 +139,13 @@ Search options:
 - `--log-file`: explicit file to search. Repeat to search multiple files.
 - `--list`: list available logs for the selected kind and exit.
 - `--list-kinds`: list supported kinds and exit.
+- `--mode`: search mode (`literal` or `wildcard`).
 - `--case-sensitive`: disable default case-insensitive matching.
 
-Search terms are literal substrings (regex/fuzzy modes are not enabled in the
-current CLI/TUI search path).
+Search mode behavior:
+
+- `literal`: exact substring matching (default).
+- `wildcard`: `*` matches any sequence and `?` matches one character.
 
 ## Supported Log Kinds
 

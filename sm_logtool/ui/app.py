@@ -41,6 +41,12 @@ from ..logfiles import (
     summarize_logs,
 )
 from ..result_rendering import render_search_results
+from ..search_modes import (
+    MODE_LITERAL,
+    MODE_WILDCARD,
+    SEARCH_MODE_DESCRIPTIONS,
+    SEARCH_MODE_LABELS,
+)
 from ..search import get_search_function
 from ..syntax import spans_for_line
 from ..staging import stage_log
@@ -1190,6 +1196,7 @@ class LogBrowser(App):
     logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive(KIND_SMTP)
+    _search_mode_cycle = (MODE_LITERAL, MODE_WILDCARD)
 
     def __init__(
         self,
@@ -1208,6 +1215,9 @@ class LogBrowser(App):
         self.kind_list: KindListView | None = None
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
+        self.search_mode = MODE_LITERAL
+        self.search_mode_status: Static | None = None
+        self.search_mode_button: Button | None = None
         self.output_log: ResultsArea | None = None
         self.footer: Footer | None = None
         self.subsearch_path: Path | None = None
@@ -1332,6 +1342,21 @@ class LogBrowser(App):
             id="search-term",
         )
         self.wizard.mount(self.search_input)
+        self.search_mode_status = Static(
+            self._search_mode_status_text(),
+            id="search-mode-status",
+        )
+        self.search_mode_button = Button(
+            self._search_mode_button_text(),
+            id="cycle-search-mode",
+        )
+        mode_row = Horizontal(
+            self.search_mode_status,
+            Static("", classes="button-spacer"),
+            self.search_mode_button,
+            classes="button-row",
+        )
+        self.wizard.mount(mode_row)
         back_label = "Back"
         back_id = "back-search"
         if self.subsearch_active:
@@ -1445,6 +1470,8 @@ class LogBrowser(App):
             self._show_step_date()
         elif button_id == "back-results":
             self._show_last_results()
+        elif button_id == "cycle-search-mode":
+            self._cycle_search_mode()
         elif button_id == "do-search":
             self._perform_search()
         elif button_id == "new-search":
@@ -1683,10 +1710,18 @@ class LogBrowser(App):
             self._notify("Enter a search term.")
             return
 
-        results = [
-            search_fn(target, term)
-            for target in search_targets
-        ]
+        try:
+            results = [
+                search_fn(
+                    target,
+                    term,
+                    mode=self.search_mode,
+                )
+                for target in search_targets
+            ]
+        except ValueError as exc:
+            self._notify(str(exc))
+            return
         rendered_lines = self._render_results(
             results,
             search_targets,
@@ -1699,6 +1734,33 @@ class LogBrowser(App):
 
         self._display_results(rendered_lines, search_kind)
         self._notify("Search complete.")
+
+    def _cycle_search_mode(self) -> None:
+        current = self.search_mode
+        modes = self._search_mode_cycle
+        try:
+            index = modes.index(current)
+        except ValueError:
+            index = 0
+        self.search_mode = modes[(index + 1) % len(modes)]
+        self._refresh_search_mode_controls()
+        label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
+        self._notify(f"Search mode: {label}")
+
+    def _refresh_search_mode_controls(self) -> None:
+        if self.search_mode_status is not None:
+            self.search_mode_status.update(self._search_mode_status_text())
+        if self.search_mode_button is not None:
+            self.search_mode_button.label = self._search_mode_button_text()
+
+    def _search_mode_button_text(self) -> str:
+        label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
+        return f"Mode: {label}"
+
+    def _search_mode_status_text(self) -> str:
+        label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
+        description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
+        return f"Search mode: {label}. {description}"
 
     def _notify(self, message: str) -> None:
         try:
