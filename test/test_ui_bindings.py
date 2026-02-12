@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Button, Static
 
-from sm_logtool.ui.app import LogBrowser, WizardStep
+from sm_logtool.ui.app import LogBrowser, ShortcutHelpScreen, WizardStep
 
 
 def write_sample_logs(root: Path) -> None:
@@ -122,3 +122,33 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
         await pilot.pause()
         assert app.search_mode == "literal"
         assert app.search_input.value == ""
+
+
+@pytest.mark.asyncio
+async def test_shortcuts_help_opens_with_f1_and_question_mark(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        await pilot.press("f1")
+        await pilot.pause()
+        assert isinstance(app.screen, ShortcutHelpScreen)
+
+        await pilot.press("?")
+        await pilot.pause()
+        assert not isinstance(app.screen, ShortcutHelpScreen)
+
+        await pilot.press("?")
+        await pilot.pause()
+        assert isinstance(app.screen, ShortcutHelpScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ShortcutHelpScreen)

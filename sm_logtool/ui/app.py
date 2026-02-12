@@ -690,6 +690,91 @@ class ContextMenuScreen(ModalScreen[str | None]):
         menu.styles.offset = offset
 
 
+class ShortcutHelpScreen(ModalScreen[None]):
+    """Modal shortcut reference for the current wizard step."""
+
+    DEFAULT_CSS = """
+    ShortcutHelpScreen {
+        align: center middle;
+        background: #00000099;
+    }
+
+    #shortcut-help-dialog {
+        width: 76;
+        max-width: 90%;
+        height: auto;
+        border: round #5f5f5f;
+        background: #1f1f1f;
+        padding: 1 2;
+    }
+
+    #shortcut-help-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #shortcut-help-subtitle {
+        color: #b0b0b0;
+        margin-bottom: 1;
+    }
+
+    #shortcut-help-body {
+        margin-bottom: 1;
+    }
+
+    #shortcut-help-close {
+        width: 12;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "close", show=False),
+        Binding("enter", "close", show=False),
+        Binding("f1", "close", show=False),
+        Binding("question_mark", "close", show=False),
+    ]
+
+    def __init__(
+        self,
+        entries: list[tuple[str, str]],
+        *,
+        step_label: str,
+    ) -> None:
+        super().__init__()
+        self._entries = entries
+        self._step_label = step_label
+
+    def compose(self) -> ComposeResult:
+        lines = [f"{'Key':<14}Action", f"{'-' * 14}{'-' * 24}"]
+        lines.extend(
+            f"{key:<14}{description}" for key, description in self._entries
+        )
+        yield Vertical(
+            Static("Keyboard Shortcuts", id="shortcut-help-title"),
+            Static(
+                f"Current step: {self._step_label}. "
+                "Press F1, ?, Esc, or Enter to close.",
+                id="shortcut-help-subtitle",
+            ),
+            Static("\n".join(lines), id="shortcut-help-body"),
+            Button("Close", id="shortcut-help-close"),
+            id="shortcut-help-dialog",
+        )
+
+    def on_mount(self) -> None:
+        try:
+            self.query_one("#shortcut-help-close").focus()
+        except Exception:
+            pass
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "shortcut-help-close":
+            self.dismiss(None)
+
+
 class WizardStep(Enum):
     KIND = auto()
     DATE = auto()
@@ -805,21 +890,31 @@ class WizardBody(Vertical):
         Binding(
             "ctrl+f",
             "app.focus_search",
-            "Focus search",
+            "Focus",
             show=True,
             key_display="CTRL+F",
         ),
         Binding(
+            "f1",
+            "app.shortcuts_help",
+            show=False,
+        ),
+        Binding(
+            "question_mark",
+            "app.shortcuts_help",
+            show=False,
+        ),
+        Binding(
             "ctrl+right",
             "app.next_search_mode",
-            "Switch mode next",
+            "Mode next",
             show=True,
             key_display="CTRL+RIGHT",
         ),
         Binding(
             "ctrl+left",
             "app.prev_search_mode",
-            "Switch mode prev",
+            "Mode prev",
             show=True,
             key_display="CTRL+LEFT",
         ),
@@ -836,6 +931,19 @@ class SearchInput(Input, inherit_bindings=False):
         Binding("delete", "delete_right", show=False),
         Binding("enter", "submit", show=False),
     ]
+
+    async def _on_key(
+        self,
+        event: events.Key,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if event.key == "question_mark":
+            app = getattr(self, "app", None)
+            show_help = getattr(app, "action_shortcuts_help", None)
+            if callable(show_help):
+                show_help()
+                event.stop()
+                return
+        await super()._on_key(event)
 
 
 class MnemonicFooterKey(FooterKey):
@@ -1612,6 +1720,14 @@ class LogBrowser(App):
     def action_menu(self) -> None:
         self.action_command_palette()
 
+    def action_shortcuts_help(self) -> None:
+        self.push_screen(
+            ShortcutHelpScreen(
+                self._shortcut_help_entries(),
+                step_label=self._step_label(),
+            ),
+        )
+
     def action_quit(self) -> None:
         self.exit()
 
@@ -1641,6 +1757,28 @@ class LogBrowser(App):
             # Reset footer legend so shortcuts display on every step.
             self.footer._key_text = None  # type: ignore[attr-defined]
             self.footer.refresh()
+
+    def _step_label(self) -> str:
+        labels = {
+            WizardStep.KIND: "Step 1 (Log Type)",
+            WizardStep.DATE: "Step 2 (Dates)",
+            WizardStep.SEARCH: "Step 3 (Search)",
+            WizardStep.RESULTS: "Results",
+        }
+        return labels.get(self.step, "Unknown")
+
+    def _shortcut_help_entries(self) -> list[tuple[str, str]]:
+        entries: list[tuple[str, str]] = []
+        seen_actions: set[str] = set()
+        for _, binding, enabled, _tooltip in self.screen.active_bindings.values():
+            if not enabled or not binding.show or not binding.description:
+                continue
+            if binding.action in seen_actions:
+                continue
+            seen_actions.add(binding.action)
+            entries.append((self.get_key_display(binding), binding.description))
+        entries.append(("F1 / ?", "Toggle shortcut help"))
+        return entries
 
     def _apply_kind_selection(self, kind: str) -> None:
         if not self.kind_list:
