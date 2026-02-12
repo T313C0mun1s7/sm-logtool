@@ -113,12 +113,12 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
         await pilot.pause()
 
         assert app.search_mode == "literal"
-        await pilot.press("ctrl+period")
+        await pilot.press("ctrl+equal")
         await pilot.pause()
         assert app.search_mode == "wildcard"
         assert app.search_input.value == ""
 
-        await pilot.press("ctrl+comma")
+        await pilot.press("ctrl+minus")
         await pilot.pause()
         assert app.search_mode == "literal"
         assert app.search_input.value == ""
