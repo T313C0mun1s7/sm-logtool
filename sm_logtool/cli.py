@@ -6,6 +6,7 @@ Provides a TUI browser (`browse`) and a search workflow (`search`).
 from __future__ import annotations
 
 import argparse
+from importlib import metadata
 import textwrap
 from pathlib import Path
 import sys
@@ -59,6 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Path to a YAML config file. Defaults to $SM_LOGTOOL_CONFIG or "
             "~/.config/sm-logtool/config.yaml."
         ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_package_version()}",
     )
 
     subparsers = parser.add_subparsers(dest="command")
@@ -178,6 +184,13 @@ def main(argv: list[str] | None = None) -> int:
     handler = getattr(args, "handler", _run_browse)
 
     return handler(args)
+
+
+def _package_version() -> str:
+    try:
+        return metadata.version("sm-logtool")
+    except metadata.PackageNotFoundError:
+        return "unknown"
 
 
 def _run_browse(args: argparse.Namespace) -> int:

@@ -72,6 +72,7 @@ Top-level help:
 
 ```bash
 sm-logtool --help
+sm-logtool --version
 ```
 
 ### Launch the TUI
