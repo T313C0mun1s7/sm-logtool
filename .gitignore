@@ -163,6 +163,7 @@ cython_debug/
 # Local development sample logs
 sample_logs/*
 !sample_logs/README.txt
+artifacts/
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
