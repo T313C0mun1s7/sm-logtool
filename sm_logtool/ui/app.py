@@ -689,6 +689,47 @@ class ContextMenuScreen(ModalScreen[str | None]):
         menu.styles.offset = offset
 
 
+class TopActionPressed(Message):
+    def __init__(self, sender: "TopAction", action: str) -> None:
+        super().__init__()
+        self.sender = sender
+        self.action = action
+
+
+class TopAction(Static):
+    """Compact, clickable action label for the persistent top row."""
+
+    can_focus = True
+
+    def __init__(
+        self,
+        label: str,
+        action: str,
+        *,
+        id: str,
+    ) -> None:
+        super().__init__(label, id=id, classes="top-action")
+        self.action = action
+
+    def _dispatch(self) -> None:
+        self.post_message(TopActionPressed(self, self.action))
+
+    def on_click(
+        self,
+        event: events.Click,
+    ) -> None:  # pragma: no cover - UI behaviour
+        self._dispatch()
+        event.stop()
+
+    def on_key(
+        self,
+        event: events.Key,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if event.key in {"enter", "space"}:
+            self._dispatch()
+            event.stop()
+
+
 class WizardStep(Enum):
     KIND = auto()
     DATE = auto()
@@ -1128,12 +1169,26 @@ class LogBrowser(App):
 
     CSS = """
     #top-actions {
-        height: auto;
+        height: 1;
         padding: 0 1;
+        background: #1f1f1f;
     }
 
-    #top-actions Button {
+    .top-action {
+        width: auto;
+        height: 1;
+        min-height: 1;
+        padding: 0 1;
         margin-right: 1;
+        background: #333333;
+    }
+
+    .top-action:hover {
+        background: #4a4a4a;
+    }
+
+    .top-action:focus {
+        text-style: bold;
     }
 
     #wizard-body {
@@ -1269,9 +1324,13 @@ class LogBrowser(App):
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Horizontal(
-            Button("Menu (Ctrl+U)", id="top-menu"),
-            Button("Quit (Ctrl+Q)", id="top-quit"),
-            Button("Reset Search (Ctrl+R)", id="top-reset"),
+            TopAction("Menu, CTRL+U", "menu", id="top-menu"),
+            TopAction("Quit, CTRL+Q", "quit", id="top-quit"),
+            TopAction(
+                "Reset Search, CTRL+R",
+                "reset",
+                id="top-reset",
+            ),
             id="top-actions",
         )
         self.wizard = WizardBody(id="wizard-body")
@@ -1498,13 +1557,7 @@ class LogBrowser(App):
         event: Button.Pressed,
     ) -> None:  # type: ignore[override]
         button_id = event.button.id
-        if button_id == "top-menu":
-            self.action_menu()
-        elif button_id == "top-quit":
-            self.action_quit()
-        elif button_id == "top-reset":
-            self.action_reset()
-        elif button_id == "quit-kind":
+        if button_id == "quit-kind":
             self.exit()
         elif button_id == "next-kind":
             if self.current_kind:
@@ -1537,6 +1590,14 @@ class LogBrowser(App):
             self._copy_results(selection_only=False)
 
         self._refresh_footer_bindings()
+
+    def on_top_action_pressed(self, message: TopActionPressed) -> None:
+        if message.action == "menu":
+            self.action_menu()
+        elif message.action == "quit":
+            self.action_quit()
+        elif message.action == "reset":
+            self.action_reset()
 
     def on_list_view_highlighted(
         self,

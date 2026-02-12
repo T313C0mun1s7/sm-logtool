@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from textual.widgets import Button, Static
 
-from sm_logtool.ui.app import LogBrowser, WizardStep
+from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 
 
 def write_sample_logs(root: Path) -> None:
@@ -22,12 +22,12 @@ async def test_top_action_buttons_show_core_shortcuts(tmp_path):
     app = LogBrowser(logs_dir=logs_dir)
     async with app.run_test() as pilot:
         await pilot.pause()
-        menu_button = app.query_one("#top-menu", Button)
-        quit_button = app.query_one("#top-quit", Button)
-        reset_button = app.query_one("#top-reset", Button)
-        assert "Ctrl+U" in str(menu_button.label)
-        assert "Ctrl+Q" in str(quit_button.label)
-        assert "Ctrl+R" in str(reset_button.label)
+        menu_action = app.query_one("#top-menu", TopAction)
+        quit_action = app.query_one("#top-quit", TopAction)
+        reset_action = app.query_one("#top-reset", TopAction)
+        assert "CTRL+U" in str(menu_action.render())
+        assert "CTRL+Q" in str(quit_action.render())
+        assert "CTRL+R" in str(reset_action.render())
 
 
 @pytest.mark.asyncio
@@ -89,8 +89,8 @@ async def test_top_reset_button_returns_to_kind_step(tmp_path):
         app._show_step_results()
         await pilot.pause()
         assert app.step == WizardStep.RESULTS
-        reset_button = app.query_one("#top-reset", Button)
-        reset_button.press()
+        reset_action = app.query_one("#top-reset", TopAction)
+        reset_action._dispatch()
         await pilot.pause()
         assert app.step == WizardStep.KIND
 
