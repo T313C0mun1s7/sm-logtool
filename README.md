@@ -25,15 +25,19 @@ SmarterMail logs remain untouched during analysis and sub-searches.
 
 ## Install
 
-Install from this repository:
+Install from PyPI (recommended):
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
+pipx install sm-logtool
 ```
 
-This installs the `sm-logtool` command and allows `python -m sm_logtool.cli`.
+Alternative with `pip`:
+
+```bash
+python -m pip install sm-logtool
+```
+
+This installs the `sm-logtool` command.
 
 ## Configuration
 
