@@ -814,14 +814,14 @@ class WizardBody(Vertical):
             "app.next_search_mode",
             "Switch mode next",
             show=True,
-            key_display="CTRL+.",
+            key_display="CTRL+>",
         ),
         Binding(
             "ctrl+comma",
             "app.prev_search_mode",
             "Switch mode prev",
             show=True,
-            key_display="CTRL+,",
+            key_display="CTRL+<",
         ),
     ]
 
@@ -834,6 +834,8 @@ class SearchInput(Input, inherit_bindings=False):
         Binding("end", "end", show=False),
         Binding("backspace", "delete_left", show=False),
         Binding("delete", "delete_right", show=False),
+        Binding("ctrl+period", "app.next_search_mode", show=False),
+        Binding("ctrl+comma", "app.prev_search_mode", show=False),
         Binding("enter", "submit", show=False),
     ]
 
@@ -1801,7 +1803,7 @@ class LogBrowser(App):
 
     def _search_mode_status_text(self) -> str:
         description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
-        return f"{description} Ctrl+. next, Ctrl+, previous."
+        return description
 
     def _notify(self, message: str) -> None:
         try:

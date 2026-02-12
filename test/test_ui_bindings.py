@@ -97,3 +97,26 @@ async def test_search_step_mode_controls_cycle(tmp_path):
 
         assert app.search_mode == "wildcard"
         assert "Wildcard" in str(button.label)
+
+
+@pytest.mark.asyncio
+async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        assert app.search_mode == "literal"
+        await pilot.press("ctrl+period")
+        await pilot.pause()
+        assert app.search_mode == "wildcard"
+
+        await pilot.press("ctrl+comma")
+        await pilot.pause()
+        assert app.search_mode == "literal"
