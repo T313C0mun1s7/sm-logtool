@@ -810,11 +810,18 @@ class WizardBody(Vertical):
             key_display="CTRL+F",
         ),
         Binding(
-            "ctrl+m",
-            "app.toggle_search_mode",
-            "Toggle mode",
+            "ctrl+period",
+            "app.next_search_mode",
+            "Switch mode next",
             show=True,
-            key_display="CTRL+M",
+            key_display="CTRL+.",
+        ),
+        Binding(
+            "ctrl+comma",
+            "app.prev_search_mode",
+            "Switch mode prev",
+            show=True,
+            key_display="CTRL+,",
         ),
     ]
 
@@ -1592,9 +1599,13 @@ class LogBrowser(App):
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
 
-    def action_toggle_search_mode(self) -> None:
+    def action_next_search_mode(self) -> None:
         if self.step == WizardStep.SEARCH:
-            self._cycle_search_mode()
+            self._step_search_mode(1)
+
+    def action_prev_search_mode(self) -> None:
+        if self.step == WizardStep.SEARCH:
+            self._step_search_mode(-1)
 
     def action_menu(self) -> None:
         self.action_command_palette()
@@ -1609,7 +1620,9 @@ class LogBrowser(App):
     ) -> bool | None:
         if action == "focus_search":
             return self.step == WizardStep.SEARCH
-        if action == "toggle_search_mode":
+        if action == "next_search_mode":
+            return self.step == WizardStep.SEARCH
+        if action == "prev_search_mode":
             return self.step == WizardStep.SEARCH
         return True
 
@@ -1762,13 +1775,16 @@ class LogBrowser(App):
         self._notify("Search complete.")
 
     def _cycle_search_mode(self) -> None:
+        self._step_search_mode(1)
+
+    def _step_search_mode(self, step: int) -> None:
         current = self.search_mode
         modes = self._search_mode_cycle
         try:
             index = modes.index(current)
         except ValueError:
             index = 0
-        self.search_mode = modes[(index + 1) % len(modes)]
+        self.search_mode = modes[(index + step) % len(modes)]
         self._refresh_search_mode_controls()
         label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
         self._notify(f"Search mode: {label}")
@@ -1785,7 +1801,7 @@ class LogBrowser(App):
 
     def _search_mode_status_text(self) -> str:
         description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
-        return f"{description} Ctrl+M toggles mode."
+        return f"{description} Ctrl+. next, Ctrl+, previous."
 
     def _notify(self, message: str) -> None:
         try:
