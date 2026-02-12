@@ -71,6 +71,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [ ] Add support for additional compressed log formats (for example `.gz`).
 - [ ] Improve large-log search performance/responsiveness (progress feedback,
   background work, reduced memory footprint).
+- [ ] Add `--version` CLI flag to print installed package version.
 - [ ] Add export controls (matched lines vs full conversations; optional
   structured output).
 - [ ] Plan packaging/distribution (standalone binaries, pipx, release workflow).
