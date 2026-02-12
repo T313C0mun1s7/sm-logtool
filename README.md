@@ -47,7 +47,7 @@ Example:
 
 ```yaml
 logs_dir: /var/lib/smartermail/Logs
-staging_dir: /var/tmp/sm-tool/logs
+staging_dir: /var/tmp/sm-logtool/logs
 default_kind: smtp
 ```
 
@@ -57,7 +57,10 @@ Config resolution order:
 
 1. `--config /path/to/config.yaml`
 2. `SM_LOGTOOL_CONFIG`
-3. Repository `config.yaml`
+3. `~/.config/sm-logtool/config.yaml`
+
+When the default path is used and the file does not exist, `sm-logtool`
+creates it automatically with SmarterMail-oriented defaults.
 
 ## Usage
 

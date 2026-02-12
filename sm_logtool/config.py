@@ -17,8 +17,9 @@ class ConfigError(Exception):
 
 
 _DEFAULT_CONFIG_ENV = "SM_LOGTOOL_CONFIG"
-_ROOT_DIR = Path(__file__).resolve().parent.parent
-_DEFAULT_CONFIG_PATH = _ROOT_DIR / "config.yaml"
+DEFAULT_LOGS_DIR = Path("/var/lib/smartermail/Logs")
+DEFAULT_STAGING_DIR = Path("/var/tmp/sm-logtool/logs")
+DEFAULT_KIND = KIND_SMTP
 
 
 @dataclass(frozen=True)
@@ -43,13 +44,18 @@ def default_config_path() -> Path:
     env_value = os.environ.get(_DEFAULT_CONFIG_ENV)
     if env_value:
         return Path(env_value).expanduser()
-    return _DEFAULT_CONFIG_PATH
+    return Path.home() / ".config" / "sm-logtool" / "config.yaml"
 
 
 def load_config(path: Path | None = None) -> AppConfig:
-    """Load configuration from ``path`` or the default location."""
+    """Load configuration from ``path`` or the default location.
+
+    When ``path`` is omitted, a default config file is created if missing.
+    """
 
     config_path = (path or default_config_path()).expanduser()
+    if path is None:
+        _ensure_default_config_file(config_path)
 
     if not config_path.exists():
         return AppConfig(path=config_path)
@@ -74,7 +80,7 @@ def load_config(path: Path | None = None) -> AppConfig:
 
     logs_dir = _coerce_path(raw.get("logs_dir"))
     staging_dir = _coerce_path(raw.get("staging_dir"))
-    default_kind = raw.get("default_kind", KIND_SMTP)
+    default_kind = raw.get("default_kind", DEFAULT_KIND)
 
     if not isinstance(default_kind, str):
         message = "Config key 'default_kind' must be a string"
@@ -87,6 +93,23 @@ def load_config(path: Path | None = None) -> AppConfig:
         staging_dir=staging_dir,
         default_kind=default_kind,
     )
+
+
+def _ensure_default_config_file(config_path: Path) -> None:
+    if config_path.exists():
+        return
+    payload = {
+        "logs_dir": str(DEFAULT_LOGS_DIR),
+        "staging_dir": str(DEFAULT_STAGING_DIR),
+        "default_kind": DEFAULT_KIND,
+    }
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with config_path.open("w", encoding="utf-8") as handle:
+            yaml.safe_dump(payload, handle, sort_keys=False)
+    except OSError as exc:
+        message = f"Failed to create default config {config_path}: {exc}"
+        raise ConfigError(message) from exc
 
 
 def _coerce_path(value: Any) -> Optional[Path]:

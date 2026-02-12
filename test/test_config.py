@@ -18,6 +18,35 @@ def test_load_config_missing_file(tmp_path):
     assert app_config.default_kind == "smtp"
 
 
+def test_load_config_creates_default_config_file(tmp_path, monkeypatch):
+    home_dir = tmp_path / "home"
+    home_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("SM_LOGTOOL_CONFIG", raising=False)
+
+    app_config = config.load_config()
+    expected_path = home_dir / ".config" / "sm-logtool" / "config.yaml"
+
+    assert app_config.path == expected_path
+    assert app_config.exists
+    assert app_config.logs_dir == Path("/var/lib/smartermail/Logs")
+    assert app_config.staging_dir == Path("/var/tmp/sm-logtool/logs")
+    assert app_config.default_kind == "smtp"
+
+
+def test_load_config_creates_env_config_file(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "custom" / "config.yaml"
+    monkeypatch.setenv("SM_LOGTOOL_CONFIG", str(cfg_path))
+
+    app_config = config.load_config()
+
+    assert app_config.path == cfg_path
+    assert app_config.exists
+    assert app_config.logs_dir == Path("/var/lib/smartermail/Logs")
+    assert app_config.staging_dir == Path("/var/tmp/sm-logtool/logs")
+    assert app_config.default_kind == "smtp"
+
+
 def test_load_config_reads_values(tmp_path):
     cfg_path = tmp_path / "config.yaml"
     logs_dir = tmp_path / "logs"
