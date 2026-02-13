@@ -9,7 +9,7 @@ This file tracks current search behavior and near-term design goals.
 - Search modes:
   - `literal`: plain substring matching (default).
   - `wildcard`: supports `*` (any sequence) and `?` (single character).
-  - `regex`: Python regular expression matching.
+  - `regex`: Python `re` syntax (PCRE-like, not full PCRE).
 - Matching is case-insensitive by default.
 - CLI supports `--case-sensitive` for exact-case matching.
 

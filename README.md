@@ -155,7 +155,12 @@ Search mode behavior:
 
 - `literal`: exact substring matching (default).
 - `wildcard`: `*` matches any sequence and `?` matches one character.
-- `regex`: Python regular expression matching.
+- `regex`: Python `re` syntax (PCRE-like, but not full PCRE).
+
+Regex checker note:
+
+- If an online regex builder does not offer Python mode, use PCRE/PCRE2 and
+  stick to common features; some PCRE-only constructs may not work.
 
 ## Supported Log Kinds
 

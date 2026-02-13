@@ -23,7 +23,7 @@ SEARCH_MODE_LABELS = {
 SEARCH_MODE_DESCRIPTIONS = {
     MODE_LITERAL: "Exact substring match.",
     MODE_WILDCARD: "'*' matches many chars, '?' matches one char.",
-    MODE_REGEX: "Python regex pattern search.",
+    MODE_REGEX: "Python re syntax (PCRE-like, not full PCRE).",
 }
 
 

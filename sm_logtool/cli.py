@@ -115,7 +115,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Search mode to use. "
             "literal=substring, wildcard supports '*' and '?', "
-            "regex=Python regex."
+            "regex=Python re syntax (PCRE-like, not full PCRE)."
         ),
     )
     search_parser.add_argument(
