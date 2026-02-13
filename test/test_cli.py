@@ -79,6 +79,79 @@ def test_run_search_supports_date_selection(tmp_path, capsys):
     assert 'Search term' in captured.out
 
 
+def test_run_search_supports_wildcard_mode(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-administrative.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        (
+            "00:00:01.100 [1.2.3.4] Login failed: User [sales] not found\n"
+            "00:00:02.200 [1.2.3.5] Login failed: User [billing] not found\n"
+        ),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        mode="wildcard",
+        term="Login failed: User [*] not found",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="administrative",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "-> 2 entry(s)" in captured.out
+
+
+def test_run_search_rejects_unknown_mode(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-smtpLog.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][MSG1] hello\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        mode="bogus",
+        term="hello",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 2
+
+    captured = capsys.readouterr()
+    assert "Unsupported search mode" in captured.err
+
+
 def test_run_search_supports_imap_retrieval_kind(tmp_path, capsys):
     logs_dir = tmp_path / "logs"
     staging_dir = tmp_path / "staging"
@@ -413,6 +486,9 @@ def test_search_help_mentions_latest_and_supported_kinds(capsys):
 
     captured = capsys.readouterr()
     assert "newest available log for --kind is searched." in captured.out
+    assert "Search modes:" in captured.out
+    assert "wildcard" in captured.out
+    assert "--mode" in captured.out
     assert "Available kinds:" in captured.out
     assert "logs_dir is set in" in captured.out
     assert "staging_dir is set in" in captured.out

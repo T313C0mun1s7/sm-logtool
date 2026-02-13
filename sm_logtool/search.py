@@ -35,6 +35,12 @@ from .log_parsers import (
     parse_smtp_line,
     starts_with_timestamp,
 )
+from .search_modes import (
+    MODE_LITERAL,
+    MODE_WILDCARD,
+    normalize_search_mode,
+    wildcard_to_regex,
+)
 
 @dataclass
 class Conversation:
@@ -66,6 +72,7 @@ class SearchFunction(Protocol):
         log_path: Path,
         term: str,
         *,
+        mode: str = MODE_LITERAL,
         ignore_case: bool = True,
     ) -> SmtpSearchResult: ...
 
@@ -74,16 +81,16 @@ def search_smtp_conversations(
     log_path: Path,
     term: str,
     *,
+    mode: str = MODE_LITERAL,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return SMTP conversations containing ``term``.
 
-    ``term`` is treated as a literal substring; pass ``ignore_case=False`` to
-    require exact casing.
+    ``mode`` controls the match syntax. ``literal`` uses exact substring
+    matching and ``wildcard`` allows ``*`` and ``?`` wildcards.
     """
 
-    flags = re.IGNORECASE if ignore_case else 0
-    pattern = re.compile(re.escape(term), flags)
+    pattern = _compile_match_pattern(term, mode, ignore_case)
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -148,12 +155,12 @@ def search_delivery_conversations(
     log_path: Path,
     term: str,
     *,
+    mode: str = MODE_LITERAL,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return delivery conversations containing ``term``."""
 
-    flags = re.IGNORECASE if ignore_case else 0
-    pattern = re.compile(re.escape(term), flags)
+    pattern = _compile_match_pattern(term, mode, ignore_case)
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -218,12 +225,12 @@ def search_admin_entries(
     log_path: Path,
     term: str,
     *,
+    mode: str = MODE_LITERAL,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return administrative log entries containing ``term``."""
 
-    flags = re.IGNORECASE if ignore_case else 0
-    pattern = re.compile(re.escape(term), flags)
+    pattern = _compile_match_pattern(term, mode, ignore_case)
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -289,12 +296,12 @@ def search_imap_retrieval_entries(
     log_path: Path,
     term: str,
     *,
+    mode: str = MODE_LITERAL,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return IMAP retrieval entries containing ``term``."""
 
-    flags = re.IGNORECASE if ignore_case else 0
-    pattern = re.compile(re.escape(term), flags)
+    pattern = _compile_match_pattern(term, mode, ignore_case)
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -359,12 +366,12 @@ def search_ungrouped_entries(
     log_path: Path,
     term: str,
     *,
+    mode: str = MODE_LITERAL,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return ungrouped log entries containing ``term``."""
 
-    flags = re.IGNORECASE if ignore_case else 0
-    pattern = re.compile(re.escape(term), flags)
+    pattern = _compile_match_pattern(term, mode, ignore_case)
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -417,6 +424,24 @@ def search_ungrouped_entries(
         total_lines=total_lines,
         orphan_matches=orphan_matches,
     )
+
+
+def _compile_match_pattern(
+    term: str,
+    mode: str,
+    ignore_case: bool,
+) -> re.Pattern[str]:
+    flags = re.IGNORECASE if ignore_case else 0
+    resolved_mode = normalize_search_mode(mode)
+
+    if resolved_mode == MODE_LITERAL:
+        source = re.escape(term)
+    elif resolved_mode == MODE_WILDCARD:
+        source = wildcard_to_regex(term)
+    else:  # pragma: no cover - normalize_search_mode gates this
+        raise ValueError(f"Unsupported search mode: {mode!r}")
+
+    return re.compile(source, flags)
 
 
 def get_search_function(

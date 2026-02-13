@@ -26,6 +26,12 @@ from .logfiles import (
     summarize_logs,
 )
 from .result_rendering import render_search_results
+from .search_modes import (
+    MODE_LITERAL,
+    SEARCH_MODE_DESCRIPTIONS,
+    SUPPORTED_SEARCH_MODES,
+    normalize_search_mode,
+)
 from .search import get_search_function
 from .staging import stage_log
 
@@ -98,6 +104,15 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default=None,
         help="Substring to search for (case-insensitive by default)",
+    )
+    search_parser.add_argument(
+        "--mode",
+        choices=SUPPORTED_SEARCH_MODES,
+        default=MODE_LITERAL,
+        help=(
+            "Search mode to use. "
+            "literal=exact substring, wildcard supports '*' and '?'."
+        ),
     )
     search_parser.add_argument(
         "--logs-dir",
@@ -225,6 +240,14 @@ def _run_search(args: argparse.Namespace) -> int:
         return _list_kinds()
 
     try:
+        search_mode = normalize_search_mode(
+            getattr(args, "mode", MODE_LITERAL),
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
         logs_dir = _resolve_logs_dir(args, config)
         staging_dir = _resolve_staging_dir(args, config)
     except ValueError as exc:
@@ -277,6 +300,7 @@ def _run_search(args: argparse.Namespace) -> int:
             search_fn(
                 staged.staged_path,
                 args.term,
+                mode=search_mode,
                 ignore_case=not args.case_sensitive,
             )
         )
@@ -440,12 +464,19 @@ def _normalize_text_values(values: object) -> list[str]:
 
 def _search_help_epilog() -> str:
     kinds = ", ".join(SUPPORTED_KINDS)
+    mode_lines = "\n".join(
+        f"  - {mode}: {SEARCH_MODE_DESCRIPTIONS[mode]}"
+        for mode in SUPPORTED_SEARCH_MODES
+    )
     return textwrap.dedent(
         f"""
         Target resolution:
           1. If --log-file is provided (repeatable), those files are searched.
           2. Else if --date is provided (repeatable), those dates are searched.
           3. Else the newest available log for --kind is searched.
+
+        Search modes:
+{mode_lines}
 
         Available kinds:
           {kinds}

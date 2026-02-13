@@ -22,7 +22,6 @@ from textual.selection import Selection
 from textual.widgets import (
     Button,
     Footer,
-    Header,
     Input,
     ListItem,
     ListView,
@@ -41,6 +40,12 @@ from ..logfiles import (
     summarize_logs,
 )
 from ..result_rendering import render_search_results
+from ..search_modes import (
+    MODE_LITERAL,
+    MODE_WILDCARD,
+    SEARCH_MODE_DESCRIPTIONS,
+    SEARCH_MODE_LABELS,
+)
 from ..search import get_search_function
 from ..syntax import spans_for_line
 from ..staging import stage_log
@@ -684,6 +689,57 @@ class ContextMenuScreen(ModalScreen[str | None]):
         menu.styles.offset = offset
 
 
+class TopActionPressed(Message):
+    def __init__(self, sender: "TopAction", action: str) -> None:
+        super().__init__()
+        self.sender = sender
+        self.action = action
+
+
+class TopAction(Static):
+    """Compact, clickable action label for the persistent top row."""
+
+    can_focus = True
+
+    def __init__(
+        self,
+        label: str,
+        action: str,
+        mnemonic: str,
+        *,
+        id: str,
+    ) -> None:
+        super().__init__(label, id=id, classes="top-action")
+        self.action = action
+        self.label = label
+        self.mnemonic = mnemonic.lower()
+
+    def render(self) -> Text:
+        text = Text(self.label)
+        index = self.label.lower().find(self.mnemonic)
+        if index >= 0:
+            text.stylize("bold #ffd75f", index, index + 1)
+        return text
+
+    def _dispatch(self) -> None:
+        self.post_message(TopActionPressed(self, self.action))
+
+    def on_click(
+        self,
+        event: events.Click,
+    ) -> None:  # pragma: no cover - UI behaviour
+        self._dispatch()
+        event.stop()
+
+    def on_key(
+        self,
+        event: events.Key,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if event.key in {"enter", "space"}:
+            self._dispatch()
+            event.stop()
+
+
 class WizardStep(Enum):
     KIND = auto()
     DATE = auto()
@@ -777,7 +833,7 @@ class WizardBody(Vertical):
             "ctrl+u",
             "app.menu",
             "Menu",
-            show=True,
+            show=False,
             key_display="CTRL+U",
             priority=True,
         ),
@@ -785,7 +841,7 @@ class WizardBody(Vertical):
             "ctrl+q",
             "app.quit",
             "Quit",
-            show=True,
+            show=False,
             key_display="CTRL+Q",
             priority=True,
         ),
@@ -793,15 +849,29 @@ class WizardBody(Vertical):
             "ctrl+r",
             "app.reset",
             "Reset Search",
-            show=True,
+            show=False,
             key_display="CTRL+R",
         ),
         Binding(
             "ctrl+f",
             "app.focus_search",
-            "Focus search",
+            "Focus",
             show=True,
             key_display="CTRL+F",
+        ),
+        Binding(
+            "ctrl+right",
+            "app.next_search_mode",
+            "Mode next",
+            show=True,
+            key_display="CTRL+RIGHT",
+        ),
+        Binding(
+            "ctrl+left",
+            "app.prev_search_mode",
+            "Mode prev",
+            show=True,
+            key_display="CTRL+LEFT",
         ),
     ]
 
@@ -1108,6 +1178,29 @@ class LogBrowser(App):
     """Wizard-style application for exploring SmarterMail logs."""
 
     CSS = """
+    #top-actions {
+        height: 1;
+        padding: 0 1;
+        background: #1f1f1f;
+    }
+
+    .top-action {
+        width: auto;
+        height: 1;
+        min-height: 1;
+        padding: 0 1;
+        margin-right: 1;
+        background: #333333;
+    }
+
+    .top-action:hover {
+        background: #4a4a4a;
+    }
+
+    .top-action:focus {
+        text-style: bold;
+    }
+
     #wizard-body {
         margin: 1 2;
         height: 1fr;
@@ -1185,11 +1278,25 @@ class LogBrowser(App):
         margin-left: 1;
         margin-right: 0;
     }
+
+    .mode-row {
+        height: auto;
+    }
+
+    .mode-row Button {
+        min-width: 18;
+        margin-right: 1;
+    }
+
+    .mode-description {
+        width: 1fr;
+    }
     """
 
     logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive(KIND_SMTP)
+    _search_mode_cycle = (MODE_LITERAL, MODE_WILDCARD)
 
     def __init__(
         self,
@@ -1208,6 +1315,9 @@ class LogBrowser(App):
         self.kind_list: KindListView | None = None
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
+        self.search_mode = MODE_LITERAL
+        self.search_mode_status: Static | None = None
+        self.search_mode_button: Button | None = None
         self.output_log: ResultsArea | None = None
         self.footer: Footer | None = None
         self.subsearch_path: Path | None = None
@@ -1223,7 +1333,17 @@ class LogBrowser(App):
         self._context_menu_open = False
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
-        yield Header(show_clock=False, icon="Menu")
+        yield Horizontal(
+            TopAction("Menu", "menu", "u", id="top-menu"),
+            TopAction("Quit", "quit", "q", id="top-quit"),
+            TopAction(
+                "Reset",
+                "reset",
+                "r",
+                id="top-reset",
+            ),
+            id="top-actions",
+        )
         self.wizard = WizardBody(id="wizard-body")
         yield self.wizard
         self.footer = MenuFooter(show_command_palette=False)
@@ -1332,14 +1452,31 @@ class LogBrowser(App):
             id="search-term",
         )
         self.wizard.mount(self.search_input)
+        self.search_mode_status = Static(
+            self._search_mode_status_text(),
+            classes="mode-description",
+            id="search-mode-status",
+        )
+        self.wizard.mount(self.search_mode_status)
         back_label = "Back"
         back_id = "back-search"
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
+        self.search_mode_button = Button(
+            self._search_mode_button_text(),
+            id="cycle-search-mode",
+        )
         button_row = Horizontal(
-            Button(back_label, id=back_id),
-            Button("Search", id="do-search"),
+            Horizontal(
+                Button(back_label, id=back_id),
+                Button("Search", id="do-search"),
+            ),
+            Static("", classes="button-spacer"),
+            Horizontal(
+                self.search_mode_button,
+                classes="right-buttons",
+            ),
             classes="button-row",
         )
         self.wizard.mount(button_row)
@@ -1445,6 +1582,8 @@ class LogBrowser(App):
             self._show_step_date()
         elif button_id == "back-results":
             self._show_last_results()
+        elif button_id == "cycle-search-mode":
+            self._cycle_search_mode()
         elif button_id == "do-search":
             self._perform_search()
         elif button_id == "new-search":
@@ -1462,6 +1601,14 @@ class LogBrowser(App):
             self._copy_results(selection_only=False)
 
         self._refresh_footer_bindings()
+
+    def on_top_action_pressed(self, message: TopActionPressed) -> None:
+        if message.action == "menu":
+            self.action_menu()
+        elif message.action == "quit":
+            self.action_quit()
+        elif message.action == "reset":
+            self.action_reset()
 
     def on_list_view_highlighted(
         self,
@@ -1545,6 +1692,14 @@ class LogBrowser(App):
         if self.step == WizardStep.SEARCH and self.search_input is not None:
             self.search_input.focus()
 
+    def action_next_search_mode(self) -> None:
+        if self.step == WizardStep.SEARCH:
+            self._step_search_mode(1)
+
+    def action_prev_search_mode(self) -> None:
+        if self.step == WizardStep.SEARCH:
+            self._step_search_mode(-1)
+
     def action_menu(self) -> None:
         self.action_command_palette()
 
@@ -1557,6 +1712,10 @@ class LogBrowser(App):
         parameters: tuple[object, ...],
     ) -> bool | None:
         if action == "focus_search":
+            return self.step == WizardStep.SEARCH
+        if action == "next_search_mode":
+            return self.step == WizardStep.SEARCH
+        if action == "prev_search_mode":
             return self.step == WizardStep.SEARCH
         return True
 
@@ -1683,10 +1842,18 @@ class LogBrowser(App):
             self._notify("Enter a search term.")
             return
 
-        results = [
-            search_fn(target, term)
-            for target in search_targets
-        ]
+        try:
+            results = [
+                search_fn(
+                    target,
+                    term,
+                    mode=self.search_mode,
+                )
+                for target in search_targets
+            ]
+        except ValueError as exc:
+            self._notify(str(exc))
+            return
         rendered_lines = self._render_results(
             results,
             search_targets,
@@ -1699,6 +1866,35 @@ class LogBrowser(App):
 
         self._display_results(rendered_lines, search_kind)
         self._notify("Search complete.")
+
+    def _cycle_search_mode(self) -> None:
+        self._step_search_mode(1)
+
+    def _step_search_mode(self, step: int) -> None:
+        current = self.search_mode
+        modes = self._search_mode_cycle
+        try:
+            index = modes.index(current)
+        except ValueError:
+            index = 0
+        self.search_mode = modes[(index + step) % len(modes)]
+        self._refresh_search_mode_controls()
+        label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
+        self._notify(f"Search mode: {label}")
+
+    def _refresh_search_mode_controls(self) -> None:
+        if self.search_mode_status is not None:
+            self.search_mode_status.update(self._search_mode_status_text())
+        if self.search_mode_button is not None:
+            self.search_mode_button.label = self._search_mode_button_text()
+
+    def _search_mode_button_text(self) -> str:
+        label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
+        return f"Mode: {label}"
+
+    def _search_mode_status_text(self) -> str:
+        description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
+        return description
 
     def _notify(self, message: str) -> None:
         try:
