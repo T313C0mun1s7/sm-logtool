@@ -155,6 +155,42 @@ def test_run_search_supports_regex_mode(tmp_path, capsys):
     assert "-> 2 entry(s)" in captured.out
 
 
+def test_run_search_supports_fuzzy_mode(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-administrative.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "00:00:01.100 [1.2.3.4] Authentication failed for user [sales]\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        mode="fuzzy",
+        fuzzy_threshold=0.72,
+        term="Authentcation faild for user [sales]",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="administrative",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "-> 1 entry(s)" in captured.out
+
+
 def test_run_search_rejects_invalid_regex(tmp_path, capsys):
     logs_dir = tmp_path / "logs"
     staging_dir = tmp_path / "staging"
@@ -188,6 +224,42 @@ def test_run_search_rejects_invalid_regex(tmp_path, capsys):
 
     captured = capsys.readouterr()
     assert "Invalid regex pattern" in captured.err
+
+
+def test_run_search_rejects_invalid_fuzzy_threshold(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-smtpLog.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][MSG1] hello\n",
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        mode="fuzzy",
+        fuzzy_threshold=1.5,
+        term="hello",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 2
+
+    captured = capsys.readouterr()
+    assert "Invalid fuzzy threshold" in captured.err
 
 
 def test_run_search_rejects_unknown_mode(tmp_path, capsys):
@@ -562,6 +634,8 @@ def test_search_help_mentions_latest_and_supported_kinds(capsys):
     assert "Search modes:" in captured.out
     assert "wildcard" in captured.out
     assert "regex" in captured.out
+    assert "fuzzy" in captured.out
+    assert "--fuzzy-threshold" in captured.out
     assert "--mode" in captured.out
     assert "Available kinds:" in captured.out
     assert "logs_dir is set in" in captured.out

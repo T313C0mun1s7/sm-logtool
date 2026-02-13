@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 import re
-from typing import List, Protocol, Tuple
+from typing import Callable, List, Protocol, Tuple
 
 from .log_kinds import (
     KIND_ACTIVATION,
@@ -36,9 +37,12 @@ from .log_parsers import (
     starts_with_timestamp,
 )
 from .search_modes import (
+    DEFAULT_FUZZY_THRESHOLD,
+    MODE_FUZZY,
     MODE_LITERAL,
     MODE_REGEX,
     MODE_WILDCARD,
+    normalize_fuzzy_threshold,
     normalize_search_mode,
     wildcard_to_regex,
 )
@@ -74,6 +78,7 @@ class SearchFunction(Protocol):
         term: str,
         *,
         mode: str = MODE_LITERAL,
+        fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
         ignore_case: bool = True,
     ) -> SmtpSearchResult: ...
 
@@ -83,6 +88,7 @@ def search_smtp_conversations(
     term: str,
     *,
     mode: str = MODE_LITERAL,
+    fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return SMTP conversations containing ``term``.
@@ -92,7 +98,12 @@ def search_smtp_conversations(
     treats ``term`` as a Python regular expression.
     """
 
-    pattern = _compile_match_pattern(term, mode, ignore_case)
+    matcher = _compile_line_matcher(
+        term,
+        mode,
+        ignore_case,
+        fuzzy_threshold,
+    )
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -131,7 +142,7 @@ def search_smtp_conversations(
                         builders[current_id] = builder
                     builder.add_line(line)
 
-            if pattern.search(line):
+            if matcher(line):
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -158,11 +169,17 @@ def search_delivery_conversations(
     term: str,
     *,
     mode: str = MODE_LITERAL,
+    fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return delivery conversations containing ``term``."""
 
-    pattern = _compile_match_pattern(term, mode, ignore_case)
+    matcher = _compile_line_matcher(
+        term,
+        mode,
+        ignore_case,
+        fuzzy_threshold,
+    )
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -201,7 +218,7 @@ def search_delivery_conversations(
                         builders[current_id] = builder
                     builder.add_line(line)
 
-            if pattern.search(line):
+            if matcher(line):
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -228,11 +245,17 @@ def search_admin_entries(
     term: str,
     *,
     mode: str = MODE_LITERAL,
+    fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return administrative log entries containing ``term``."""
 
-    pattern = _compile_match_pattern(term, mode, ignore_case)
+    matcher = _compile_line_matcher(
+        term,
+        mode,
+        ignore_case,
+        fuzzy_threshold,
+    )
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -272,7 +295,7 @@ def search_admin_entries(
                         builders[current_id] = builder
                     builder.add_line(line)
 
-            if pattern.search(line):
+            if matcher(line):
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -299,11 +322,17 @@ def search_imap_retrieval_entries(
     term: str,
     *,
     mode: str = MODE_LITERAL,
+    fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return IMAP retrieval entries containing ``term``."""
 
-    pattern = _compile_match_pattern(term, mode, ignore_case)
+    matcher = _compile_line_matcher(
+        term,
+        mode,
+        ignore_case,
+        fuzzy_threshold,
+    )
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -342,7 +371,7 @@ def search_imap_retrieval_entries(
                         builders[current_id] = builder
                     builder.add_line(line)
 
-            if pattern.search(line):
+            if matcher(line):
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -369,11 +398,17 @@ def search_ungrouped_entries(
     term: str,
     *,
     mode: str = MODE_LITERAL,
+    fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
 ) -> SmtpSearchResult:
     """Return ungrouped log entries containing ``term``."""
 
-    pattern = _compile_match_pattern(term, mode, ignore_case)
+    matcher = _compile_line_matcher(
+        term,
+        mode,
+        ignore_case,
+        fuzzy_threshold,
+    )
 
     builders: dict[str, _ConversationBuilder] = {}
     matched_ids: set[str] = set()
@@ -406,7 +441,7 @@ def search_ungrouped_entries(
                     builders[current_id] = builder
                 builder.add_line(line)
 
-            if pattern.search(line):
+            if matcher(line):
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -451,6 +486,53 @@ def _compile_match_pattern(
         if resolved_mode == MODE_REGEX:
             raise ValueError(f"Invalid regex pattern: {exc}") from exc
         raise
+
+
+def _compile_line_matcher(
+    term: str,
+    mode: str,
+    ignore_case: bool,
+    fuzzy_threshold: float,
+) -> Callable[[str], bool]:
+    resolved_mode = normalize_search_mode(mode)
+    if resolved_mode == MODE_FUZZY:
+        threshold = normalize_fuzzy_threshold(fuzzy_threshold)
+        normalized_term = term.lower() if ignore_case else term
+        return lambda line: _fuzzy_line_match(
+            normalized_term,
+            line.lower() if ignore_case else line,
+            threshold,
+        )
+
+    pattern = _compile_match_pattern(term, resolved_mode, ignore_case)
+    return lambda line: bool(pattern.search(line))
+
+
+def _fuzzy_line_match(term: str, line: str, threshold: float) -> bool:
+    if not term:
+        return False
+    if term in line:
+        return True
+    ratio = _max_similarity(term, line)
+    return ratio >= threshold
+
+
+def _max_similarity(term: str, line: str) -> float:
+    if not line:
+        return 0.0
+    if len(line) <= len(term):
+        return SequenceMatcher(None, term, line).ratio()
+
+    window = len(term)
+    best = SequenceMatcher(None, term, line).ratio()
+    for start in range(0, len(line) - window + 1):
+        chunk = line[start:start + window]
+        ratio = SequenceMatcher(None, term, chunk).ratio()
+        if ratio > best:
+            best = ratio
+            if best >= 1.0:
+                return best
+    return best
 
 
 def get_search_function(
