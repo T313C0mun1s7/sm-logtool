@@ -68,7 +68,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [x] Bring CLI search and output behavior to parity with the TUI across supported log kinds.
 - [x] Add regex search mode with explicit CLI/TUI controls.
 - [x] Add wildcard search mode with `*` and `?` support in CLI/TUI.
-- [ ] Add fuzzy search mode with configurable matching thresholds.
+- [x] Add fuzzy search mode with configurable matching thresholds.
 - [x] Add explicit search mode switching plus clear CLI/TUI help text.
 - [x] Add support for additional compressed log formats (for example `.gz`)
   [Issue #20 closed as not planned; reopen if needed].

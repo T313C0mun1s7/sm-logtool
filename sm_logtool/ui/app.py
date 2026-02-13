@@ -41,11 +41,16 @@ from ..logfiles import (
 )
 from ..result_rendering import render_search_results
 from ..search_modes import (
+    DEFAULT_FUZZY_THRESHOLD,
+    MAX_FUZZY_THRESHOLD,
+    MIN_FUZZY_THRESHOLD,
+    MODE_FUZZY,
     MODE_LITERAL,
     MODE_REGEX,
     MODE_WILDCARD,
     SEARCH_MODE_DESCRIPTIONS,
     SEARCH_MODE_LABELS,
+    normalize_fuzzy_threshold,
 )
 from ..search import get_search_function
 from ..syntax import spans_for_line
@@ -874,6 +879,20 @@ class WizardBody(Vertical):
             show=True,
             key_display="CTRL+LEFT",
         ),
+        Binding(
+            "ctrl+up",
+            "app.raise_fuzzy_threshold",
+            "Fuzzy +",
+            show=True,
+            key_display="CTRL+UP",
+        ),
+        Binding(
+            "ctrl+down",
+            "app.lower_fuzzy_threshold",
+            "Fuzzy -",
+            show=True,
+            key_display="CTRL+DOWN",
+        ),
     ]
 
 
@@ -1297,7 +1316,12 @@ class LogBrowser(App):
     logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive(KIND_SMTP)
-    _search_mode_cycle = (MODE_LITERAL, MODE_WILDCARD, MODE_REGEX)
+    _search_mode_cycle = (
+        MODE_LITERAL,
+        MODE_WILDCARD,
+        MODE_REGEX,
+        MODE_FUZZY,
+    )
 
     def __init__(
         self,
@@ -1317,6 +1341,7 @@ class LogBrowser(App):
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
         self.search_mode = MODE_LITERAL
+        self.fuzzy_threshold = DEFAULT_FUZZY_THRESHOLD
         self.search_mode_status: Static | None = None
         self.search_mode_button: Button | None = None
         self.output_log: ResultsArea | None = None
@@ -1701,6 +1726,14 @@ class LogBrowser(App):
         if self.step == WizardStep.SEARCH:
             self._step_search_mode(-1)
 
+    def action_raise_fuzzy_threshold(self) -> None:
+        if self.step == WizardStep.SEARCH and self.search_mode == MODE_FUZZY:
+            self._adjust_fuzzy_threshold(0.05)
+
+    def action_lower_fuzzy_threshold(self) -> None:
+        if self.step == WizardStep.SEARCH and self.search_mode == MODE_FUZZY:
+            self._adjust_fuzzy_threshold(-0.05)
+
     def action_menu(self) -> None:
         self.action_command_palette()
 
@@ -1718,6 +1751,16 @@ class LogBrowser(App):
             return self.step == WizardStep.SEARCH
         if action == "prev_search_mode":
             return self.step == WizardStep.SEARCH
+        if action == "raise_fuzzy_threshold":
+            return (
+                self.step == WizardStep.SEARCH
+                and self.search_mode == MODE_FUZZY
+            )
+        if action == "lower_fuzzy_threshold":
+            return (
+                self.step == WizardStep.SEARCH
+                and self.search_mode == MODE_FUZZY
+            )
         return True
 
     def action_reset(self) -> None:
@@ -1849,6 +1892,7 @@ class LogBrowser(App):
                     target,
                     term,
                     mode=self.search_mode,
+                    fuzzy_threshold=self.fuzzy_threshold,
                 )
                 for target in search_targets
             ]
@@ -1883,6 +1927,20 @@ class LogBrowser(App):
         label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
         self._notify(f"Search mode: {label}")
 
+    def _adjust_fuzzy_threshold(self, delta: float) -> None:
+        current = normalize_fuzzy_threshold(self.fuzzy_threshold)
+        updated = current + delta
+        if updated < MIN_FUZZY_THRESHOLD:
+            updated = MIN_FUZZY_THRESHOLD
+        if updated > MAX_FUZZY_THRESHOLD:
+            updated = MAX_FUZZY_THRESHOLD
+        updated = round(updated, 2)
+        if updated == self.fuzzy_threshold:
+            return
+        self.fuzzy_threshold = updated
+        self._refresh_search_mode_controls()
+        self._notify(f"Fuzzy threshold: {self.fuzzy_threshold:.2f}")
+
     def _refresh_search_mode_controls(self) -> None:
         if self.search_mode_status is not None:
             self.search_mode_status.update(self._search_mode_status_text())
@@ -1895,6 +1953,11 @@ class LogBrowser(App):
 
     def _search_mode_status_text(self) -> str:
         description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
+        if self.search_mode == MODE_FUZZY:
+            return (
+                f"{description} Threshold: {self.fuzzy_threshold:.2f}. "
+                "Adjust with Ctrl+Up/Ctrl+Down."
+            )
         return description
 
     def _notify(self, message: str) -> None:

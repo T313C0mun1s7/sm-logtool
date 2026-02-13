@@ -27,9 +27,11 @@ from .logfiles import (
 )
 from .result_rendering import render_search_results
 from .search_modes import (
+    DEFAULT_FUZZY_THRESHOLD,
     MODE_LITERAL,
     SEARCH_MODE_DESCRIPTIONS,
     SUPPORTED_SEARCH_MODES,
+    normalize_fuzzy_threshold,
     normalize_search_mode,
 )
 from .search import get_search_function
@@ -115,7 +117,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Search mode to use. "
             "literal=substring, wildcard supports '*' and '?', "
-            "regex=Python re syntax (PCRE-like, not full PCRE)."
+            "regex=Python re syntax (PCRE-like, not full PCRE), "
+            "fuzzy=approximate similarity matching."
+        ),
+    )
+    search_parser.add_argument(
+        "--fuzzy-threshold",
+        type=float,
+        default=DEFAULT_FUZZY_THRESHOLD,
+        help=(
+            "Similarity threshold for --mode fuzzy "
+            f"({0.0:.2f} to {1.0:.2f}, default {DEFAULT_FUZZY_THRESHOLD:.2f})."
         ),
     )
     search_parser.add_argument(
@@ -250,6 +262,13 @@ def _run_search(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    try:
+        fuzzy_threshold = normalize_fuzzy_threshold(
+            getattr(args, "fuzzy_threshold", DEFAULT_FUZZY_THRESHOLD),
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     try:
         logs_dir = _resolve_logs_dir(args, config)
@@ -305,6 +324,7 @@ def _run_search(args: argparse.Namespace) -> int:
                 staged.staged_path,
                 args.term,
                 mode=search_mode,
+                fuzzy_threshold=fuzzy_threshold,
                 ignore_case=not args.case_sensitive,
             )
         except ValueError as exc:

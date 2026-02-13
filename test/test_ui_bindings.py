@@ -151,6 +151,12 @@ async def test_search_step_mode_controls_cycle(tmp_path):
         assert app.search_mode == "regex"
         assert "Regex" in str(button.label)
 
+        app._cycle_search_mode()
+        await pilot.pause()
+
+        assert app.search_mode == "fuzzy"
+        assert "Fuzzy" in str(button.label)
+
 
 @pytest.mark.asyncio
 async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
@@ -176,6 +182,16 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
         assert app.search_mode == "regex"
         assert app.search_input.value == ""
 
+        await pilot.press("ctrl+right")
+        await pilot.pause()
+        assert app.search_mode == "fuzzy"
+        assert app.search_input.value == ""
+
+        await pilot.press("ctrl+left")
+        await pilot.pause()
+        assert app.search_mode == "regex"
+        assert app.search_input.value == ""
+
         await pilot.press("ctrl+left")
         await pilot.pause()
         assert app.search_mode == "wildcard"
@@ -185,6 +201,33 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
         await pilot.pause()
         assert app.search_mode == "literal"
         assert app.search_input.value == ""
+
+
+@pytest.mark.asyncio
+async def test_fuzzy_threshold_shortcuts_adjust_value(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        await pilot.press("ctrl+right", "ctrl+right", "ctrl+right")
+        await pilot.pause()
+        assert app.search_mode == "fuzzy"
+        assert "Threshold: 0.75" in app._search_mode_status_text()
+
+        await pilot.press("ctrl+up")
+        await pilot.pause()
+        assert app.fuzzy_threshold == pytest.approx(0.80)
+
+        await pilot.press("ctrl+down")
+        await pilot.pause()
+        assert app.fuzzy_threshold == pytest.approx(0.75)
 
 
 @pytest.mark.asyncio

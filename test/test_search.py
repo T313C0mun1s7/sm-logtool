@@ -226,6 +226,61 @@ def test_search_ungrouped_entries_supports_regex_mode(tmp_path):
     assert result.total_conversations == 2
 
 
+def test_search_ungrouped_entries_supports_fuzzy_mode(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Authentication failed for user [sales]\n"
+        "00:00:02.200 Login successful for user [sales]\n"
+    )
+
+    result = search.search_ungrouped_entries(
+        log_path,
+        "Authentcation faild for user [sales]",
+        mode="fuzzy",
+        fuzzy_threshold=0.72,
+    )
+
+    assert result.total_conversations == 1
+
+
+def test_search_fuzzy_threshold_changes_match_sensitivity(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Authentication failed for user [sales]\n",
+    )
+
+    strict = search.search_ungrouped_entries(
+        log_path,
+        "Authentcation faild for user [sales]",
+        mode="fuzzy",
+        fuzzy_threshold=0.95,
+    )
+    relaxed = search.search_ungrouped_entries(
+        log_path,
+        "Authentcation faild for user [sales]",
+        mode="fuzzy",
+        fuzzy_threshold=0.70,
+    )
+
+    assert strict.total_conversations == 0
+    assert relaxed.total_conversations == 1
+
+
+def test_search_rejects_invalid_fuzzy_threshold(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+    )
+
+    with pytest.raises(ValueError, match="Invalid fuzzy threshold"):
+        search.search_smtp_conversations(
+            log_path,
+            "Connection initiated",
+            mode="fuzzy",
+            fuzzy_threshold=1.5,
+        )
+
+
 def test_search_rejects_invalid_regex_mode_pattern(tmp_path):
     log_path = tmp_path / "smtp.log"
     log_path.write_text(

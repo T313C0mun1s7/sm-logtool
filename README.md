@@ -88,7 +88,7 @@ Wizard flow:
 1. Choose log kind.
 2. Select one or more log dates.
 3. Enter search term and choose search mode
-   (`Literal`/`Wildcard`/`Regex`).
+   (`Literal`/`Wildcard`/`Regex`/`Fuzzy`).
 4. Review results, copy selection/all, and optionally run sub-search.
 
 Core actions are always visible in the top action strip:
@@ -102,6 +102,8 @@ Search-step footer shortcuts:
 - `Ctrl+F` focus search input
 - `Ctrl+Left` previous search mode
 - `Ctrl+Right` next search mode
+- `Ctrl+Up` increase fuzzy threshold (fuzzy mode only)
+- `Ctrl+Down` decrease fuzzy threshold (fuzzy mode only)
 
 Date selection shortcuts:
 
@@ -129,6 +131,10 @@ sm-logtool search --mode wildcard "Login failed: User * not found"
 
 # Regex mode: Python regular expression
 sm-logtool search --mode regex "Login failed: User \\[(sales|billing)\\]"
+
+# Fuzzy mode: approximate matching with configurable threshold
+sm-logtool search --mode fuzzy --fuzzy-threshold 0.72 \
+  "Authentcation faild for user [sales]"
 ```
 
 Target resolution:
@@ -148,7 +154,9 @@ Search options:
 - `--log-file`: explicit file to search. Repeat to search multiple files.
 - `--list`: list available logs for the selected kind and exit.
 - `--list-kinds`: list supported kinds and exit.
-- `--mode`: search mode (`literal`, `wildcard`, or `regex`).
+- `--mode`: search mode (`literal`, `wildcard`, `regex`, or `fuzzy`).
+- `--fuzzy-threshold`: similarity threshold for `--mode fuzzy` from `0.00` to
+  `1.00` (default `0.75`).
 - `--case-sensitive`: disable default case-insensitive matching.
 
 Search mode behavior:
@@ -156,6 +164,7 @@ Search mode behavior:
 - `literal`: exact substring matching (default).
 - `wildcard`: `*` matches any sequence and `?` matches one character.
 - `regex`: Python `re` syntax (PCRE-like, but not full PCRE).
+- `fuzzy`: approximate line matching using a similarity threshold.
 
 Regex checker note:
 
