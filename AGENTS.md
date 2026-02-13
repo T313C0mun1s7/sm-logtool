@@ -88,3 +88,73 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [x] Core actions (`Menu`, `Quit`, `Reset`) stay visible in the top action
   strip, while step-specific search shortcuts remain in the footer.
 - [x] Search results display one log line per row after formatting updates.
+
+## Issue #21 Planning Notes (Deferred)
+- Goal: keep CLI and TUI responsive on very large logs without changing
+  search correctness or output semantics.
+- Baseline before any optimization work:
+  - Capture wall-clock search time, peak memory (RSS), and time to first
+    visible result.
+  - Measure literal, wildcard, regex, and fuzzy modes separately.
+  - Include staged plain logs and compressed logs in benchmark samples.
+- Suspected bottlenecks to validate with profiling:
+  - Full-file reads or large in-memory buffers during search/rendering.
+  - Synchronous search work blocking the Textual event loop.
+  - Expensive per-line matching and formatting repeated across sub-searches.
+- Concurrency notes from initial design discussion:
+  - CPython threads can improve responsiveness, but they typically do not
+    improve CPU-bound search throughput because of the GIL.
+  - Favor process-based parallelism for throughput gains on many-core servers.
+    Start with per-target (per file/date) parallel search before attempting
+    within-file chunking.
+  - If within-file chunking is attempted, define safe boundaries and merge
+    rules so continuation lines and conversation ownership are preserved.
+  - Fuzzy mode is expected to be the hottest path; include algorithm-level
+    improvements alongside concurrency work.
+- Staging behavior caveat (intentional):
+  - Non-today logs are static and should be copied once and reused.
+  - Today's log is active in SmarterMail and must be recopied before search to
+    avoid stale staged data.
+  - Treat this refresh behavior as required correctness, then benchmark its
+    relative cost versus search time before changing staging logic.
+- Candidate implementation directions:
+  - Stream search input line-by-line and yield results incrementally.
+  - Move long-running search to background workers with cancel/progress hooks.
+  - Defer heavy formatting/context expansion until a row is selected.
+  - Reuse compiled matchers and cache reusable per-run metadata.
+- Delivery expectations when implementation starts:
+  - Add profiling notes and before/after measurements in the PR.
+  - Keep CLI/TUI behavior parity and preserve existing test expectations.
+  - Add focused tests for cancellation/progress and large-file regressions.
+- Proposed phased execution plan:
+  - Phase 0: Measurement harness and reproducible baseline.
+  - Deliverables:
+    - Add repeatable benchmark script(s) for key log kinds/modes.
+    - Record local vs server timings, RSS, and time-to-first-result.
+    - Add an issue comment table with baseline numbers before code changes.
+  - Exit criteria:
+    - We can run one command to reproduce baseline metrics on demand.
+  - Phase 1: Low-risk hot path wins (no behavior changes).
+  - Deliverables:
+    - Add a fast literal matcher path that avoids regex when mode=literal.
+    - Reduce repeated parsing in rendering/formatting where practical.
+    - Keep today's-log staging refresh behavior unchanged for correctness.
+  - Exit criteria:
+    - Literal/wildcard/regex searches show measurable server-side speedup.
+    - Existing CLI/TUI output and tests remain unchanged.
+  - Phase 2: Responsiveness and coarse-grained parallelism.
+  - Deliverables:
+    - Move TUI search work off the event loop with progress/cancel support.
+    - Add process-based parallel search across selected files/dates.
+    - Preserve deterministic output ordering in merged results.
+  - Exit criteria:
+    - TUI stays interactive during long searches.
+    - Multi-target searches are materially faster on high-core servers.
+  - Phase 3: Deep optimization for very large single files.
+  - Deliverables:
+    - Replace or redesign fuzzy matching to avoid heavy difflib costs.
+    - Evaluate safe chunk/merge rules for within-file parallel processing.
+    - Add guardrails for memory use on very large result sets.
+  - Exit criteria:
+    - Fuzzy mode no longer dominates runtime at large scales.
+    - Single-file large-log searches improve without grouping regressions.
