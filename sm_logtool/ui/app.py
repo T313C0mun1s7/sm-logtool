@@ -705,11 +705,21 @@ class TopAction(Static):
         self,
         label: str,
         action: str,
+        mnemonic: str,
         *,
         id: str,
     ) -> None:
         super().__init__(label, id=id, classes="top-action")
         self.action = action
+        self.label = label
+        self.mnemonic = mnemonic.lower()
+
+    def render(self) -> Text:
+        text = Text(self.label)
+        index = self.label.lower().find(self.mnemonic)
+        if index >= 0:
+            text.stylize("bold #ffd75f", index, index + 1)
+        return text
 
     def _dispatch(self) -> None:
         self.post_message(TopActionPressed(self, self.action))
@@ -1324,11 +1334,12 @@ class LogBrowser(App):
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Horizontal(
-            TopAction("Menu, CTRL+U", "menu", id="top-menu"),
-            TopAction("Quit, CTRL+Q", "quit", id="top-quit"),
+            TopAction("Menu", "menu", "u", id="top-menu"),
+            TopAction("Quit", "quit", "q", id="top-quit"),
             TopAction(
-                "Reset Search, CTRL+R",
+                "Reset",
                 "reset",
+                "r",
                 id="top-reset",
             ),
             id="top-actions",

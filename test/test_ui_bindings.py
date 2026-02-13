@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 from textual.widgets import Button, Static
 
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
@@ -25,9 +26,18 @@ async def test_top_action_buttons_show_core_shortcuts(tmp_path):
         menu_action = app.query_one("#top-menu", TopAction)
         quit_action = app.query_one("#top-quit", TopAction)
         reset_action = app.query_one("#top-reset", TopAction)
-        assert "CTRL+U" in str(menu_action.render())
-        assert "CTRL+Q" in str(quit_action.render())
-        assert "CTRL+R" in str(reset_action.render())
+        menu_text = menu_action.render()
+        quit_text = quit_action.render()
+        reset_text = reset_action.render()
+        assert isinstance(menu_text, Text)
+        assert isinstance(quit_text, Text)
+        assert isinstance(reset_text, Text)
+        assert menu_text.plain == "Menu"
+        assert quit_text.plain == "Quit"
+        assert reset_text.plain == "Reset"
+        assert any(span.start <= 3 < span.end for span in menu_text.spans)
+        assert any(span.start <= 0 < span.end for span in quit_text.spans)
+        assert any(span.start <= 0 < span.end for span in reset_text.spans)
 
 
 @pytest.mark.asyncio
