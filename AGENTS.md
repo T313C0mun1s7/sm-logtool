@@ -98,9 +98,25 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
   - Measure literal, wildcard, regex, and fuzzy modes separately.
   - Include staged plain logs and compressed logs in benchmark samples.
 - Suspected bottlenecks to validate with profiling:
-  - Full-file reads or large in-memory buffers during staging/search.
+  - Full-file reads or large in-memory buffers during search/rendering.
   - Synchronous search work blocking the Textual event loop.
   - Expensive per-line matching and formatting repeated across sub-searches.
+- Concurrency notes from initial design discussion:
+  - CPython threads can improve responsiveness, but they typically do not
+    improve CPU-bound search throughput because of the GIL.
+  - Favor process-based parallelism for throughput gains on many-core servers.
+    Start with per-target (per file/date) parallel search before attempting
+    within-file chunking.
+  - If within-file chunking is attempted, define safe boundaries and merge
+    rules so continuation lines and conversation ownership are preserved.
+  - Fuzzy mode is expected to be the hottest path; include algorithm-level
+    improvements alongside concurrency work.
+- Staging behavior caveat (intentional):
+  - Non-today logs are static and should be copied once and reused.
+  - Today's log is active in SmarterMail and must be recopied before search to
+    avoid stale staged data.
+  - Treat this refresh behavior as required correctness, then benchmark its
+    relative cost versus search time before changing staging logic.
 - Candidate implementation directions:
   - Stream search input line-by-line and yield results incrementally.
   - Move long-running search to background workers with cancel/progress hooks.
