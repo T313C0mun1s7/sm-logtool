@@ -247,6 +247,8 @@ def _run_browse(args: argparse.Namespace) -> int:
         logs_dir,
         staging_dir=staging_dir,
         default_kind=config.default_kind,
+        config_path=config.path,
+        theme=config.theme,
     )
 
 

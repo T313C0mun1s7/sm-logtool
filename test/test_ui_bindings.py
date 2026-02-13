@@ -4,6 +4,7 @@ import pytest
 from rich.text import Text
 from textual.widgets import Button, Static
 
+from sm_logtool import config as config_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 
 
@@ -246,3 +247,51 @@ async def test_plain_question_mark_remains_input_text(tmp_path):
         await pilot.press("?")
         await pilot.pause()
         assert app.search_input.value == "?"
+
+
+@pytest.mark.asyncio
+async def test_startup_applies_configured_theme_when_available(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, theme="textual-light")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.theme == "textual-light"
+
+
+@pytest.mark.asyncio
+async def test_startup_handles_invalid_configured_theme_gracefully(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, theme="no-such-theme")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.theme == "textual-dark"
+        status = app.wizard.query_one("#status", Static)
+        assert "no-such-theme" in str(status.render())
+
+
+@pytest.mark.asyncio
+async def test_theme_change_persists_to_config_file(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "logs_dir: /var/lib/smartermail/Logs\n"
+        "staging_dir: /var/tmp/sm-logtool/logs\n"
+        "default_kind: smtp\n"
+        "theme: textual-dark\n",
+        encoding="utf-8",
+    )
+    app = LogBrowser(
+        logs_dir=logs_dir,
+        config_path=cfg_path,
+        theme="textual-dark",
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.theme = "textual-light"
+        await pilot.pause()
+
+    saved = config_module.load_config(cfg_path)
+    assert saved.theme == "textual-light"
