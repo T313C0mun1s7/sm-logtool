@@ -37,6 +37,7 @@ from .log_parsers import (
 )
 from .search_modes import (
     MODE_LITERAL,
+    MODE_REGEX,
     MODE_WILDCARD,
     normalize_search_mode,
     wildcard_to_regex,
@@ -87,7 +88,8 @@ def search_smtp_conversations(
     """Return SMTP conversations containing ``term``.
 
     ``mode`` controls the match syntax. ``literal`` uses exact substring
-    matching and ``wildcard`` allows ``*`` and ``?`` wildcards.
+    matching, ``wildcard`` allows ``*`` and ``?`` wildcards, and ``regex``
+    treats ``term`` as a Python regular expression.
     """
 
     pattern = _compile_match_pattern(term, mode, ignore_case)
@@ -438,10 +440,17 @@ def _compile_match_pattern(
         source = re.escape(term)
     elif resolved_mode == MODE_WILDCARD:
         source = wildcard_to_regex(term)
+    elif resolved_mode == MODE_REGEX:
+        source = term
     else:  # pragma: no cover - normalize_search_mode gates this
         raise ValueError(f"Unsupported search mode: {mode!r}")
 
-    return re.compile(source, flags)
+    try:
+        return re.compile(source, flags)
+    except re.error as exc:
+        if resolved_mode == MODE_REGEX:
+            raise ValueError(f"Invalid regex pattern: {exc}") from exc
+        raise
 
 
 def get_search_function(

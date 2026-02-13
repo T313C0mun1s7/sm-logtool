@@ -6,20 +6,24 @@ import re
 
 MODE_LITERAL = "literal"
 MODE_WILDCARD = "wildcard"
+MODE_REGEX = "regex"
 
 SUPPORTED_SEARCH_MODES = (
     MODE_LITERAL,
     MODE_WILDCARD,
+    MODE_REGEX,
 )
 
 SEARCH_MODE_LABELS = {
     MODE_LITERAL: "Literal",
     MODE_WILDCARD: "Wildcard",
+    MODE_REGEX: "Regex",
 }
 
 SEARCH_MODE_DESCRIPTIONS = {
     MODE_LITERAL: "Exact substring match.",
     MODE_WILDCARD: "'*' matches many chars, '?' matches one char.",
+    MODE_REGEX: "Python re syntax (PCRE-like, not full PCRE).",
 }
 
 

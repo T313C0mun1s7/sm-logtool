@@ -87,15 +87,21 @@ Wizard flow:
 
 1. Choose log kind.
 2. Select one or more log dates.
-3. Enter search term and choose search mode (`Literal`/`Wildcard`).
+3. Enter search term and choose search mode
+   (`Literal`/`Wildcard`/`Regex`).
 4. Review results, copy selection/all, and optionally run sub-search.
 
-Global shortcuts shown in the footer:
+Core actions are always visible in the top action strip:
 
 - `Ctrl+Q` quit
 - `Ctrl+R` reset search state
-- `Ctrl+F` focus search input (when search step is active)
 - `Ctrl+U` open command palette/menu
+
+Search-step footer shortcuts:
+
+- `Ctrl+F` focus search input
+- `Ctrl+Left` previous search mode
+- `Ctrl+Right` next search mode
 
 Date selection shortcuts:
 
@@ -120,6 +126,9 @@ sm-logtool search --kind delivery "somebody@example.net"
 
 # Wildcard mode: '*' any chars, '?' single char
 sm-logtool search --mode wildcard "Login failed: User * not found"
+
+# Regex mode: Python regular expression
+sm-logtool search --mode regex "Login failed: User \\[(sales|billing)\\]"
 ```
 
 Target resolution:
@@ -139,13 +148,19 @@ Search options:
 - `--log-file`: explicit file to search. Repeat to search multiple files.
 - `--list`: list available logs for the selected kind and exit.
 - `--list-kinds`: list supported kinds and exit.
-- `--mode`: search mode (`literal` or `wildcard`).
+- `--mode`: search mode (`literal`, `wildcard`, or `regex`).
 - `--case-sensitive`: disable default case-insensitive matching.
 
 Search mode behavior:
 
 - `literal`: exact substring matching (default).
 - `wildcard`: `*` matches any sequence and `?` matches one character.
+- `regex`: Python `re` syntax (PCRE-like, but not full PCRE).
+
+Regex checker note:
+
+- If an online regex builder does not offer Python mode, use PCRE/PCRE2 and
+  stick to common features; some PCRE-only constructs may not work.
 
 ## Supported Log Kinds
 

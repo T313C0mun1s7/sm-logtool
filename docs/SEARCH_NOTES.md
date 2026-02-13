@@ -9,6 +9,7 @@ This file tracks current search behavior and near-term design goals.
 - Search modes:
   - `literal`: plain substring matching (default).
   - `wildcard`: supports `*` (any sequence) and `?` (single character).
+  - `regex`: Python `re` syntax (PCRE-like, not full PCRE).
 - Matching is case-insensitive by default.
 - CLI supports `--case-sensitive` for exact-case matching.
 
@@ -46,7 +47,8 @@ Search handlers currently exist for:
 
 - Wizard flow: log kind -> date selection -> search -> results.
 - Date selection supports keyboard and mouse toggling.
-- Search step includes explicit mode switching (`Literal`/`Wildcard`).
+- Search step includes explicit mode switching
+  (`Literal`/`Wildcard`/`Regex`).
 - Sub-search chains are supported from results.
 - Results pane has syntax highlighting across supported log kinds.
 - Copy selection and copy-all actions are available from results.
@@ -54,14 +56,15 @@ Search handlers currently exist for:
 ### CLI behavior
 
 - `search` and `browse` subcommands exist.
-- `search` supports explicit `--mode` selection (`literal`/`wildcard`).
+- `search` supports explicit `--mode` selection
+  (`literal`/`wildcard`/`regex`).
 - CLI search output uses the same syntax highlighting tokens as the TUI.
 - CLI does not provide interactive TUI workflows like sub-search chaining.
 
 ## Roadmap Items
 
 - [x] Bring CLI search/output behavior closer to TUI behavior where practical.
-- [ ] Add regex search mode with explicit mode flags and clear UX.
+- [x] Add regex search mode with explicit mode flags and clear UX.
 - [x] Add wildcard search mode with `*` and `?` support in CLI/TUI.
 - [ ] Add fuzzy/approximate search mode with configurable thresholds.
 - [x] Add explicit search mode switching plus clear CLI/TUI help text.

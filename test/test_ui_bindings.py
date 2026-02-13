@@ -145,6 +145,12 @@ async def test_search_step_mode_controls_cycle(tmp_path):
         assert app.search_mode == "wildcard"
         assert "Wildcard" in str(button.label)
 
+        app._cycle_search_mode()
+        await pilot.pause()
+
+        assert app.search_mode == "regex"
+        assert "Regex" in str(button.label)
+
 
 @pytest.mark.asyncio
 async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
@@ -161,6 +167,16 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
 
         assert app.search_mode == "literal"
         await pilot.press("ctrl+right")
+        await pilot.pause()
+        assert app.search_mode == "wildcard"
+        assert app.search_input.value == ""
+
+        await pilot.press("ctrl+right")
+        await pilot.pause()
+        assert app.search_mode == "regex"
+        assert app.search_input.value == ""
+
+        await pilot.press("ctrl+left")
         await pilot.pause()
         assert app.search_mode == "wildcard"
         assert app.search_input.value == ""
