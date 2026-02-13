@@ -88,3 +88,25 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [x] Core actions (`Menu`, `Quit`, `Reset`) stay visible in the top action
   strip, while step-specific search shortcuts remain in the footer.
 - [x] Search results display one log line per row after formatting updates.
+
+## Issue #21 Planning Notes (Deferred)
+- Goal: keep CLI and TUI responsive on very large logs without changing
+  search correctness or output semantics.
+- Baseline before any optimization work:
+  - Capture wall-clock search time, peak memory (RSS), and time to first
+    visible result.
+  - Measure literal, wildcard, regex, and fuzzy modes separately.
+  - Include staged plain logs and compressed logs in benchmark samples.
+- Suspected bottlenecks to validate with profiling:
+  - Full-file reads or large in-memory buffers during staging/search.
+  - Synchronous search work blocking the Textual event loop.
+  - Expensive per-line matching and formatting repeated across sub-searches.
+- Candidate implementation directions:
+  - Stream search input line-by-line and yield results incrementally.
+  - Move long-running search to background workers with cancel/progress hooks.
+  - Defer heavy formatting/context expansion until a row is selected.
+  - Reuse compiled matchers and cache reusable per-run metadata.
+- Delivery expectations when implementation starts:
+  - Add profiling notes and before/after measurements in the PR.
+  - Keep CLI/TUI behavior parity and preserve existing test expectations.
+  - Add focused tests for cancellation/progress and large-file regressions.
