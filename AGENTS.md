@@ -126,3 +126,35 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
   - Add profiling notes and before/after measurements in the PR.
   - Keep CLI/TUI behavior parity and preserve existing test expectations.
   - Add focused tests for cancellation/progress and large-file regressions.
+- Proposed phased execution plan:
+  - Phase 0: Measurement harness and reproducible baseline.
+  - Deliverables:
+    - Add repeatable benchmark script(s) for key log kinds/modes.
+    - Record local vs server timings, RSS, and time-to-first-result.
+    - Add an issue comment table with baseline numbers before code changes.
+  - Exit criteria:
+    - We can run one command to reproduce baseline metrics on demand.
+  - Phase 1: Low-risk hot path wins (no behavior changes).
+  - Deliverables:
+    - Add a fast literal matcher path that avoids regex when mode=literal.
+    - Reduce repeated parsing in rendering/formatting where practical.
+    - Keep today's-log staging refresh behavior unchanged for correctness.
+  - Exit criteria:
+    - Literal/wildcard/regex searches show measurable server-side speedup.
+    - Existing CLI/TUI output and tests remain unchanged.
+  - Phase 2: Responsiveness and coarse-grained parallelism.
+  - Deliverables:
+    - Move TUI search work off the event loop with progress/cancel support.
+    - Add process-based parallel search across selected files/dates.
+    - Preserve deterministic output ordering in merged results.
+  - Exit criteria:
+    - TUI stays interactive during long searches.
+    - Multi-target searches are materially faster on high-core servers.
+  - Phase 3: Deep optimization for very large single files.
+  - Deliverables:
+    - Replace or redesign fuzzy matching to avoid heavy difflib costs.
+    - Evaluate safe chunk/merge rules for within-file parallel processing.
+    - Add guardrails for memory use on very large result sets.
+  - Exit criteria:
+    - Fuzzy mode no longer dominates runtime at large scales.
+    - Single-file large-log searches improve without grouping regressions.
