@@ -42,6 +42,7 @@ from ..logfiles import (
 from ..result_rendering import render_search_results
 from ..search_modes import (
     MODE_LITERAL,
+    MODE_REGEX,
     MODE_WILDCARD,
     SEARCH_MODE_DESCRIPTIONS,
     SEARCH_MODE_LABELS,
@@ -1296,7 +1297,7 @@ class LogBrowser(App):
     logs_dir: reactive[Path] = reactive(Path.cwd())
     staging_dir: reactive[Optional[Path]] = reactive(None)
     default_kind: reactive[Optional[str]] = reactive(KIND_SMTP)
-    _search_mode_cycle = (MODE_LITERAL, MODE_WILDCARD)
+    _search_mode_cycle = (MODE_LITERAL, MODE_WILDCARD, MODE_REGEX)
 
     def __init__(
         self,

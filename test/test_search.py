@@ -209,6 +209,33 @@ def test_search_ungrouped_entries_supports_wildcard_mode(tmp_path):
     assert single_char.total_conversations == 1
 
 
+def test_search_ungrouped_entries_supports_regex_mode(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Login failed: User [sales] not found\n"
+        "00:00:02.200 Login failed: User [billing] not found\n"
+        "00:00:03.300 Login successful: User [sales]\n"
+    )
+
+    result = search.search_ungrouped_entries(
+        log_path,
+        r"Login failed: User \[(sales|billing)\] not found",
+        mode="regex",
+    )
+
+    assert result.total_conversations == 2
+
+
+def test_search_rejects_invalid_regex_mode_pattern(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+    )
+
+    with pytest.raises(ValueError, match="Invalid regex pattern"):
+        search.search_smtp_conversations(log_path, "(", mode="regex")
+
+
 def test_search_rejects_unknown_mode(tmp_path):
     log_path = tmp_path / "smtp.log"
     log_path.write_text(

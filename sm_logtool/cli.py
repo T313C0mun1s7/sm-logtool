@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         "search",
         help="Search SmarterMail logs for a term",
         description=(
-            "Search a SmarterMail log kind for a literal substring."
+            "Search a SmarterMail log kind using the selected search mode."
         ),
         epilog=_search_help_epilog(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -103,7 +103,10 @@ def build_parser() -> argparse.ArgumentParser:
         "term",
         nargs="?",
         default=None,
-        help="Substring to search for (case-insensitive by default)",
+        help=(
+            "Search pattern (case-insensitive by default). Pattern syntax "
+            "depends on --mode."
+        ),
     )
     search_parser.add_argument(
         "--mode",
@@ -111,7 +114,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=MODE_LITERAL,
         help=(
             "Search mode to use. "
-            "literal=exact substring, wildcard supports '*' and '?'."
+            "literal=substring, wildcard supports '*' and '?', "
+            "regex=Python regex."
         ),
     )
     search_parser.add_argument(
@@ -296,14 +300,17 @@ def _run_search(args: argparse.Namespace) -> int:
         except Exception as exc:  # pragma: no cover - surface staging failure
             print(f"Failed to stage log {source_path}: {exc}", file=sys.stderr)
             return 1
-        results.append(
-            search_fn(
+        try:
+            result = search_fn(
                 staged.staged_path,
                 args.term,
                 mode=search_mode,
                 ignore_case=not args.case_sensitive,
             )
-        )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        results.append(result)
 
     _print_search_summary(results, targets, log_kind)
     return 0

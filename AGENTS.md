@@ -66,7 +66,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [x] Add syntax highlighting for supported log kinds in the TUI view.
 - [x] Add syntax highlighting for supported log kinds in the CLI view.
 - [x] Bring CLI search and output behavior to parity with the TUI across supported log kinds.
-- [ ] Add regex search mode with explicit CLI/TUI controls.
+- [x] Add regex search mode with explicit CLI/TUI controls.
 - [x] Add wildcard search mode with `*` and `?` support in CLI/TUI.
 - [ ] Add fuzzy search mode with configurable matching thresholds.
 - [x] Add explicit search mode switching plus clear CLI/TUI help text.
@@ -85,6 +85,6 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 
 ## Current State Notes
 - [x] Toggle-only date selection works with arrows, `Space`, and `Enter`.
-- [x] Footer shortcuts (`Ctrl+Q` quit, `Ctrl+R` reset, `Ctrl+F` focus search)
-  display on each step and remain functional with input/results focus.
+- [x] Core actions (`Menu`, `Quit`, `Reset`) stay visible in the top action
+  strip, while step-specific search shortcuts remain in the footer.
 - [x] Search results display one log line per row after formatting updates.
