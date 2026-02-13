@@ -1,3 +1,4 @@
 logs_dir: /var/lib/smartermail/Logs
 staging_dir: /var/tmp/sm-logtool/logs
 default_kind: smtp
+theme: textual-dark

@@ -32,6 +32,7 @@ from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
 from textual._text_area_theme import TextAreaTheme
 from rich.text import Text
 
+from ..config import ConfigError, save_theme
 from ..highlighting import TOKEN_STYLES
 from ..log_kinds import KIND_SMTP, normalize_kind
 from ..logfiles import (
@@ -1328,11 +1329,17 @@ class LogBrowser(App):
         logs_dir: Path,
         staging_dir: Path | None = None,
         default_kind: str | None = None,
+        config_path: Path | None = None,
+        theme: str | None = None,
     ) -> None:
         super().__init__()
         self.logs_dir = logs_dir
         self.staging_dir = staging_dir
         self.default_kind = normalize_kind(default_kind or KIND_SMTP)
+        self.config_path = config_path.expanduser() if config_path else None
+        self.configured_theme = theme
+        self._persist_theme_changes = False
+        self._suppress_theme_persist = False
         self._logs_by_kind: Dict[str, List[LogFileInfo]] = {}
         self.current_kind: Optional[str] = None
         self.selected_logs: list[LogFileInfo] = []
@@ -1378,6 +1385,16 @@ class LogBrowser(App):
     def on_mount(self) -> None:
         self._refresh_logs()
         self._show_step_kind()
+        self._apply_configured_theme()
+        self._persist_theme_changes = True
+
+    def _watch_theme(self, theme_name: str) -> None:
+        super()._watch_theme(theme_name)
+        if not self._persist_theme_changes:
+            return
+        if self._suppress_theme_persist:
+            return
+        self._persist_theme(theme_name)
 
     # Step rendering -----------------------------------------------------
     def _show_step_kind(self) -> None:
@@ -1971,6 +1988,32 @@ class LogBrowser(App):
             status = Static(message, id='status')
             self.wizard.mount(status)
 
+    def _apply_configured_theme(self) -> None:
+        configured = self.configured_theme
+        if not configured:
+            return
+        if configured not in self.available_themes:
+            self._notify(
+                f"Configured theme '{configured}' is unavailable; using "
+                "default theme."
+            )
+            return
+        if configured == self.theme:
+            return
+        self._suppress_theme_persist = True
+        try:
+            self.theme = configured
+        finally:
+            self._suppress_theme_persist = False
+
+    def _persist_theme(self, theme_name: str) -> None:
+        if self.config_path is None:
+            return
+        try:
+            save_theme(self.config_path, theme_name)
+        except ConfigError as exc:
+            self._notify(str(exc))
+
     def _write_output_lines(self, lines: list[str]) -> None:
         if self.output_log is None:
             return
@@ -2167,6 +2210,8 @@ def run(
     logs_dir: Path,
     staging_dir: Path | None = None,
     default_kind: str | None = None,
+    config_path: Path | None = None,
+    theme: str | None = None,
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
@@ -2174,6 +2219,8 @@ def run(
         logs_dir=logs_dir,
         staging_dir=staging_dir,
         default_kind=default_kind,
+        config_path=config_path,
+        theme=theme,
     )
     app.run()
     return 0
