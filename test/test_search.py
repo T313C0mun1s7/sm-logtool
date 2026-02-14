@@ -109,6 +109,45 @@ def test_search_smtp_conversations_continuations(tmp_path):
     assert result.conversations[0].lines[1].startswith("  continuation")
 
 
+def test_search_literal_mode_treats_regex_tokens_as_plain_text(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Message with regex-like token (foo|bar)\n"
+        "00:00:02.200 Message without token\n"
+    )
+
+    result = search.search_ungrouped_entries(
+        log_path,
+        "(foo|bar)",
+        mode="literal",
+    )
+
+    assert result.total_conversations == 1
+    assert result.conversations[0].lines[0].endswith("(foo|bar)")
+
+
+def test_search_literal_mode_respects_case_sensitivity_flag(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] User HELLO logged in\n",
+    )
+
+    insensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="literal",
+    )
+    sensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="literal",
+        ignore_case=False,
+    )
+
+    assert insensitive.total_conversations == 1
+    assert sensitive.total_conversations == 0
+
+
 def test_search_delivery_conversations_continuations(tmp_path):
     log_path = tmp_path / "delivery.log"
     log_path.write_text(

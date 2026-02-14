@@ -495,6 +495,9 @@ def _compile_line_matcher(
     fuzzy_threshold: float,
 ) -> Callable[[str], bool]:
     resolved_mode = normalize_search_mode(mode)
+    if resolved_mode == MODE_LITERAL:
+        return _compile_literal_line_matcher(term, ignore_case)
+
     if resolved_mode == MODE_FUZZY:
         threshold = normalize_fuzzy_threshold(fuzzy_threshold)
         normalized_term = term.lower() if ignore_case else term
@@ -506,6 +509,16 @@ def _compile_line_matcher(
 
     pattern = _compile_match_pattern(term, resolved_mode, ignore_case)
     return lambda line: bool(pattern.search(line))
+
+
+def _compile_literal_line_matcher(
+    term: str,
+    ignore_case: bool,
+) -> Callable[[str], bool]:
+    if ignore_case:
+        term = term.lower()
+        return lambda line: term in line.lower()
+    return lambda line: term in line
 
 
 def _fuzzy_line_match(term: str, line: str, threshold: float) -> bool:
