@@ -123,10 +123,12 @@ class SearchFunction(Protocol):
         materialization: str = MATERIALIZATION_AUTO,
         use_index_cache: bool = False,
         progress_callback: "SearchProgressCallback | None" = None,
+        match_callback: "SearchMatchCallback | None" = None,
     ) -> SmtpSearchResult: ...
 
 
 SearchProgressCallback = Callable[[int, int], None]
+SearchMatchCallback = Callable[[int, str], None]
 
 
 @dataclass
@@ -207,6 +209,16 @@ def _finish_search_progress(progress: _SearchProgress | None) -> None:
     progress.callback(progress.total_bytes, progress.total_bytes)
 
 
+def _report_match(
+    callback: SearchMatchCallback | None,
+    line_number: int,
+    line: str,
+) -> None:
+    if callback is None:
+        return
+    callback(line_number, line)
+
+
 def search_smtp_conversations(
     log_path: Path,
     term: str,
@@ -217,6 +229,7 @@ def search_smtp_conversations(
     materialization: str = MATERIALIZATION_AUTO,
     use_index_cache: bool = False,
     progress_callback: SearchProgressCallback | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     """Return SMTP conversations containing ``term``.
 
@@ -235,6 +248,7 @@ def search_smtp_conversations(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
+        match_callback=match_callback,
         owner_key="smtp",
     )
 
@@ -249,6 +263,7 @@ def search_delivery_conversations(
     materialization: str = MATERIALIZATION_AUTO,
     use_index_cache: bool = False,
     progress_callback: SearchProgressCallback | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     """Return delivery conversations containing ``term``."""
 
@@ -262,6 +277,7 @@ def search_delivery_conversations(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
+        match_callback=match_callback,
         owner_key="delivery",
     )
 
@@ -276,6 +292,7 @@ def search_admin_entries(
     materialization: str = MATERIALIZATION_AUTO,
     use_index_cache: bool = False,
     progress_callback: SearchProgressCallback | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     """Return administrative log entries containing ``term``."""
 
@@ -289,6 +306,7 @@ def search_admin_entries(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
+        match_callback=match_callback,
         owner_key="admin",
     )
 
@@ -303,6 +321,7 @@ def search_imap_retrieval_entries(
     materialization: str = MATERIALIZATION_AUTO,
     use_index_cache: bool = False,
     progress_callback: SearchProgressCallback | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     """Return IMAP retrieval entries containing ``term``."""
 
@@ -316,6 +335,7 @@ def search_imap_retrieval_entries(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
+        match_callback=match_callback,
         owner_key="imap-retrieval",
     )
 
@@ -330,6 +350,7 @@ def search_ungrouped_entries(
     materialization: str = MATERIALIZATION_AUTO,
     use_index_cache: bool = False,
     progress_callback: SearchProgressCallback | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     """Return ungrouped log entries containing ``term``."""
 
@@ -358,6 +379,7 @@ def search_ungrouped_entries(
                 term,
                 matcher,
                 progress=progress,
+                match_callback=match_callback,
             )
         if resolved_materialization == MATERIALIZATION_TWO_PASS:
             return _search_ungrouped_two_pass(
@@ -365,6 +387,7 @@ def search_ungrouped_entries(
                 term,
                 matcher,
                 progress=progress,
+                match_callback=match_callback,
             )
 
         return _search_ungrouped_single_pass(
@@ -373,6 +396,7 @@ def search_ungrouped_entries(
             matcher,
             auto_fallback=resolved_materialization == MATERIALIZATION_AUTO,
             progress=progress,
+            match_callback=match_callback,
         )
     finally:
         _finish_search_progress(progress)
@@ -461,6 +485,7 @@ def _build_grouped_owner_line_index_with_scan(
     signature: tuple[int, int],
     matcher: Callable[[str], bool],
     progress: _SearchProgress | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> tuple[_OwnerLineIndex, set[int], list[tuple[int, str]], int]:
     owner_codes = array("i")
     owner_ids: list[str] = []
@@ -495,6 +520,7 @@ def _build_grouped_owner_line_index_with_scan(
 
             if not matcher(line):
                 continue
+            _report_match(match_callback, line_number, line)
             if owner_code >= 0:
                 matched_codes.add(owner_code)
             else:
@@ -522,6 +548,7 @@ def _build_ungrouped_owner_line_index_with_scan(
     signature: tuple[int, int],
     matcher: Callable[[str], bool],
     progress: _SearchProgress | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> tuple[_OwnerLineIndex, set[int], list[tuple[int, str]], int]:
     owner_codes = array("i")
     owner_ids: list[str] = []
@@ -543,6 +570,7 @@ def _build_ungrouped_owner_line_index_with_scan(
             owner_codes.append(current_code)
             if not matcher(line):
                 continue
+            _report_match(match_callback, line_number, line)
             if current_code >= 0:
                 matched_codes.add(current_code)
             else:
@@ -573,6 +601,7 @@ def _search_grouped_with_index(
     *,
     owner_key: str,
     progress: _SearchProgress | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     cache_key, signature = _owner_index_cache_key(log_path, owner_key)
     cached = _lookup_owner_line_index(cache_key)
@@ -589,6 +618,7 @@ def _search_grouped_with_index(
             signature,
             matcher,
             progress=progress,
+            match_callback=match_callback,
         )
         _cache_owner_line_index(cache_key, index)
     else:
@@ -608,6 +638,7 @@ def _search_grouped_with_index(
                 )
                 if not matcher(line):
                     continue
+                _report_match(match_callback, zero_based + 1, line)
                 if owner_code >= 0:
                     matched_codes.add(owner_code)
                 else:
@@ -660,6 +691,7 @@ def _search_ungrouped_with_index(
     matcher: Callable[[str], bool],
     *,
     progress: _SearchProgress | None = None,
+    match_callback: SearchMatchCallback | None = None,
 ) -> SmtpSearchResult:
     cache_key, signature = _owner_index_cache_key(log_path, "ungrouped")
     cached = _lookup_owner_line_index(cache_key)
@@ -674,6 +706,7 @@ def _search_ungrouped_with_index(
             signature,
             matcher,
             progress=progress,
+            match_callback=match_callback,
         )
         _cache_owner_line_index(cache_key, index)
     else:
@@ -693,6 +726,7 @@ def _search_ungrouped_with_index(
                 )
                 if not matcher(line):
                     continue
+                _report_match(match_callback, zero_based + 1, line)
                 if owner_code >= 0:
                     matched_codes.add(owner_code)
                 else:
@@ -750,6 +784,7 @@ def _search_grouped_entries(
     materialization: str,
     use_index_cache: bool,
     progress_callback: SearchProgressCallback | None,
+    match_callback: SearchMatchCallback | None,
     owner_key: str,
 ) -> SmtpSearchResult:
     matcher = _compile_line_matcher(
@@ -779,6 +814,7 @@ def _search_grouped_entries(
                 owner_for_line,
                 owner_key=owner_key,
                 progress=progress,
+                match_callback=match_callback,
             )
         if resolved_materialization == MATERIALIZATION_TWO_PASS:
             return _search_grouped_two_pass(
@@ -787,6 +823,7 @@ def _search_grouped_entries(
                 matcher,
                 owner_for_line,
                 progress=progress,
+                match_callback=match_callback,
             )
         return _search_grouped_single_pass(
             log_path,
@@ -795,6 +832,7 @@ def _search_grouped_entries(
             owner_for_line,
             auto_fallback=resolved_materialization == MATERIALIZATION_AUTO,
             progress=progress,
+            match_callback=match_callback,
         )
     finally:
         _finish_search_progress(progress)
@@ -807,12 +845,14 @@ def _search_grouped_two_pass(
     owner_for_line: Callable[[str], str | None],
     *,
     progress: _SearchProgress | None,
+    match_callback: SearchMatchCallback | None,
 ) -> SmtpSearchResult:
     matched_ids, orphan_matches, total_lines = _scan_grouped_matches(
         log_path,
         matcher,
         owner_for_line,
         progress=progress,
+        match_callback=match_callback,
     )
     if not matched_ids:
         return SmtpSearchResult(
@@ -844,6 +884,7 @@ def _scan_grouped_matches(
     owner_for_line: Callable[[str], str | None],
     *,
     progress: _SearchProgress | None,
+    match_callback: SearchMatchCallback | None,
 ) -> tuple[set[str], list[tuple[int, str]], int]:
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
@@ -866,6 +907,7 @@ def _scan_grouped_matches(
                 line_owner_id = current_id
 
             if matcher(line):
+                _report_match(match_callback, line_number, line)
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -922,6 +964,7 @@ def _search_grouped_single_pass(
     *,
     auto_fallback: bool,
     progress: _SearchProgress | None,
+    match_callback: SearchMatchCallback | None,
 ) -> SmtpSearchResult:
     builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
@@ -967,6 +1010,7 @@ def _search_grouped_single_pass(
 
             is_match = matcher(line)
             if is_match:
+                _report_match(match_callback, line_number, line)
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -996,6 +1040,7 @@ def _search_grouped_single_pass(
                     matcher,
                     owner_for_line,
                     progress=progress,
+                    match_callback=match_callback,
                 )
 
     conversations = [
@@ -1037,11 +1082,13 @@ def _search_ungrouped_two_pass(
     matcher: Callable[[str], bool],
     *,
     progress: _SearchProgress | None,
+    match_callback: SearchMatchCallback | None,
 ) -> SmtpSearchResult:
     matched_ids, orphan_matches, total_lines = _scan_ungrouped_matches(
         log_path,
         matcher,
         progress=progress,
+        match_callback=match_callback,
     )
     if not matched_ids:
         return SmtpSearchResult(
@@ -1071,6 +1118,7 @@ def _scan_ungrouped_matches(
     matcher: Callable[[str], bool],
     *,
     progress: _SearchProgress | None,
+    match_callback: SearchMatchCallback | None,
 ) -> tuple[set[str], list[tuple[int, str]], int]:
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
@@ -1090,6 +1138,7 @@ def _scan_ungrouped_matches(
                 line_owner_id = current_id
 
             if matcher(line):
+                _report_match(match_callback, line_number, line)
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -1141,6 +1190,7 @@ def _search_ungrouped_single_pass(
     *,
     auto_fallback: bool,
     progress: _SearchProgress | None,
+    match_callback: SearchMatchCallback | None,
 ) -> SmtpSearchResult:
     builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
@@ -1184,6 +1234,7 @@ def _search_ungrouped_single_pass(
 
             is_match = matcher(line)
             if is_match:
+                _report_match(match_callback, line_number, line)
                 if line_owner_id is not None:
                     matched_ids.add(line_owner_id)
                 else:
@@ -1210,6 +1261,7 @@ def _search_ungrouped_single_pass(
                     term,
                     matcher,
                     progress=progress,
+                    match_callback=match_callback,
                 )
 
     conversations = [

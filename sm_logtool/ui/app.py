@@ -793,6 +793,9 @@ class SearchOutput:
 
 
 MAX_SEARCH_WORKERS = 4
+_LIVE_MATCH_BATCH_SIZE = 64
+_LIVE_MATCH_FLUSH_SECONDS = 0.2
+_LIVE_MATCH_PREVIEW_LINES = 240
 
 
 def _search_single_target(
@@ -1526,6 +1529,9 @@ class LogBrowser(App):
         ] = {}
         self._live_next_index = 0
         self._live_kind: str | None = None
+        self._live_target_label: str | None = None
+        self._live_match_total = 0
+        self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
         self._first_result_notified = False
 
@@ -2129,6 +2135,9 @@ class LogBrowser(App):
         self._live_pending_results = {}
         self._live_next_index = 0
         self._live_kind = request.kind
+        self._live_target_label = None
+        self._live_match_total = 0
+        self._live_match_preview_lines = []
         self._search_started_at = time.perf_counter()
         self._first_result_notified = False
         self._show_step_results()
@@ -2307,12 +2316,20 @@ class LogBrowser(App):
             if worker.is_cancelled:
                 raise WorkerCancelled()
             self.call_from_thread(
+                self._start_live_target_preview,
+                index,
+                total,
+                target.name,
+            )
+            self.call_from_thread(
                 self._notify_search_progress,
                 "Searching",
                 index,
                 total,
                 target.name,
             )
+            pending_matches: list[tuple[int, str]] = []
+            last_flush = time.perf_counter()
 
             def _report_progress(
                 scanned_bytes: int,
@@ -2331,6 +2348,32 @@ class LogBrowser(App):
                     total_bytes,
                 )
 
+            def _flush_matches(*, force: bool = False) -> None:
+                nonlocal pending_matches, last_flush
+                if not pending_matches:
+                    return
+                now = time.perf_counter()
+                if (
+                    not force
+                    and len(pending_matches) < _LIVE_MATCH_BATCH_SIZE
+                    and now - last_flush < _LIVE_MATCH_FLUSH_SECONDS
+                ):
+                    return
+                batch = pending_matches
+                pending_matches = []
+                last_flush = now
+                self.call_from_thread(
+                    self._on_live_target_match_batch,
+                    index,
+                    total,
+                    target.name,
+                    batch,
+                )
+
+            def _report_match(line_number: int, line: str) -> None:
+                pending_matches.append((line_number, line))
+                _flush_matches(force=False)
+
             result = search_fn(
                 target,
                 request.term,
@@ -2339,7 +2382,9 @@ class LogBrowser(App):
                 ignore_case=request.ignore_case,
                 use_index_cache=request.use_index_cache,
                 progress_callback=_report_progress,
+                match_callback=_report_match,
             )
+            _flush_matches(force=True)
             results.append(result)
             if on_result is not None:
                 on_result(index - 1, target, result)
@@ -2416,6 +2461,55 @@ class LogBrowser(App):
                 on_result=on_result,
             )
 
+    def _start_live_target_preview(
+        self,
+        current: int,
+        total: int,
+        target_name: str,
+    ) -> None:
+        self._live_target_label = f"{current}/{total} {target_name}"
+        self._live_match_preview_lines = []
+
+    def _on_live_target_match_batch(
+        self,
+        current: int,
+        total: int,
+        target_name: str,
+        batch: list[tuple[int, str]],
+    ) -> None:
+        if not batch:
+            return
+        self._live_target_label = f"{current}/{total} {target_name}"
+        self._live_match_total += len(batch)
+        for line_number, line in batch:
+            preview_line = f"{target_name}:{line_number}: {line}"
+            self._live_match_preview_lines.append(preview_line)
+        if len(self._live_match_preview_lines) > _LIVE_MATCH_PREVIEW_LINES:
+            self._live_match_preview_lines = self._live_match_preview_lines[
+                -_LIVE_MATCH_PREVIEW_LINES:
+            ]
+        self._refresh_live_output()
+        if not self._first_result_notified:
+            elapsed = time.perf_counter() - self._search_started_at
+            self._notify(f"First results visible after {elapsed:.2f}s.")
+            self._first_result_notified = True
+
+    def _refresh_live_output(self) -> None:
+        lines = self._live_rendered_lines.copy()
+        if not self._live_match_preview_lines:
+            self._write_output_lines(lines)
+            return
+        label = self._live_target_label or "current target"
+        header = (
+            f"[live preview] {self._live_match_total} matched line(s) so far "
+            f"while scanning {label}"
+        )
+        preview = [header, ""] + self._live_match_preview_lines
+        if lines:
+            preview.extend(["", "[completed targets]", ""])
+            preview.extend(lines)
+        self._write_output_lines(preview)
+
     def _on_live_search_result(
         self,
         index: int,
@@ -2434,7 +2528,8 @@ class LogBrowser(App):
                 kind,
             )
             self._live_rendered_lines.extend(lines)
-            self._write_output_lines(self._live_rendered_lines)
+            self._live_match_preview_lines = []
+            self._refresh_live_output()
             self._live_next_index += 1
             if not self._first_result_notified:
                 elapsed = time.perf_counter() - self._search_started_at
@@ -2531,6 +2626,9 @@ class LogBrowser(App):
         if not running:
             self._search_worker = None
             self._live_pending_results = {}
+            self._live_target_label = None
+            self._live_match_preview_lines = []
+            self._live_match_total = 0
         if self.search_input is not None:
             self.search_input.disabled = running
         if self.search_mode_button is not None:

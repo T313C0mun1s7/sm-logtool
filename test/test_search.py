@@ -622,3 +622,50 @@ def test_search_progress_callback_works_with_index_cache(tmp_path):
     assert result.total_conversations == 1
     assert updates
     assert updates[-1][0] == updates[-1][1]
+
+
+def test_search_match_callback_reports_matches_once(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] First line again\n"
+        "00:00:02 [2.2.2.2][XYZ789] No hit\n"
+    )
+    hits: list[tuple[int, str]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "First",
+        materialization="single-pass",
+        match_callback=lambda line_number, line: hits.append(
+            (line_number, line)
+        ),
+    )
+
+    assert result.total_conversations == 1
+    assert [line_number for line_number, _line in hits] == [1, 2]
+    assert all("First" in line for _line_number, line in hits)
+
+
+def test_search_match_callback_works_with_index_cache(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+    search.prime_search_index(log_path, "smtp")
+    hits: list[tuple[int, str]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+        match_callback=lambda line_number, line: hits.append(
+            (line_number, line)
+        ),
+    )
+
+    assert result.total_conversations == 1
+    assert hits == [
+        (2, "00:00:01 [1.1.1.1][ABC123] Second line"),
+    ]
