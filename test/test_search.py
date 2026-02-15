@@ -195,6 +195,20 @@ def test_search_admin_entries_groups_same_timestamp(tmp_path):
     ]
 
 
+def test_search_admin_entries_supports_trailing_timestamp_format(tmp_path):
+    log_path = tmp_path / "admin.log"
+    log_path.write_text(
+        "00:00:01.100 [1.2.3.4] SMTP Login failed\n"
+        "[9.8.7.6] IMAP Login successful 00:00:03.300\n"
+    )
+
+    result = search.search_admin_entries(log_path, "IMAP")
+
+    assert result.total_conversations == 1
+    assert result.orphan_matches == []
+    assert result.conversations[0].message_id == "9.8.7.6 00:00:03.300"
+
+
 def test_search_imap_retrieval_entries_groups_by_id(tmp_path):
     log_path = tmp_path / "imapRetrieval.log"
     log_path.write_text(

@@ -30,10 +30,6 @@ from .log_kinds import (
     normalize_kind,
 )
 from .log_parsers import (
-    parse_admin_line,
-    parse_imap_retrieval_line,
-    parse_delivery_line,
-    parse_smtp_line,
     starts_with_timestamp,
 )
 from .search_modes import (
@@ -55,6 +51,22 @@ except Exception:  # pragma: no cover - optional dependency
 
 _FUZZY_ANCHOR_LIMIT = 120
 _FUZZY_STRIDE_DIVISOR = 6
+_TIME_PATTERN = r"\d{2}:\d{2}:\d{2}(?:\.\d{3})?"
+_SMTP_OWNER_PATTERN = re.compile(
+    rf"^(?:{_TIME_PATTERN}) \[[^\]]+\]\[([^\]]+)\] "
+)
+_DELIVERY_OWNER_PATTERN = re.compile(
+    rf"^(?:{_TIME_PATTERN}) \[([^\]]+)\] "
+)
+_IMAP_RETRIEVAL_OWNER_PATTERN = re.compile(
+    rf"^(?:{_TIME_PATTERN}) \[([^\]]*)\] \[[^\]]*\] "
+)
+_ADMIN_OWNER_PATTERN = re.compile(
+    rf"^(?P<time>{_TIME_PATTERN}) \[(?P<ip>[^\]]*)\] "
+)
+_ADMIN_TRAILING_OWNER_PATTERN = re.compile(
+    rf"^\[(?P<ip>[^\]]+)\]\s+.*\s+(?P<time>{_TIME_PATTERN})$"
+)
 
 
 @dataclass
@@ -115,7 +127,7 @@ def search_smtp_conversations(
         fuzzy_threshold,
     )
 
-    builders: dict[str, _ConversationBuilder] = {}
+    builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
     total_lines = 0
@@ -124,20 +136,21 @@ def search_smtp_conversations(
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             total_lines += 1
-            line = raw_line.rstrip("\n")
-            entry = parse_smtp_line(line)
+            line = raw_line.rstrip("\r\n")
             line_owner_id: str | None = None
-            if entry is not None:
-                current_id = entry.log_id
+            owner_id = _smtp_owner_id(line)
+            if owner_id is not None:
+                current_id = owner_id
                 line_owner_id = current_id
                 builder = builders.get(current_id)
                 if builder is None:
-                    builder = _ConversationBuilder(
+                    builder = Conversation(
                         message_id=current_id,
+                        lines=[],
                         first_line_number=line_number,
                     )
                     builders[current_id] = builder
-                builder.add_line(line)
+                builder.lines.append(line)
             else:
                 if starts_with_timestamp(line):
                     current_id = None
@@ -145,12 +158,13 @@ def search_smtp_conversations(
                     line_owner_id = current_id
                     builder = builders.get(current_id)
                     if builder is None:
-                        builder = _ConversationBuilder(
+                        builder = Conversation(
                             message_id=current_id,
+                            lines=[],
                             first_line_number=line_number,
                         )
                         builders[current_id] = builder
-                    builder.add_line(line)
+                    builder.lines.append(line)
 
             if matcher(line):
                 if line_owner_id is not None:
@@ -159,7 +173,7 @@ def search_smtp_conversations(
                     orphan_matches.append((line_number, line))
 
     conversations = [
-        builders[mid].as_conversation()
+        builders[mid]
         for mid in matched_ids
         if mid in builders
     ]
@@ -191,7 +205,7 @@ def search_delivery_conversations(
         fuzzy_threshold,
     )
 
-    builders: dict[str, _ConversationBuilder] = {}
+    builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
     total_lines = 0
@@ -200,20 +214,21 @@ def search_delivery_conversations(
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             total_lines += 1
-            line = raw_line.rstrip("\n")
-            entry = parse_delivery_line(line)
+            line = raw_line.rstrip("\r\n")
             line_owner_id: str | None = None
-            if entry is not None:
-                current_id = entry.delivery_id
+            owner_id = _delivery_owner_id(line)
+            if owner_id is not None:
+                current_id = owner_id
                 line_owner_id = current_id
                 builder = builders.get(current_id)
                 if builder is None:
-                    builder = _ConversationBuilder(
+                    builder = Conversation(
                         message_id=current_id,
+                        lines=[],
                         first_line_number=line_number,
                     )
                     builders[current_id] = builder
-                builder.add_line(line)
+                builder.lines.append(line)
             else:
                 if starts_with_timestamp(line):
                     current_id = None
@@ -221,12 +236,13 @@ def search_delivery_conversations(
                     line_owner_id = current_id
                     builder = builders.get(current_id)
                     if builder is None:
-                        builder = _ConversationBuilder(
+                        builder = Conversation(
                             message_id=current_id,
+                            lines=[],
                             first_line_number=line_number,
                         )
                         builders[current_id] = builder
-                    builder.add_line(line)
+                    builder.lines.append(line)
 
             if matcher(line):
                 if line_owner_id is not None:
@@ -235,7 +251,7 @@ def search_delivery_conversations(
                     orphan_matches.append((line_number, line))
 
     conversations = [
-        builders[mid].as_conversation()
+        builders[mid]
         for mid in matched_ids
         if mid in builders
     ]
@@ -267,7 +283,7 @@ def search_admin_entries(
         fuzzy_threshold,
     )
 
-    builders: dict[str, _ConversationBuilder] = {}
+    builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
     total_lines = 0
@@ -276,21 +292,21 @@ def search_admin_entries(
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             total_lines += 1
-            line = raw_line.rstrip("\n")
-            entry = parse_admin_line(line)
+            line = raw_line.rstrip("\r\n")
             line_owner_id: str | None = None
-            if entry is not None:
-                message_id = f"{entry.ip} {entry.timestamp}"
+            message_id = _admin_owner_id(line)
+            if message_id is not None:
                 current_id = message_id
                 line_owner_id = current_id
                 builder = builders.get(message_id)
                 if builder is None:
-                    builder = _ConversationBuilder(
+                    builder = Conversation(
                         message_id=message_id,
+                        lines=[],
                         first_line_number=line_number,
                     )
                     builders[message_id] = builder
-                builder.add_line(line)
+                builder.lines.append(line)
             else:
                 if starts_with_timestamp(line):
                     current_id = None
@@ -298,12 +314,13 @@ def search_admin_entries(
                     line_owner_id = current_id
                     builder = builders.get(current_id)
                     if builder is None:
-                        builder = _ConversationBuilder(
+                        builder = Conversation(
                             message_id=current_id,
+                            lines=[],
                             first_line_number=line_number,
                         )
                         builders[current_id] = builder
-                    builder.add_line(line)
+                    builder.lines.append(line)
 
             if matcher(line):
                 if line_owner_id is not None:
@@ -312,7 +329,7 @@ def search_admin_entries(
                     orphan_matches.append((line_number, line))
 
     conversations = [
-        builders[mid].as_conversation()
+        builders[mid]
         for mid in matched_ids
         if mid in builders
     ]
@@ -344,7 +361,7 @@ def search_imap_retrieval_entries(
         fuzzy_threshold,
     )
 
-    builders: dict[str, _ConversationBuilder] = {}
+    builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
     total_lines = 0
@@ -353,20 +370,21 @@ def search_imap_retrieval_entries(
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             total_lines += 1
-            line = raw_line.rstrip("\n")
-            entry = parse_imap_retrieval_line(line)
+            line = raw_line.rstrip("\r\n")
             line_owner_id: str | None = None
-            if entry is not None:
-                current_id = entry.retrieval_id
+            owner_id = _imap_retrieval_owner_id(line)
+            if owner_id is not None:
+                current_id = owner_id
                 line_owner_id = current_id
                 builder = builders.get(current_id)
                 if builder is None:
-                    builder = _ConversationBuilder(
+                    builder = Conversation(
                         message_id=current_id,
+                        lines=[],
                         first_line_number=line_number,
                     )
                     builders[current_id] = builder
-                builder.add_line(line)
+                builder.lines.append(line)
             else:
                 if starts_with_timestamp(line):
                     current_id = None
@@ -374,12 +392,13 @@ def search_imap_retrieval_entries(
                     line_owner_id = current_id
                     builder = builders.get(current_id)
                     if builder is None:
-                        builder = _ConversationBuilder(
+                        builder = Conversation(
                             message_id=current_id,
+                            lines=[],
                             first_line_number=line_number,
                         )
                         builders[current_id] = builder
-                    builder.add_line(line)
+                    builder.lines.append(line)
 
             if matcher(line):
                 if line_owner_id is not None:
@@ -388,7 +407,7 @@ def search_imap_retrieval_entries(
                     orphan_matches.append((line_number, line))
 
     conversations = [
-        builders[mid].as_conversation()
+        builders[mid]
         for mid in matched_ids
         if mid in builders
     ]
@@ -420,7 +439,7 @@ def search_ungrouped_entries(
         fuzzy_threshold,
     )
 
-    builders: dict[str, _ConversationBuilder] = {}
+    builders: dict[str, Conversation] = {}
     matched_ids: set[str] = set()
     orphan_matches: list[tuple[int, str]] = []
     total_lines = 0
@@ -429,27 +448,29 @@ def search_ungrouped_entries(
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, raw_line in enumerate(handle, start=1):
             total_lines += 1
-            line = raw_line.rstrip("\n")
+            line = raw_line.rstrip("\r\n")
             line_owner_id: str | None = None
             if starts_with_timestamp(line):
                 current_id = f"{line_number}"
                 line_owner_id = current_id
-                builder = _ConversationBuilder(
+                builder = Conversation(
                     message_id=current_id,
+                    lines=[],
                     first_line_number=line_number,
                 )
                 builders[current_id] = builder
-                builder.add_line(line)
+                builder.lines.append(line)
             elif current_id is not None:
                 line_owner_id = current_id
                 builder = builders.get(current_id)
                 if builder is None:
-                    builder = _ConversationBuilder(
+                    builder = Conversation(
                         message_id=current_id,
+                        lines=[],
                         first_line_number=line_number,
                     )
                     builders[current_id] = builder
-                builder.add_line(line)
+                builder.lines.append(line)
 
             if matcher(line):
                 if line_owner_id is not None:
@@ -458,7 +479,7 @@ def search_ungrouped_entries(
                     orphan_matches.append((line_number, line))
 
     conversations = [
-        builders[mid].as_conversation()
+        builders[mid]
         for mid in matched_ids
         if mid in builders
     ]
@@ -518,7 +539,8 @@ def _compile_line_matcher(
         )
 
     pattern = _compile_match_pattern(term, resolved_mode, ignore_case)
-    return lambda line: bool(pattern.search(line))
+    search = pattern.search
+    return lambda line: search(line) is not None
 
 
 def _compile_literal_line_matcher(
@@ -527,7 +549,8 @@ def _compile_literal_line_matcher(
 ) -> Callable[[str], bool]:
     if ignore_case:
         term = term.lower()
-        return lambda line: term in line.lower()
+        lower = str.lower
+        return lambda line: term in lower(line)
     return lambda line: term in line
 
 
@@ -708,6 +731,37 @@ def _window_similarity(
     return matcher.ratio()
 
 
+def _smtp_owner_id(line: str) -> str | None:
+    match = _SMTP_OWNER_PATTERN.match(line)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _delivery_owner_id(line: str) -> str | None:
+    match = _DELIVERY_OWNER_PATTERN.match(line)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _imap_retrieval_owner_id(line: str) -> str | None:
+    match = _IMAP_RETRIEVAL_OWNER_PATTERN.match(line)
+    if match is None:
+        return None
+    return match.group(1)
+
+
+def _admin_owner_id(line: str) -> str | None:
+    match = _ADMIN_OWNER_PATTERN.match(line)
+    if match is not None:
+        return f"{match.group('ip')} {match.group('time')}"
+    trailing_match = _ADMIN_TRAILING_OWNER_PATTERN.match(line)
+    if trailing_match is None:
+        return None
+    return f"{trailing_match.group('ip')} {trailing_match.group('time')}"
+
+
 def get_search_function(
     kind: str,
 ) -> SearchFunction | None:
@@ -743,24 +797,3 @@ def get_search_function(
         return search_ungrouped_entries
     return None
 
-
-@dataclass
-class _ConversationBuilder:
-    message_id: str
-    first_line_number: int
-    lines: List[str]
-
-    def __init__(self, message_id: str, first_line_number: int) -> None:
-        self.message_id = message_id
-        self.first_line_number = first_line_number
-        self.lines = []
-
-    def add_line(self, line: str) -> None:
-        self.lines.append(line.rstrip("\r"))
-
-    def as_conversation(self) -> Conversation:
-        return Conversation(
-            message_id=self.message_id,
-            lines=self.lines.copy(),
-            first_line_number=self.first_line_number,
-        )
