@@ -8,10 +8,14 @@ Syntax highlighting now has separate but linked pieces:
 
 In the TUI, app theme changes (for example `Cyberdark` to `dracula`)
 automatically switch the Results pane syntax theme to the same name.
+This includes Textual's shipping themes and the project's first-party themes.
 The Results syntax theme is built from the active Textual UI theme palette:
 - `sm_logtool/ui/app.py` (`_watch_theme` -> `_sync_results_theme`)
 - `sm_logtool/ui/themes.py` (`build_results_theme`,
   `results_theme_name_for_app_theme`)
+
+If a selected theme cannot be resolved for any reason, the TUI falls back to a
+default results syntax theme (`smlog-default`).
 
 **Tokenizer Overview**
 

@@ -8,6 +8,8 @@ with:
 - Log staging that copies or unzips source logs before analysis.
 - Conversation/entry grouping for supported SmarterMail log kinds.
 - Syntax-highlighted results in both TUI and CLI output.
+- Live progress, execution mode, and cancel support for long TUI searches.
+- Parallel multi-target search with safe serial fallback when needed.
 
 ## Requirements
 
@@ -39,6 +41,24 @@ python -m pip install sm-logtool
 
 This installs the `sm-logtool` command.
 
+### Update
+
+Update an existing install from PyPI:
+
+```bash
+pipx upgrade sm-logtool
+# or
+python -m pip install --upgrade sm-logtool
+```
+
+If you use the fuzzy-search speedup extra, update with extras:
+
+```bash
+pipx install --force "sm-logtool[speedups]"
+# or
+python -m pip install --upgrade "sm-logtool[speedups]"
+```
+
 ### Recommended Speedups (Strongly Recommended)
 
 For significantly better fuzzy-search performance, install with the optional
@@ -64,7 +84,8 @@ Configuration is YAML with these keys:
 - `default_kind`: default log kind (for example `smtp`).
 - `theme`: Textual UI theme name (for example `Cyberdark`,
   `Cybernotdark`, or `textual-dark`).
-  Results syntax highlighting follows the selected UI theme palette.
+  Results syntax highlighting follows the selected UI theme palette and theme
+  name.
 
 Example:
 

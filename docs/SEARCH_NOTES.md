@@ -1,6 +1,6 @@
 # sm-logtool Search Notes
 
-This file tracks current search behavior and near-term design goals.
+This file tracks current search behavior and implementation notes.
 
 ## Current State
 
@@ -44,6 +44,26 @@ Search handlers currently exist for:
 - Results are displayed in first-occurrence order.
 - Aligned output formatting is applied per kind.
 
+### Performance and responsiveness
+
+- TUI searches run in a background worker so the UI remains responsive.
+- Search can be canceled from the search/results workflow.
+- Progress UI includes:
+  - percent complete,
+  - an inline progress bar,
+  - current phase/detail text,
+  - execution mode notes (serial/parallel/fallback),
+  - live match preview while active targets are scanning.
+- Search results stream into the results view as completed targets return.
+- Multi-target search uses planned execution:
+  - serial for small/single-target workloads,
+  - parallel when workload/target count justify it,
+  - thread pool first, then process pool fallback, then serial fallback.
+- Search indexing is reused where available and warmed in the background after
+  search completion.
+- Fuzzy matching prefers RapidFuzz when installed (`sm-logtool[speedups]`),
+  with built-in fallback when unavailable.
+
 ### TUI behavior
 
 - Wizard flow: log kind -> date selection -> search -> results.
@@ -61,27 +81,23 @@ Search handlers currently exist for:
 - `search` supports explicit `--mode` selection
   (`literal`/`wildcard`/`regex`/`fuzzy`).
 - `search` supports `--fuzzy-threshold` to tune fuzzy matching sensitivity.
-- CLI search output uses the same syntax highlighting tokens as the TUI.
+- CLI search output uses the same syntax tokenization model as the TUI.
 - CLI does not provide interactive TUI workflows like sub-search chaining.
 
-## Roadmap Items
+## Completed Milestones
 
 - [x] Bring CLI search/output behavior closer to TUI behavior where practical.
 - [x] Add regex search mode with explicit mode flags and clear UX.
 - [x] Add wildcard search mode with `*` and `?` support in CLI/TUI.
 - [x] Add fuzzy/approximate search mode with configurable thresholds.
 - [x] Add explicit search mode switching plus clear CLI/TUI help text.
-- [x] Add support for additional compressed formats (for example `.gz`)
-  [Issue #20 closed as not planned; reopen if needed].
 - [x] Improve large-log performance and responsiveness (progress feedback,
-  background work, reduced memory footprint).
-- [x] Add export controls (matched lines vs full conversations, optional
-  structured output) [Issue #23 closed as not planned; reopen if needed].
+  background work, reduced memory footprint, index reuse).
 
 ## Notes
 
 - Historical bash behavior is useful context, but current product behavior is
   defined by the Python codebase and documented in `README.md`.
-- For issue #21 baseline capture, run `scripts/benchmark_search.py` against
-  your real logs/staging paths to measure per-mode wall-clock time, peak RSS,
-  and first-match scan timing before optimization changes.
+- For repeatable performance checks, run `scripts/benchmark_search.py` against
+  staged real logs and capture wall-clock time, peak RSS, and first-result
+  timing across search modes.
