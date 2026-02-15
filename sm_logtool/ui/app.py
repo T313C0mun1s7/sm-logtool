@@ -67,6 +67,7 @@ from ..search import SmtpSearchResult
 from ..search import get_search_function
 from ..search import has_search_index
 from ..search import prime_search_index
+from ..search_planning import choose_search_execution_plan
 from ..syntax import spans_for_line
 from ..staging import stage_log
 
@@ -821,6 +822,16 @@ def _parallel_worker_count(target_count: int) -> int:
         return 1
     cpu_count = os.cpu_count() or 1
     return max(1, min(target_count, cpu_count, MAX_SEARCH_WORKERS))
+
+
+def _target_workload_bytes(targets: list[Path]) -> int:
+    total = 0
+    for target in targets:
+        try:
+            total += target.stat().st_size
+        except OSError:
+            return 0
+    return total
 
 
 def _search_targets_in_process_pool(
@@ -2241,16 +2252,19 @@ class LogBrowser(App):
             request,
             use_index_cache=use_index_cache,
         )
-        if active_request.use_index_cache:
-            return self._search_targets_serial(
-                active_request,
-                targets,
-                search_fn,
-                worker,
-                on_result=on_result,
-            )
-        parallel_workers = _parallel_worker_count(len(targets))
-        if parallel_workers <= 1:
+        max_workers = _parallel_worker_count(len(targets))
+        plan = choose_search_execution_plan(
+            len(targets),
+            _target_workload_bytes(targets),
+            use_index_cache=active_request.use_index_cache,
+            max_workers=max_workers,
+        )
+        if plan.workers <= 1:
+            if len(targets) > 1:
+                self.call_from_thread(
+                    self._notify,
+                    f"Using serial search ({plan.reason}).",
+                )
             return self._search_targets_serial(
                 active_request,
                 targets,
@@ -2261,10 +2275,11 @@ class LogBrowser(App):
         return self._search_targets_parallel(
             active_request,
             targets,
-            parallel_workers,
+            plan.workers,
             search_fn,
             worker,
             on_result=on_result,
+            reason=plan.reason,
         )
 
     def _search_targets_serial(
@@ -2315,11 +2330,15 @@ class LogBrowser(App):
         search_fn,
         worker: Worker[SearchOutput],
         on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+        reason: str | None = None,
     ) -> list[SmtpSearchResult]:
         total = len(targets)
+        message = f"Searching {total} log(s) with {workers} workers..."
+        if reason:
+            message = f"{message} ({reason})"
         self.call_from_thread(
             self._notify,
-            f"Searching {total} log(s) with {workers} workers...",
+            message,
         )
         try:
             return _search_targets_in_process_pool(
