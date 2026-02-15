@@ -2644,68 +2644,61 @@ class LogBrowser(App):
             message = f"{message} ({reason})"
         self.call_from_thread(self._notify, message)
         self.call_from_thread(self._set_live_progress, message, 0)
+        on_completed = lambda done, count, target: self.call_from_thread(
+            self._notify_search_progress,
+            "Searched",
+            done,
+            count,
+            target.name,
+        )
         try:
-            return _search_targets_in_process_pool(
+            return _search_targets_in_thread_pool(
                 request,
                 targets,
                 workers=workers,
                 is_cancelled=lambda: worker.is_cancelled,
                 on_result=on_result,
-                on_completed=lambda done, count, target: self.call_from_thread(
-                    self._notify_search_progress,
-                    "Searched",
-                    done,
-                    count,
-                    target.name,
-                ),
+                on_completed=on_completed,
             )
         except WorkerCancelled:
             raise
-        except Exception as exc:
-            thread_reason = type(exc).__name__
+        except Exception as thread_exc:
+            thread_reason = type(thread_exc).__name__
             self.call_from_thread(
                 self._notify,
-                "Process parallel search unavailable; trying thread workers. "
+                "Thread parallel search unavailable; trying process workers. "
                 f"({thread_reason})",
             )
-            thread_fallback = (
-                f"parallel (thread fallback: {thread_reason})"
+            process_fallback = (
+                f"parallel (process fallback: {thread_reason})"
             )
             self.call_from_thread(
                 self._set_live_execution,
-                thread_fallback,
+                process_fallback,
             )
             try:
-                return _search_targets_in_thread_pool(
+                return _search_targets_in_process_pool(
                     request,
                     targets,
                     workers=workers,
                     is_cancelled=lambda: worker.is_cancelled,
                     on_result=on_result,
-                    on_completed=(
-                        lambda done, count, target: self.call_from_thread(
-                            self._notify_search_progress,
-                            "Searched",
-                            done,
-                            count,
-                            target.name,
-                        )
-                    ),
+                    on_completed=on_completed,
                 )
             except WorkerCancelled:
                 raise
-            except Exception as thread_exc:
-                thread_error = type(thread_exc).__name__
+            except Exception as process_exc:
+                process_error = type(process_exc).__name__
                 fallback = (
                     "serial (parallel fallback: "
-                    f"{thread_reason}, {thread_error})"
+                    f"{thread_reason}, {process_error})"
                 )
                 self.call_from_thread(self._set_live_execution, fallback)
                 self.call_from_thread(
                     self._notify,
                     "Parallel search unavailable; falling back to serial "
                     "mode. "
-                    f"({thread_reason}, {thread_error})",
+                    f"({thread_reason}, {process_error})",
                 )
                 return self._search_targets_serial(
                     request,

@@ -464,7 +464,7 @@ async def test_target_progress_status_is_determinate(tmp_path):
         ValueError("bad pool state"),
     ],
 )
-async def test_parallel_search_uses_thread_fallback_before_serial(
+async def test_parallel_search_uses_process_fallback_before_serial(
     tmp_path,
     monkeypatch,
     raised_error,
@@ -482,7 +482,7 @@ async def test_parallel_search_uses_thread_fallback_before_serial(
     )
     monkeypatch.setattr(
         ui_app_module,
-        "_search_targets_in_process_pool",
+        "_search_targets_in_thread_pool",
         lambda *args, **kwargs: (_ for _ in ()).throw(raised_error),
     )
 
@@ -509,6 +509,43 @@ async def test_parallel_search_uses_thread_fallback_before_serial(
         class _Worker:
             is_cancelled = False
 
+        def _process_success(
+            request,
+            targets,
+            *,
+            workers,
+            is_cancelled=None,
+            on_result=None,
+            on_completed=None,
+        ):
+            _ = workers
+            results = []
+            total = len(targets)
+            for index, target in enumerate(targets):
+                if is_cancelled is not None and is_cancelled():
+                    raise AssertionError("cancelled unexpectedly")
+                result = ui_app_module._search_single_target(
+                    request.kind,
+                    target,
+                    request.term,
+                    request.mode,
+                    request.fuzzy_threshold,
+                    request.ignore_case,
+                    request.use_index_cache,
+                )
+                results.append(result)
+                if on_result is not None:
+                    on_result(index, target, result)
+                if on_completed is not None:
+                    on_completed(index + 1, total, target)
+            return results
+
+        monkeypatch.setattr(
+            ui_app_module,
+            "_search_targets_in_process_pool",
+            _process_success,
+        )
+
         def _fail_serial(*_args, **_kwargs):
             raise AssertionError("serial fallback should not run")
 
@@ -526,7 +563,7 @@ async def test_parallel_search_uses_thread_fallback_before_serial(
             "2024.01.02-smtpLog.log",
         ]
         assert app._live_execution_label is not None
-        assert "thread fallback" in app._live_execution_label
+        assert "process fallback" in app._live_execution_label
 
 
 @pytest.mark.asyncio
