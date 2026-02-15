@@ -67,13 +67,13 @@ CYBERDARK_THEME = Theme(
     success="#64f9a8",
     accent="#ff7ad9",
     foreground="#32f7ff",
-    background="#000000",
-    surface="#3f3f00",
-    panel="#5f5f00",
+    background="#005f00",
+    surface="#004f00",
+    panel="#000000",
     dark=True,
     variables={
         **CYBER_THEME_VARIABLE_DEFAULTS,
-        "top-actions-background": "#000000",
+        "top-actions-background": "#004f00",
         "top-action-background": "#87005f",
         "top-action-hover-background": "#af005f",
         "top-action-mnemonic-foreground": "#32f7ff",
@@ -188,9 +188,9 @@ def _cybernotdark_syntax_styles() -> dict[str, Style]:
 
 RESULTS_THEME_DARK = TextAreaTheme(
     name=RESULTS_THEME_DARK_NAME,
-    base_style=Style(color="#e8f2ff", bgcolor="#5f5f00"),
-    cursor_line_style=Style(bgcolor="#878700"),
-    selection_style=Style(bgcolor="#af8700"),
+    base_style=Style(color="#e8f2ff", bgcolor="#000000"),
+    cursor_line_style=Style(bgcolor="#002f00"),
+    selection_style=Style(bgcolor="#005f00"),
     syntax_styles=_cyberdark_syntax_styles(),
 )
 
