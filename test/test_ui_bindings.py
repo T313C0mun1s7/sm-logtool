@@ -14,9 +14,6 @@ from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
-from sm_logtool.ui.themes import RESULTS_THEME_DEFAULT_NAME
-from sm_logtool.ui.themes import RESULTS_THEME_DARK_NAME
-from sm_logtool.ui.themes import RESULTS_THEME_LIGHT_NAME
 
 
 def write_sample_logs(root: Path) -> None:
@@ -710,19 +707,19 @@ async def test_results_area_switches_with_app_theme(tmp_path):
         await pilot.pause()
 
         assert app.output_log is not None
-        assert app.output_log.theme == RESULTS_THEME_DARK_NAME
+        assert app.output_log.theme == CYBERDARK_THEME_NAME
 
         app.theme = CYBERNOTDARK_THEME_NAME
         await pilot.pause()
-        assert app.output_log.theme == RESULTS_THEME_LIGHT_NAME
+        assert app.output_log.theme == CYBERNOTDARK_THEME_NAME
 
         app.theme = CYBERDARK_THEME_NAME
         await pilot.pause()
-        assert app.output_log.theme == RESULTS_THEME_DARK_NAME
+        assert app.output_log.theme == CYBERDARK_THEME_NAME
 
         app.theme = "dracula"
         await pilot.pause()
-        assert app.output_log.theme == RESULTS_THEME_DEFAULT_NAME
+        assert app.output_log.theme == "dracula"
 
 
 @pytest.mark.asyncio

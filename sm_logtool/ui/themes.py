@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from rich.color import Color
+from rich.color_triplet import ColorTriplet
 from rich.style import Style
 from textual._text_area_theme import TextAreaTheme
 from textual.theme import Theme
@@ -35,8 +37,6 @@ from ..syntax import TOKEN_TIMESTAMP
 CYBERDARK_THEME_NAME = "Cyberdark"
 CYBERNOTDARK_THEME_NAME = "Cybernotdark"
 
-RESULTS_THEME_DARK_NAME = "smlog-cyberdark"
-RESULTS_THEME_LIGHT_NAME = "smlog-cybernotdark"
 RESULTS_THEME_DEFAULT_NAME = "smlog-default"
 
 CYBER_THEME_VARIABLE_DEFAULTS: dict[str, str] = {
@@ -128,105 +128,296 @@ CYBERNOTDARK_THEME = Theme(
 
 FIRST_PARTY_APP_THEMES = (CYBERDARK_THEME, CYBERNOTDARK_THEME)
 
+_WHITE = ColorTriplet(255, 255, 255)
+_BLACK = ColorTriplet(0, 0, 0)
+_DEFAULT_DARK_FG = ColorTriplet(232, 242, 255)
+_DEFAULT_LIGHT_FG = ColorTriplet(16, 35, 59)
+_DEFAULT_DARK_BG = ColorTriplet(18, 18, 18)
+_DEFAULT_LIGHT_BG = ColorTriplet(244, 244, 244)
 
-def _cyberdark_syntax_styles() -> dict[str, Style]:
-    styles = dict(TOKEN_STYLES)
-    styles.update(
+
+def _parse_triplet(
+    value: str | None,
+    fallback: ColorTriplet,
+) -> ColorTriplet:
+    if not value:
+        return fallback
+    try:
+        parsed = Color.parse(value)
+    except Exception:
+        return fallback
+    return parsed.get_truecolor()
+
+
+def _as_hex(color: ColorTriplet) -> str:
+    return "#{:02x}{:02x}{:02x}".format(
+        color.red,
+        color.green,
+        color.blue,
+    )
+
+
+def _blend(
+    start: ColorTriplet,
+    end: ColorTriplet,
+    amount: float,
+) -> ColorTriplet:
+    weight = max(0.0, min(1.0, amount))
+    red = round(start.red + (end.red - start.red) * weight)
+    green = round(start.green + (end.green - start.green) * weight)
+    blue = round(start.blue + (end.blue - start.blue) * weight)
+    return ColorTriplet(red, green, blue)
+
+
+def _linear_channel(channel: int) -> float:
+    scaled = channel / 255
+    if scaled <= 0.03928:
+        return scaled / 12.92
+    return ((scaled + 0.055) / 1.055) ** 2.4
+
+
+def _luminance(color: ColorTriplet) -> float:
+    return (
+        (0.2126 * _linear_channel(color.red))
+        + (0.7152 * _linear_channel(color.green))
+        + (0.0722 * _linear_channel(color.blue))
+    )
+
+
+def _contrast_ratio(left: ColorTriplet, right: ColorTriplet) -> float:
+    left_luma = _luminance(left)
+    right_luma = _luminance(right)
+    light = max(left_luma, right_luma)
+    dark = min(left_luma, right_luma)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def _ensure_contrast(
+    color: ColorTriplet,
+    background: ColorTriplet,
+    minimum_ratio: float,
+    prefer_light: bool,
+) -> ColorTriplet:
+    if _contrast_ratio(color, background) >= minimum_ratio:
+        return color
+    target = _WHITE if prefer_light else _BLACK
+    for step in range(1, 21):
+        candidate = _blend(color, target, step / 20)
+        if _contrast_ratio(candidate, background) >= minimum_ratio:
+            return candidate
+    return target
+
+
+def _protocol_styles(
+    *,
+    primary: ColorTriplet,
+    secondary: ColorTriplet,
+    accent: ColorTriplet,
+    success: ColorTriplet,
+    warning: ColorTriplet,
+    error: ColorTriplet,
+    background: ColorTriplet,
+    prefer_light: bool,
+) -> dict[str, Style]:
+    webmail = _ensure_contrast(
+        _blend(primary, accent, 0.35),
+        background,
+        3.0,
+        prefer_light,
+    )
+    xmpp = _ensure_contrast(
+        _blend(success, primary, 0.3),
+        background,
+        3.0,
+        prefer_light,
+    )
+    api = _ensure_contrast(
+        _blend(warning, accent, 0.3),
+        background,
+        3.0,
+        prefer_light,
+    )
+    return {
+        TOKEN_PROTO_SMTP: Style(color=_as_hex(success), bold=True),
+        TOKEN_PROTO_IMAP: Style(color=_as_hex(primary), bold=True),
+        TOKEN_PROTO_POP: Style(color=_as_hex(warning), bold=True),
+        TOKEN_PROTO_USER: Style(color=_as_hex(accent), bold=True),
+        TOKEN_PROTO_WEBMAIL: Style(color=_as_hex(webmail), bold=True),
+        TOKEN_PROTO_ACTIVESYNC: Style(color=_as_hex(error), bold=True),
+        TOKEN_PROTO_EAS: Style(color=_as_hex(warning), bold=True),
+        TOKEN_PROTO_CALDAV: Style(color=_as_hex(secondary), bold=True),
+        TOKEN_PROTO_CARDDAV: Style(color=_as_hex(secondary), bold=True),
+        TOKEN_PROTO_XMPP: Style(color=_as_hex(xmpp), bold=True),
+        TOKEN_PROTO_API: Style(color=_as_hex(api), bold=True),
+    }
+
+
+def build_results_theme(theme: Theme) -> TextAreaTheme:
+    """Build a readable syntax theme from a Textual app theme palette."""
+
+    background = _parse_triplet(
+        theme.panel or theme.surface or theme.background,
+        _DEFAULT_DARK_BG if theme.dark else _DEFAULT_LIGHT_BG,
+    )
+    foreground = _parse_triplet(
+        theme.foreground,
+        _DEFAULT_DARK_FG if theme.dark else _DEFAULT_LIGHT_FG,
+    )
+    prefer_light = _luminance(background) < 0.45
+    foreground = _ensure_contrast(
+        foreground,
+        background,
+        7.0,
+        prefer_light,
+    )
+
+    primary = _ensure_contrast(
+        _parse_triplet(theme.primary, foreground),
+        background,
+        3.0,
+        prefer_light,
+    )
+    secondary = _ensure_contrast(
+        _parse_triplet(theme.secondary or theme.primary, primary),
+        background,
+        3.0,
+        prefer_light,
+    )
+    accent = _ensure_contrast(
+        _parse_triplet(
+            theme.accent or theme.secondary or theme.primary,
+            primary,
+        ),
+        background,
+        3.0,
+        prefer_light,
+    )
+    success = _ensure_contrast(
+        _parse_triplet(theme.success or theme.primary, primary),
+        background,
+        3.0,
+        prefer_light,
+    )
+    warning = _ensure_contrast(
+        _parse_triplet(theme.warning or theme.accent or theme.primary, accent),
+        background,
+        3.0,
+        prefer_light,
+    )
+    error = _ensure_contrast(
+        _parse_triplet(theme.error or theme.accent or theme.primary, accent),
+        background,
+        3.0,
+        prefer_light,
+    )
+
+    muted = _ensure_contrast(
+        _blend(foreground, background, 0.55),
+        background,
+        2.2,
+        prefer_light,
+    )
+    timestamp = _ensure_contrast(
+        _blend(primary, foreground, 0.25),
+        background,
+        3.2,
+        prefer_light,
+    )
+    id_color = _ensure_contrast(
+        _blend(secondary, accent, 0.35),
+        background,
+        3.2,
+        prefer_light,
+    )
+    message_id = _ensure_contrast(
+        _blend(primary, accent, 0.45),
+        background,
+        3.2,
+        prefer_light,
+    )
+    ip = _ensure_contrast(
+        _blend(primary, foreground, 0.15),
+        background,
+        3.0,
+        prefer_light,
+    )
+    email = _ensure_contrast(
+        _blend(accent, secondary, 0.35),
+        background,
+        3.0,
+        prefer_light,
+    )
+    tag = _ensure_contrast(
+        _blend(primary, secondary, 0.4),
+        background,
+        3.0,
+        prefer_light,
+    )
+    cursor_bg = _ensure_contrast(
+        _blend(background, primary, 0.25),
+        background,
+        1.35,
+        not prefer_light,
+    )
+    selection_bg = _ensure_contrast(
+        _blend(background, accent, 0.3),
+        background,
+        1.55,
+        not prefer_light,
+    )
+
+    syntax_styles = dict(TOKEN_STYLES)
+    syntax_styles.update(
         {
-            TOKEN_TERM: Style(color="#ff5edc", bold=True),
-            TOKEN_TIMESTAMP: Style(color="#32f7ff", bold=True),
-            TOKEN_BRACKET: Style(color="#7a8491"),
-            TOKEN_IP: Style(color="#45b5ff"),
-            TOKEN_ID: Style(color="#c78bff"),
-            TOKEN_TAG: Style(color="#32f7ff"),
-            TOKEN_EMAIL: Style(color="#ff75bd"),
-            TOKEN_COMMAND: Style(color="#4cff8a"),
-            TOKEN_RESPONSE: Style(color="#ffc759"),
-            TOKEN_LINE_NUMBER: Style(color="#7a8491"),
-            TOKEN_MESSAGE_ID: Style(color="#00d5ff"),
-            TOKEN_STATUS_BAD: Style(color="#ff6b81", bold=True),
-            TOKEN_STATUS_GOOD: Style(color="#52ffa8", bold=True),
+            TOKEN_TERM: Style(color=_as_hex(accent), bold=True),
+            TOKEN_TIMESTAMP: Style(color=_as_hex(timestamp), bold=True),
+            TOKEN_BRACKET: Style(color=_as_hex(muted)),
+            TOKEN_IP: Style(color=_as_hex(ip)),
+            TOKEN_ID: Style(color=_as_hex(id_color)),
+            TOKEN_TAG: Style(color=_as_hex(tag)),
+            TOKEN_EMAIL: Style(color=_as_hex(email)),
+            TOKEN_COMMAND: Style(color=_as_hex(success)),
+            TOKEN_RESPONSE: Style(color=_as_hex(warning)),
+            TOKEN_LINE_NUMBER: Style(color=_as_hex(muted)),
+            TOKEN_MESSAGE_ID: Style(color=_as_hex(message_id)),
+            TOKEN_STATUS_BAD: Style(color=_as_hex(error), bold=True),
+            TOKEN_STATUS_GOOD: Style(color=_as_hex(success), bold=True),
         }
     )
-    return styles
-
-
-def _cybernotdark_syntax_styles() -> dict[str, Style]:
-    styles = _cyberdark_syntax_styles()
-    styles.update(
-        {
-            # Light theme keeps neon identity, but uses darker hues so tokens
-            # remain readable against light grey backgrounds.
-            TOKEN_TERM: Style(color="#87005f", bold=True),
-            TOKEN_TIMESTAMP: Style(color="#005f87", bold=True),
-            TOKEN_BRACKET: Style(color="#5f5f5f"),
-            TOKEN_IP: Style(color="#005faf"),
-            TOKEN_ID: Style(color="#5f00af"),
-            TOKEN_TAG: Style(color="#005f5f"),
-            TOKEN_EMAIL: Style(color="#87005f"),
-            TOKEN_COMMAND: Style(color="#005f00"),
-            TOKEN_RESPONSE: Style(color="#875f00"),
-            TOKEN_LINE_NUMBER: Style(color="#5f5f5f"),
-            TOKEN_MESSAGE_ID: Style(color="#005f87"),
-            TOKEN_STATUS_BAD: Style(color="#af0000", bold=True),
-            TOKEN_STATUS_GOOD: Style(color="#005f00", bold=True),
-            TOKEN_PROTO_SMTP: Style(color="#005f00", bold=True),
-            TOKEN_PROTO_IMAP: Style(color="#005faf", bold=True),
-            TOKEN_PROTO_POP: Style(color="#875f00", bold=True),
-            TOKEN_PROTO_USER: Style(color="#87005f", bold=True),
-            TOKEN_PROTO_WEBMAIL: Style(color="#005f87", bold=True),
-            TOKEN_PROTO_ACTIVESYNC: Style(color="#af0000", bold=True),
-            TOKEN_PROTO_EAS: Style(color="#875f00", bold=True),
-            TOKEN_PROTO_CALDAV: Style(color="#5f00af", bold=True),
-            TOKEN_PROTO_CARDDAV: Style(color="#5f00af", bold=True),
-            TOKEN_PROTO_XMPP: Style(color="#005f00", bold=True),
-            TOKEN_PROTO_API: Style(color="#af5f00", bold=True),
-        }
+    syntax_styles.update(
+        _protocol_styles(
+            primary=primary,
+            secondary=secondary,
+            accent=accent,
+            success=success,
+            warning=warning,
+            error=error,
+            background=background,
+            prefer_light=prefer_light,
+        )
     )
-    return styles
 
+    return TextAreaTheme(
+        name=theme.name,
+        base_style=Style(
+            color=_as_hex(foreground),
+            bgcolor=_as_hex(background),
+        ),
+        cursor_line_style=Style(bgcolor=_as_hex(cursor_bg)),
+        selection_style=Style(bgcolor=_as_hex(selection_bg)),
+        syntax_styles=syntax_styles,
+    )
 
-RESULTS_THEME_DARK = TextAreaTheme(
-    name=RESULTS_THEME_DARK_NAME,
-    base_style=Style(color="#e8f2ff", bgcolor="#000000"),
-    cursor_line_style=Style(bgcolor="#002f00"),
-    selection_style=Style(bgcolor="#005f00"),
-    syntax_styles=_cyberdark_syntax_styles(),
-)
-
-RESULTS_THEME_LIGHT = TextAreaTheme(
-    name=RESULTS_THEME_LIGHT_NAME,
-    base_style=Style(color="#10233b", bgcolor="#ffffe0"),
-    cursor_line_style=Style(bgcolor="#d6d600"),
-    selection_style=Style(bgcolor="#b7b700"),
-    syntax_styles=_cybernotdark_syntax_styles(),
-)
 
 RESULTS_THEME_DEFAULT = TextAreaTheme(
     name=RESULTS_THEME_DEFAULT_NAME,
     syntax_styles=dict(TOKEN_STYLES),
 )
 
-FIRST_PARTY_RESULTS_THEMES = (
-    RESULTS_THEME_DARK,
-    RESULTS_THEME_LIGHT,
-    RESULTS_THEME_DEFAULT,
-)
 
-APP_THEME_TO_RESULTS_THEME: dict[str, str] = {
-    CYBERDARK_THEME_NAME: RESULTS_THEME_DARK_NAME,
-    CYBERNOTDARK_THEME_NAME: RESULTS_THEME_LIGHT_NAME,
-    "textual-dark": RESULTS_THEME_DARK_NAME,
-    "textual-light": RESULTS_THEME_LIGHT_NAME,
-}
-
-
-def results_theme_for_app_theme(app_theme: str | None) -> str:
+def results_theme_name_for_app_theme(app_theme: str | None) -> str:
     """Return the ResultsArea theme name for a given app theme name."""
 
     if app_theme is None:
         return RESULTS_THEME_DEFAULT_NAME
-    return APP_THEME_TO_RESULTS_THEME.get(
-        app_theme,
-        RESULTS_THEME_DEFAULT_NAME,
-    )
+    return app_theme

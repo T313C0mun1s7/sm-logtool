@@ -6,12 +6,12 @@ Syntax highlighting now has separate but linked pieces:
 2. CLI token styles: `sm_logtool/highlighting.py` (`TOKEN_STYLES`)
 3. TUI UI themes and TUI syntax themes: `sm_logtool/ui/themes.py`
 
-In the TUI, app theme changes (for example `Cyberdark` to `Cybernotdark`)
-automatically switch the Results pane syntax theme via an app-theme-name map
-with an explicit default fallback syntax theme via:
+In the TUI, app theme changes (for example `Cyberdark` to `dracula`)
+automatically switch the Results pane syntax theme to the same name.
+The Results syntax theme is built from the active Textual UI theme palette:
 - `sm_logtool/ui/app.py` (`_watch_theme` -> `_sync_results_theme`)
-- `sm_logtool/ui/themes.py` (`APP_THEME_TO_RESULTS_THEME`,
-  `results_theme_for_app_theme`)
+- `sm_logtool/ui/themes.py` (`build_results_theme`,
+  `results_theme_name_for_app_theme`)
 
 **Tokenizer Overview**
 
@@ -40,8 +40,7 @@ For example, to add a new protocol keyword:
 - Add it to `_PROTOCOL_TOKENS` in `sm_logtool/syntax.py`.
 - Add a style entry for its token in `TOKEN_STYLES` in
   `sm_logtool/highlighting.py` (CLI/default).
-- Add/update the corresponding style in `sm_logtool/ui/themes.py`
-  (`RESULTS_THEME_DARK` / `RESULTS_THEME_LIGHT`) if TUI colors should differ.
+- Update palette mapping logic in `sm_logtool/ui/themes.py` if needed for TUI.
 
 **Adjusting Colors and Themes**
 
@@ -51,9 +50,5 @@ CLI/default colors live in `TOKEN_STYLES`:
 TUI colors are split:
 - Widget/chrome colors come from Textual `Theme` values and custom variables
   in `sm_logtool/ui/themes.py`.
-- Results syntax token colors come from TUI `TextAreaTheme` definitions in
-  `sm_logtool/ui/themes.py`.
-
-Important: Textual theme variables do not automatically style syntax tokens in
-`TextAreaTheme`; they are related by app logic, not by automatic variable
-binding.
+- Results syntax token colors are generated from the active Textual theme
+  palette in `sm_logtool/ui/themes.py`.

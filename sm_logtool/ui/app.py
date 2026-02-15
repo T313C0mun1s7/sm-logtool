@@ -76,8 +76,10 @@ from ..staging import stage_log
 from .themes import CYBERDARK_THEME
 from .themes import CYBER_THEME_VARIABLE_DEFAULTS
 from .themes import FIRST_PARTY_APP_THEMES
-from .themes import FIRST_PARTY_RESULTS_THEMES
-from .themes import results_theme_for_app_theme
+from .themes import build_results_theme
+from .themes import RESULTS_THEME_DEFAULT
+from .themes import RESULTS_THEME_DEFAULT_NAME
+from .themes import results_theme_name_for_app_theme
 
 try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
@@ -549,8 +551,8 @@ class ResultsArea(TextArea):
             id=id,
             classes=classes,
         )
-        for theme in FIRST_PARTY_RESULTS_THEMES:
-            self.register_theme(theme)
+        self._registered_results_themes = {RESULTS_THEME_DEFAULT_NAME}
+        self.register_theme(RESULTS_THEME_DEFAULT)
         self.set_visual_theme()
 
     def set_log_kind(self, log_kind: str | None) -> None:
@@ -559,11 +561,28 @@ class ResultsArea(TextArea):
         self.refresh()
 
     def set_visual_theme(self) -> None:
-        app_theme_name = getattr(getattr(self, "app", None), "theme", None)
-        theme_name = results_theme_for_app_theme(app_theme_name)
+        app = getattr(self, "app", None)
+        app_theme_name = getattr(app, "theme", None)
+        theme_name = results_theme_name_for_app_theme(app_theme_name)
+        if app is not None and theme_name != RESULTS_THEME_DEFAULT_NAME:
+            self._register_results_theme(theme_name)
+        if theme_name not in self._registered_results_themes:
+            theme_name = RESULTS_THEME_DEFAULT_NAME
         if self.theme == theme_name:
             return
         self.theme = theme_name
+
+    def _register_results_theme(self, theme_name: str) -> None:
+        if theme_name in self._registered_results_themes:
+            return
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        app_theme = app.get_theme(theme_name)
+        if app_theme is None:
+            return
+        self.register_theme(build_results_theme(app_theme))
+        self._registered_results_themes.add(theme_name)
 
     async def _on_mouse_down(
         self,

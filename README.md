@@ -64,6 +64,7 @@ Configuration is YAML with these keys:
 - `default_kind`: default log kind (for example `smtp`).
 - `theme`: Textual UI theme name (for example `Cyberdark`,
   `Cybernotdark`, or `textual-dark`).
+  Results syntax highlighting follows the selected UI theme palette.
 
 Example:
 
