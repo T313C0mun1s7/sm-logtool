@@ -82,24 +82,24 @@ CYBERNOTDARK_THEME = Theme(
     success="#007f4f",
     accent="#d238c2",
     foreground="#10233b",
-    background="#ebeff3",
-    surface="#dfe6ed",
-    panel="#d6e0ea",
+    background="#ececec",
+    surface="#dedede",
+    panel="#d4d4d4",
     dark=False,
     variables={
         **CYBER_THEME_VARIABLE_DEFAULTS,
-        "top-actions-background": "#d6e0ea",
-        "top-action-background": "#c5d3e0",
-        "top-action-hover-background": "#b1c4d8",
+        "top-actions-background": "#d4d4d4",
+        "top-action-background": "#c4c4c4",
+        "top-action-hover-background": "#b4b4b4",
         "top-action-mnemonic-foreground": "#8a4b00",
-        "selection-selected-background": "#c2d4e8",
+        "selection-selected-background": "#cfcfcf",
         "selection-selected-foreground": "#12263f",
         "selection-active-background": "#0079bf",
         "selection-active-foreground": "#ffffff",
         "selection-selected-active-background": "#0f95e0",
         "selection-selected-active-foreground": "#081a2f",
-        "context-menu-background": "#e1e8ef",
-        "context-menu-border": "#7f97af",
+        "context-menu-background": "#e2e2e2",
+        "context-menu-border": "#8a8a8a",
     },
 )
 
@@ -129,9 +129,9 @@ RESULTS_THEME_DARK = TextAreaTheme(
 
 RESULTS_THEME_LIGHT = TextAreaTheme(
     name=RESULTS_THEME_LIGHT_NAME,
-    base_style=Style(color="#10233b", bgcolor="#ebeff3"),
-    cursor_line_style=Style(bgcolor="#d6e0ea"),
-    selection_style=Style(bgcolor="#b1c4d8"),
+    base_style=Style(color="#10233b", bgcolor="#ececec"),
+    cursor_line_style=Style(bgcolor="#d4d4d4"),
+    selection_style=Style(bgcolor="#b4b4b4"),
     syntax_styles=_cybernotdark_syntax_styles(),
 )
 

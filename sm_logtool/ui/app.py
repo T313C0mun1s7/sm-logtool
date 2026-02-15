@@ -1445,6 +1445,24 @@ class LogBrowser(App):
     """Wizard-style application for exploring SmarterMail logs."""
 
     CSS = """
+    LogBrowser {
+        background: $background;
+        color: $foreground;
+    }
+
+    Screen {
+        background: $background;
+        color: $foreground;
+    }
+
+    WizardBody {
+        background: $background;
+    }
+
+    Footer {
+        background: $surface;
+    }
+
     #top-actions {
         height: 1;
         padding: 0 1;
