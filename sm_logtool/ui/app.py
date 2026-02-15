@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    wait,
+)
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import Enum, auto
@@ -879,6 +884,61 @@ def _search_targets_in_process_pool(
         max_workers=workers,
         mp_context=mp.get_context("spawn"),
     )
+    future_to_index = {}
+    results: list[SmtpSearchResult | None] = [None] * len(targets)
+    completed = 0
+    try:
+        for index, target in enumerate(targets):
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            future = executor.submit(
+                _search_single_target,
+                request.kind,
+                target,
+                request.term,
+                request.mode,
+                request.fuzzy_threshold,
+                request.ignore_case,
+                request.use_index_cache,
+            )
+            future_to_index[future] = index
+
+        while future_to_index:
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            done, _pending = wait(
+                set(future_to_index),
+                timeout=0.2,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                continue
+            for future in done:
+                index = future_to_index.pop(future)
+                result = future.result()
+                results[index] = result
+                if on_result is not None:
+                    on_result(index, targets[index], result)
+                completed += 1
+                if on_completed is not None:
+                    on_completed(completed, len(targets), targets[index])
+    finally:
+        executor.shutdown(cancel_futures=True)
+    return [result for result in results if result is not None]
+
+
+def _search_targets_in_thread_pool(
+    request: SearchRequest,
+    targets: list[Path],
+    *,
+    workers: int,
+    is_cancelled: Callable[[], bool] | None = None,
+    on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+    on_completed: Callable[[int, int, Path], None] | None = None,
+) -> list[SmtpSearchResult]:
+    executor = ThreadPoolExecutor(max_workers=workers)
     future_to_index = {}
     results: list[SmtpSearchResult | None] = [None] * len(targets)
     completed = 0
@@ -2602,23 +2662,58 @@ class LogBrowser(App):
         except WorkerCancelled:
             raise
         except Exception as exc:
-            fallback = (
-                "serial "
-                f"(parallel fallback: {type(exc).__name__})"
-            )
-            self.call_from_thread(self._set_live_execution, fallback)
+            thread_reason = type(exc).__name__
             self.call_from_thread(
                 self._notify,
-                "Parallel search unavailable; falling back to serial mode. "
-                f"({type(exc).__name__})",
+                "Process parallel search unavailable; trying thread workers. "
+                f"({thread_reason})",
             )
-            return self._search_targets_serial(
-                request,
-                targets,
-                search_fn,
-                worker,
-                on_result=on_result,
+            thread_fallback = (
+                f"parallel (thread fallback: {thread_reason})"
             )
+            self.call_from_thread(
+                self._set_live_execution,
+                thread_fallback,
+            )
+            try:
+                return _search_targets_in_thread_pool(
+                    request,
+                    targets,
+                    workers=workers,
+                    is_cancelled=lambda: worker.is_cancelled,
+                    on_result=on_result,
+                    on_completed=(
+                        lambda done, count, target: self.call_from_thread(
+                            self._notify_search_progress,
+                            "Searched",
+                            done,
+                            count,
+                            target.name,
+                        )
+                    ),
+                )
+            except WorkerCancelled:
+                raise
+            except Exception as thread_exc:
+                thread_error = type(thread_exc).__name__
+                fallback = (
+                    "serial (parallel fallback: "
+                    f"{thread_reason}, {thread_error})"
+                )
+                self.call_from_thread(self._set_live_execution, fallback)
+                self.call_from_thread(
+                    self._notify,
+                    "Parallel search unavailable; falling back to serial "
+                    "mode. "
+                    f"({thread_reason}, {thread_error})",
+                )
+                return self._search_targets_serial(
+                    request,
+                    targets,
+                    search_fn,
+                    worker,
+                    on_result=on_result,
+                )
 
     def _start_live_target_preview(
         self,

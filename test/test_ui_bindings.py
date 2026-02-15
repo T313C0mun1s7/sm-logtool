@@ -464,7 +464,7 @@ async def test_target_progress_status_is_determinate(tmp_path):
         ValueError("bad pool state"),
     ],
 )
-async def test_parallel_search_falls_back_to_serial(
+async def test_parallel_search_uses_thread_fallback_before_serial(
     tmp_path,
     monkeypatch,
     raised_error,
@@ -500,6 +500,7 @@ async def test_parallel_search_falls_back_to_serial(
         assert request is not None
         search_fn = get_search_function("smtp")
         assert search_fn is not None
+
         def _direct(f, *a):
             return f(*a)
 
@@ -508,6 +509,10 @@ async def test_parallel_search_falls_back_to_serial(
         class _Worker:
             is_cancelled = False
 
+        def _fail_serial(*_args, **_kwargs):
+            raise AssertionError("serial fallback should not run")
+
+        monkeypatch.setattr(app, "_search_targets_serial", _fail_serial)
         results = app._search_targets_parallel(
             request,
             request.source_paths,
@@ -520,6 +525,8 @@ async def test_parallel_search_falls_back_to_serial(
             "2024.01.01-smtpLog.log",
             "2024.01.02-smtpLog.log",
         ]
+        assert app._live_execution_label is not None
+        assert "thread fallback" in app._live_execution_label
 
 
 @pytest.mark.asyncio
