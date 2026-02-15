@@ -45,12 +45,12 @@ class RunMetrics:
     elapsed_seconds: float
     peak_rss_kib: float
     first_match_scan_seconds: float | None
+    first_visible_result_seconds: float | None
     total_files: int
     total_bytes: int
     total_lines: int
     matched_conversations: int
     orphan_matches: int
-    first_visible_result_seconds: float
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -288,6 +288,13 @@ def _run_worker(args: argparse.Namespace) -> int:
 
     started = time.perf_counter()
     results = []
+    first_visible: float | None = None
+
+    def _on_match(_line_number: int, _line: str) -> None:
+        nonlocal first_visible
+        if first_visible is None:
+            first_visible = time.perf_counter() - started
+
     for path in staged_paths:
         result = search_fn(
             path,
@@ -296,6 +303,7 @@ def _run_worker(args: argparse.Namespace) -> int:
             fuzzy_threshold=args.fuzzy_threshold,
             ignore_case=not args.case_sensitive,
             materialization=materialization,
+            match_callback=_on_match,
         )
         results.append(result)
     elapsed = time.perf_counter() - started
@@ -306,6 +314,7 @@ def _run_worker(args: argparse.Namespace) -> int:
         elapsed_seconds=elapsed,
         peak_rss_kib=_rss_kib(),
         first_match_scan_seconds=first_match,
+        first_visible_result_seconds=first_visible,
         total_files=len(staged_paths),
         total_bytes=total_bytes,
         total_lines=sum(result.total_lines for result in results),
@@ -313,8 +322,6 @@ def _run_worker(args: argparse.Namespace) -> int:
             len(result.conversations) for result in results
         ),
         orphan_matches=sum(len(result.orphan_matches) for result in results),
-        # Current CLI/TUI flow renders in batch after search completes.
-        first_visible_result_seconds=elapsed,
     )
     print(json.dumps(asdict(metrics), sort_keys=True))
     return 0
@@ -428,9 +435,9 @@ def _print_summary(
     print()
     print(
         "Mode       Runs  Mean(s)  Min(s)  Max(s)  "
-        "Mean RSS(MiB)  Mean First Match(s)"
+        "Mean RSS(MiB)  Mean First Match(s)  Mean First Visible(s)"
     )
-    print("-" * 76)
+    print("-" * 99)
     for mode in modes:
         mode_runs = [run for run in runs if run.mode == mode]
         elapsed = [run.elapsed_seconds for run in mode_runs]
@@ -440,14 +447,26 @@ def _print_summary(
             for value in (run.first_match_scan_seconds for run in mode_runs)
             if value is not None
         ]
+        visibles = [
+            value
+            for value in (
+                run.first_visible_result_seconds
+                for run in mode_runs
+            )
+            if value is not None
+        ]
         mean_first = statistics.fmean(firsts) if firsts else float("nan")
+        mean_visible = (
+            statistics.fmean(visibles) if visibles else float("nan")
+        )
         print(
             f"{mode:<10} {len(mode_runs):>4}  "
             f"{statistics.fmean(elapsed):>7.3f}  "
             f"{min(elapsed):>6.3f}  "
             f"{max(elapsed):>6.3f}  "
             f"{statistics.fmean(rss_mib):>13.2f}  "
-            f"{mean_first:>19.3f}"
+            f"{mean_first:>19.3f}  "
+            f"{mean_visible:>23.3f}"
         )
     print()
 
@@ -455,10 +474,6 @@ def _print_summary(
     print(f"Files searched: {sample.total_files}")
     print(f"Total staged bytes: {_format_bytes(sample.total_bytes)}")
     print(f"Total lines scanned: {sample.total_lines}")
-    print(
-        "Note: first_visible_result_seconds currently equals elapsed_seconds "
-        "because results render after batch completion."
-    )
 
 
 def _write_json(
