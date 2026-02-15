@@ -1384,6 +1384,7 @@ class LogBrowser(App):
     }
 
     .button-row {
+        width: 1fr;
         height: auto;
     }
 
@@ -1440,10 +1441,22 @@ class LogBrowser(App):
 
     .button-spacer {
         width: 1fr;
+        min-width: 0;
         height: 1;
     }
 
+    .left-buttons {
+        width: auto;
+        height: auto;
+    }
+
+    .right-buttons {
+        width: auto;
+        height: auto;
+    }
+
     .button-row > Horizontal {
+        width: auto;
         height: auto;
     }
 
@@ -1688,6 +1701,7 @@ class LogBrowser(App):
                 self.search_back_button,
                 self.search_submit_button,
                 self.search_cancel_button,
+                classes="left-buttons",
             ),
             Static("", classes="button-spacer"),
             Horizontal(
@@ -1741,7 +1755,7 @@ class LogBrowser(App):
             Button("Copy All", id="copy-all"),
         ]
         button_row = Horizontal(
-            Horizontal(*left_buttons),
+            Horizontal(*left_buttons, classes="left-buttons"),
             Static("", classes="button-spacer"),
             Horizontal(*right_buttons, classes="right-buttons"),
             classes="button-row",

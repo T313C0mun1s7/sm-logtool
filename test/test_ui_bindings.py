@@ -3,6 +3,7 @@ import time
 
 import pytest
 from rich.text import Text
+from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
 from sm_logtool import config as config_module
@@ -207,6 +208,35 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
         await pilot.pause()
         assert app.search_mode == "literal"
         assert app.search_input.value == ""
+
+
+@pytest.mark.asyncio
+async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+
+        app._show_step_search()
+        await pilot.pause()
+        search_row = app.wizard.query_one(".button-row", Horizontal)
+        search_left = search_row.query_one(".left-buttons", Horizontal)
+        search_right = search_row.query_one(".right-buttons", Horizontal)
+        assert search_left.query_one("#cancel-search", Button)
+        assert search_right.query_one("#cycle-search-mode", Button)
+
+        app._show_step_results()
+        await pilot.pause()
+        results_row = app.wizard.query_one("#results-buttons", Horizontal)
+        results_left = results_row.query_one(".left-buttons", Horizontal)
+        results_right = results_row.query_one(".right-buttons", Horizontal)
+        assert results_left.query_one("#quit-results", Button)
+        assert results_left.query_one("#sub-search", Button)
+        assert results_right.query_one("#copy-all", Button)
 
 
 @pytest.mark.asyncio
