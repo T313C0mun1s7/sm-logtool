@@ -834,6 +834,17 @@ def _target_workload_bytes(targets: list[Path]) -> int:
     return total
 
 
+def _format_size(value: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    amount = float(max(value, 0))
+    unit = units[0]
+    for unit in units:
+        if amount < 1024.0 or unit == units[-1]:
+            break
+        amount /= 1024.0
+    return f"{amount:.1f}{unit}"
+
+
 def _search_targets_in_process_pool(
     request: SearchRequest,
     targets: list[Path],
@@ -2302,6 +2313,24 @@ class LogBrowser(App):
                 total,
                 target.name,
             )
+
+            def _report_progress(
+                scanned_bytes: int,
+                total_bytes: int,
+                *,
+                current_index: int = index,
+                total_targets: int = total,
+                target_name: str = target.name,
+            ) -> None:
+                self.call_from_thread(
+                    self._notify_target_search_progress,
+                    current_index,
+                    total_targets,
+                    target_name,
+                    scanned_bytes,
+                    total_bytes,
+                )
+
             result = search_fn(
                 target,
                 request.term,
@@ -2309,6 +2338,7 @@ class LogBrowser(App):
                 fuzzy_threshold=request.fuzzy_threshold,
                 ignore_case=request.ignore_case,
                 use_index_cache=request.use_index_cache,
+                progress_callback=_report_progress,
             )
             results.append(result)
             if on_result is not None:
@@ -2321,6 +2351,24 @@ class LogBrowser(App):
                 target.name,
             )
         return results
+
+    def _notify_target_search_progress(
+        self,
+        current: int,
+        total: int,
+        target_name: str,
+        scanned_bytes: int,
+        total_bytes: int,
+    ) -> None:
+        safe_total = max(total_bytes, 1)
+        scanned = min(max(scanned_bytes, 0), safe_total)
+        percent = int((scanned / safe_total) * 100)
+        scanned_label = _format_size(scanned)
+        total_label = _format_size(safe_total)
+        self._notify(
+            f"Searching {current}/{total} log(s): {target_name} "
+            f"{percent}% ({scanned_label}/{total_label})"
+        )
 
     def _search_targets_parallel(
         self,

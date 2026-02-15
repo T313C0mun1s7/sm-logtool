@@ -543,3 +543,50 @@ def test_prime_search_index_marks_index_cached(tmp_path):
         use_index_cache=True,
     )
     assert result.total_conversations == 1
+
+
+def test_search_progress_callback_reports_completion(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+        "00:00:02 [2.2.2.2][XYZ789] Third line\n"
+    )
+    updates: list[tuple[int, int]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "line",
+        materialization="single-pass",
+        progress_callback=lambda scanned, total: updates.append(
+            (scanned, total)
+        ),
+    )
+
+    assert result.total_conversations == 2
+    assert updates
+    assert updates[-1][0] == updates[-1][1]
+    assert all(updates[idx][0] <= updates[idx + 1][0]
+               for idx in range(len(updates) - 1))
+
+
+def test_search_progress_callback_works_with_index_cache(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+    updates: list[tuple[int, int]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+        progress_callback=lambda scanned, total: updates.append(
+            (scanned, total)
+        ),
+    )
+
+    assert result.total_conversations == 1
+    assert updates
+    assert updates[-1][0] == updates[-1][1]
