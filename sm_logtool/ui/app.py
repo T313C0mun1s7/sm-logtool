@@ -857,7 +857,13 @@ def _progress_bar(
     safe_width = max(4, width)
     safe_percent = max(0, min(percent, 100))
     filled = int((safe_percent / 100) * safe_width)
-    return f"[{'#' * filled}{'-' * (safe_width - filled)}]"
+    if filled <= 0:
+        return f"[>{'.' * (safe_width - 1)}]"
+    if filled >= safe_width:
+        return f"[{'=' * safe_width}]"
+    return (
+        f"[{'=' * (filled - 1)}>{'.' * (safe_width - filled)}]"
+    )
 
 
 def _search_targets_in_process_pool(
@@ -1574,6 +1580,8 @@ class LogBrowser(App):
         self._live_target_label: str | None = None
         self._live_progress_label: str | None = None
         self._live_progress_percent = 0
+        self._live_execution_label: str | None = None
+        self._last_execution_label: str | None = None
         self._live_match_total = 0
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
@@ -2024,20 +2032,21 @@ class LogBrowser(App):
             if self._live_rendered_lines:
                 self.last_rendered_lines = self._live_rendered_lines.copy()
                 self.last_rendered_kind = self._live_kind
+                self._last_execution_label = self._live_execution_label
                 self._display_results(
-                    self.last_rendered_lines,
+                    self._prepend_execution_summary(
+                        self.last_rendered_lines,
+                    ),
                     self.last_rendered_kind,
                 )
             error = event.worker.error
             message = "Search failed." if error is None else str(error)
             if not self._live_rendered_lines:
                 self._show_step_results()
-                self._write_output_lines(
-                    [
-                        "[search error]",
-                        message,
-                    ]
-                )
+                lines = ["[search error]", message]
+                if self._live_execution_label:
+                    lines.extend(["", "[execution]", self._live_execution_label])
+                self._write_output_lines(lines)
             self._notify(message)
             return
         if event.state != WorkerState.SUCCESS:
@@ -2264,6 +2273,8 @@ class LogBrowser(App):
         self._live_target_label = None
         self._live_progress_label = "Search submitted. Preparing logs..."
         self._live_progress_percent = 0
+        self._live_execution_label = "Planning execution mode..."
+        self._last_execution_label = None
         self._live_match_total = 0
         self._live_match_preview_lines = []
         self._search_started_at = time.perf_counter()
@@ -2416,6 +2427,9 @@ class LogBrowser(App):
             use_index_cache=active_request.use_index_cache,
             max_workers=max_workers,
         )
+        mode = "serial" if plan.workers <= 1 else "parallel"
+        execution = f"{mode} ({plan.reason})"
+        self.call_from_thread(self._set_live_execution, execution)
         if plan.workers <= 1:
             if len(targets) > 1:
                 self.call_from_thread(
@@ -2588,6 +2602,11 @@ class LogBrowser(App):
         except WorkerCancelled:
             raise
         except Exception as exc:
+            fallback = (
+                "serial "
+                f"(parallel fallback: {type(exc).__name__})"
+            )
+            self.call_from_thread(self._set_live_execution, fallback)
             self.call_from_thread(
                 self._notify,
                 "Parallel search unavailable; falling back to serial mode. "
@@ -2648,6 +2667,15 @@ class LogBrowser(App):
                     "[progress]",
                     f"{bar} {self._live_progress_percent:>3}%",
                     self._live_progress_label,
+                ]
+            )
+        if self._search_in_progress and self._live_execution_label:
+            if output_lines:
+                output_lines.append("")
+            output_lines.extend(
+                [
+                    "[execution]",
+                    self._live_execution_label,
                 ]
             )
 
@@ -2719,6 +2747,24 @@ class LogBrowser(App):
         if has_changed and self.step == WizardStep.RESULTS:
             self._refresh_live_output()
 
+    def _set_live_execution(self, label: str) -> None:
+        has_changed = label != self._live_execution_label
+        self._live_execution_label = label
+        if has_changed and self.step == WizardStep.RESULTS:
+            self._refresh_live_output()
+
+    def _prepend_execution_summary(self, lines: list[str]) -> list[str]:
+        if not self._last_execution_label:
+            return lines
+        summary = [
+            "[execution]",
+            self._last_execution_label,
+            "",
+        ]
+        if not lines:
+            return summary[:-1]
+        return summary + lines
+
     def _apply_search_output(self, output: SearchOutput) -> None:
         rendered_lines = self._render_results(
             output.results,
@@ -2729,13 +2775,15 @@ class LogBrowser(App):
         self._live_pending_results = {}
         self.last_rendered_lines = rendered_lines
         self.last_rendered_kind = output.kind
+        self._last_execution_label = self._live_execution_label
         self._write_subsearch_snapshot(
             output.results,
             output.term,
             rendered_lines,
         )
         self.subsearch_kind = output.kind
-        self._display_results(rendered_lines, output.kind)
+        display_lines = self._prepend_execution_summary(rendered_lines)
+        self._display_results(display_lines, output.kind)
         self._notify(
             f"Search complete. Processed {len(output.targets)} log(s)."
         )

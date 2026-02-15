@@ -425,6 +425,8 @@ async def test_perform_search_notifies_submit_immediately(
         progress_text = app._get_full_results_text() or ""
         assert "[progress]" in progress_text
         assert "Search submitted. Preparing logs..." in progress_text
+        assert "[execution]" in progress_text
+        assert "Planning execution mode..." in progress_text
         assert app._search_in_progress is True
         cancel_button = app.wizard.query_one("#cancel-search", Button)
         assert cancel_button.disabled is False
