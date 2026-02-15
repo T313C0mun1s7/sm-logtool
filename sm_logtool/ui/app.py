@@ -1634,6 +1634,18 @@ class LogBrowser(App):
 
     .search-term-input {
         margin-bottom: 1;
+        background: $panel;
+        color: $foreground;
+        border: none;
+        border-top: none;
+        border-bottom: none;
+    }
+
+    .search-term-input:focus {
+        background: $panel;
+        border: none;
+        border-top: none;
+        border-bottom: none;
     }
 
     .selection-list {
