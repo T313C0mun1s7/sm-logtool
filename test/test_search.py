@@ -282,6 +282,38 @@ def test_search_ungrouped_entries_supports_fuzzy_mode(tmp_path):
     assert result.total_conversations == 1
 
 
+def test_fuzzy_matcher_uses_accelerator_when_available(monkeypatch):
+    class StubFuzz:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, float]] = []
+
+        def partial_ratio(
+            self,
+            term: str,
+            line: str,
+            *,
+            score_cutoff: float,
+        ) -> float:
+            self.calls.append((term, line, score_cutoff))
+            return 80.0
+
+    stub = StubFuzz()
+    monkeypatch.setattr(search, "_rapidfuzz_fuzz", stub)
+    matcher = search._compile_line_matcher(
+        "authentication failed",
+        "fuzzy",
+        True,
+        0.75,
+    )
+
+    assert matcher("authentcation faild for user")
+    assert stub.calls
+    called_term, called_line, called_cutoff = stub.calls[0]
+    assert called_term == "authentication failed"
+    assert called_line == "authentcation faild for user"
+    assert called_cutoff == pytest.approx(75.0)
+
+
 def test_search_fuzzy_threshold_changes_match_sensitivity(tmp_path):
     log_path = tmp_path / "generalErrors.log"
     log_path.write_text(

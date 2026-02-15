@@ -47,6 +47,11 @@ from .search_modes import (
     wildcard_to_regex,
 )
 
+try:
+    from rapidfuzz import fuzz as _rapidfuzz_fuzz
+except Exception:  # pragma: no cover - optional dependency
+    _rapidfuzz_fuzz = None
+
 
 _FUZZY_ANCHOR_LIMIT = 120
 _FUZZY_STRIDE_DIVISOR = 6
@@ -532,6 +537,12 @@ def _compile_fuzzy_line_matcher(
     *,
     ignore_case: bool,
 ) -> Callable[[str], bool]:
+    if _rapidfuzz_fuzz is not None:
+        return _compile_rapidfuzz_line_matcher(
+            term,
+            threshold,
+            ignore_case=ignore_case,
+        )
     term_len = len(term)
     if term_len <= 0:
         return lambda _line: False
@@ -558,6 +569,42 @@ def _compile_fuzzy_line_matcher(
         anchor_offsets,
         anchor_chars,
     )
+
+
+def _compile_rapidfuzz_line_matcher(
+    term: str,
+    threshold: float,
+    *,
+    ignore_case: bool,
+) -> Callable[[str], bool]:
+    term_len = len(term)
+    if term_len <= 0:
+        return lambda _line: False
+    cutoff = threshold * 100.0
+    if ignore_case:
+        return lambda line: _rapidfuzz_line_match(
+            term,
+            line.lower(),
+            cutoff,
+        )
+    return lambda line: _rapidfuzz_line_match(term, line, cutoff)
+
+
+def _rapidfuzz_line_match(
+    term: str,
+    line: str,
+    cutoff: float,
+) -> bool:
+    if not term:
+        return False
+    if term in line:
+        return True
+    score = _rapidfuzz_fuzz.partial_ratio(  # type: ignore[union-attr]
+        term,
+        line,
+        score_cutoff=cutoff,
+    )
+    return score >= cutoff
 
 
 def _fuzzy_line_match(

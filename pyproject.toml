@@ -26,6 +26,11 @@ dependencies = [
   "pytest-asyncio>=0.23",
 ]
 
+[project.optional-dependencies]
+speedups = [
+  "rapidfuzz>=3.0",
+]
+
 [project.scripts]
 sm-logtool = "sm_logtool.cli:main"
 

@@ -39,6 +39,22 @@ python -m pip install sm-logtool
 
 This installs the `sm-logtool` command.
 
+### Recommended Speedups (Strongly Recommended)
+
+For significantly better fuzzy-search performance, install with the optional
+`speedups` extra:
+
+```bash
+pipx install "sm-logtool[speedups]"
+# or
+python -m pip install "sm-logtool[speedups]"
+```
+
+`sm-logtool` automatically uses the accelerator when available and
+automatically falls back to the built-in matcher when it is not installed.
+Skipping this extra can materially reduce fuzzy-search responsiveness and
+overall usability on large logs.
+
 ## Configuration
 
 Configuration is YAML with these keys:
@@ -167,6 +183,7 @@ Search mode behavior:
 - `wildcard`: `*` matches any sequence and `?` matches one character.
 - `regex`: Python `re` syntax (PCRE-like, but not full PCRE).
 - `fuzzy`: approximate line matching using a similarity threshold.
+  Installing `sm-logtool[speedups]` is strongly recommended for this mode.
 
 Regex checker note:
 
