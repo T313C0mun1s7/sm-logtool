@@ -1510,18 +1510,39 @@ class LogBrowser(App):
         height: 1;
         min-height: 1;
         padding: 0;
+        text-style: bold;
+    }
+
+    .action-button.-style-default {
         border: none;
+        border-top: none;
+        border-bottom: none;
         background: $action-button-background;
         color: $action-button-foreground;
+        tint: transparent;
     }
 
-    .action-button:hover {
+    .action-button.-style-default:hover {
         background: $action-button-hover-background;
+        border-top: none;
+        border-bottom: none;
     }
 
-    .action-button:focus {
+    .action-button.-style-default:focus {
         background: $action-button-focus-background;
+        color: $action-button-foreground;
+        background-tint: transparent;
+        border-top: none;
+        border-bottom: none;
         text-style: bold;
+    }
+
+    .action-button.-style-default.-active {
+        background: $action-button-hover-background;
+        border: none;
+        border-top: none;
+        border-bottom: none;
+        tint: transparent;
     }
 
     .selected .label {
