@@ -1,11 +1,14 @@
 from pathlib import Path
+import time
 
 import pytest
 from rich.text import Text
 from textual.widgets import Button, Static
 
 from sm_logtool import config as config_module
+from sm_logtool.search import Conversation
 from sm_logtool.search import get_search_function
+from sm_logtool.search import SmtpSearchResult
 from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 
@@ -300,9 +303,10 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
         assert request is not None
         search_fn = get_search_function("smtp")
         assert search_fn is not None
-        app.call_from_thread = (  # type: ignore[assignment]
-            lambda fn, *args: fn(*args)
-        )
+        def _direct(f, *a):
+            return f(*a)
+
+        app.call_from_thread = _direct
 
         class _Worker:
             is_cancelled = False
@@ -318,6 +322,64 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
         assert names == [
             "2024.01.01-smtpLog.log",
             "2024.01.02-smtpLog.log",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_live_result_stream_keeps_target_order(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    target_a = logs_dir / "2024.01.01-smtpLog.log"
+    target_b = logs_dir / "2024.01.02-smtpLog.log"
+    target_b.write_text(
+        "00:00:00 [2.2.2.2][B] Connection initiated\n",
+        encoding="utf-8",
+    )
+    result_a = SmtpSearchResult(
+        term="Connection",
+        log_path=target_a,
+        conversations=[
+            Conversation(
+                message_id="A",
+                lines=["00:00:00 [1.1.1.1][A] Connection initiated"],
+                first_line_number=1,
+            )
+        ],
+        total_lines=1,
+        orphan_matches=[],
+    )
+    result_b = SmtpSearchResult(
+        term="Connection",
+        log_path=target_b,
+        conversations=[
+            Conversation(
+                message_id="B",
+                lines=["00:00:00 [2.2.2.2][B] Connection initiated"],
+                first_line_number=1,
+            )
+        ],
+        total_lines=1,
+        orphan_matches=[],
+    )
+    async with app.run_test() as pilot:
+        app._live_kind = "smtp"
+        app._search_started_at = time.perf_counter() - 1.0
+        app._show_step_results()
+        await pilot.pause()
+
+        app._on_live_search_result(1, target_b, result_b)
+        app._on_live_search_result(0, target_a, result_a)
+        await pilot.pause()
+
+        headers = [
+            line
+            for line in app._live_rendered_lines
+            if line.startswith("=== ")
+        ]
+        assert headers[:2] == [
+            "=== 2024.01.01-smtpLog.log ===",
+            "=== 2024.01.02-smtpLog.log ===",
         ]
 
 

@@ -13,6 +13,7 @@ from itertools import groupby
 import multiprocessing as mp
 import os
 from pathlib import Path
+import time
 from typing import Callable, Dict, Iterable, List, Optional
 
 from textual import events
@@ -823,6 +824,7 @@ def _search_targets_in_process_pool(
     *,
     workers: int,
     is_cancelled: Callable[[], bool] | None = None,
+    on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
     on_completed: Callable[[int, int, Path], None] | None = None,
 ) -> list[SmtpSearchResult]:
     executor = ProcessPoolExecutor(
@@ -863,6 +865,8 @@ def _search_targets_in_process_pool(
                 index = future_to_index.pop(future)
                 result = future.result()
                 results[index] = result
+                if on_result is not None:
+                    on_result(index, targets[index], result)
                 completed += 1
                 if on_completed is not None:
                     on_completed(completed, len(targets), targets[index])
@@ -1486,6 +1490,15 @@ class LogBrowser(App):
         self._context_menu_open = False
         self._search_worker: Worker[SearchOutput] | None = None
         self._search_in_progress = False
+        self._live_rendered_lines: list[str] = []
+        self._live_pending_results: dict[
+            int,
+            tuple[Path, SmtpSearchResult],
+        ] = {}
+        self._live_next_index = 0
+        self._live_kind: str | None = None
+        self._search_started_at = 0.0
+        self._first_result_notified = False
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Horizontal(
@@ -1673,14 +1686,21 @@ class LogBrowser(App):
         self.output_log = ResultsArea(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        show_back = len(self.subsearch_terms) > 1
-        left_buttons: list[Static] = [
-            Button("New Search", id="new-search"),
-            Button("Sub-search", id="sub-search"),
-        ]
-        if show_back:
-            left_buttons.append(Button("Back", id="back-subsearch"))
-        left_buttons.append(Button("Quit", id="quit-results"))
+        left_buttons: list[Static]
+        if self._search_in_progress:
+            left_buttons = [
+                Button("Cancel", id="cancel-search"),
+                Button("Quit", id="quit-results"),
+            ]
+        else:
+            show_back = len(self.subsearch_terms) > 1
+            left_buttons = [
+                Button("New Search", id="new-search"),
+                Button("Sub-search", id="sub-search"),
+            ]
+            if show_back:
+                left_buttons.append(Button("Back", id="back-subsearch"))
+            left_buttons.append(Button("Quit", id="quit-results"))
         right_buttons = [
             Button("Copy", id="copy-selection"),
             Button("Copy All", id="copy-all"),
@@ -1738,7 +1758,10 @@ class LogBrowser(App):
         event: Button.Pressed,
     ) -> None:  # type: ignore[override]
         button_id = event.button.id
-        if self._search_in_progress and button_id != "cancel-search":
+        if self._search_in_progress and button_id not in {
+            "cancel-search",
+            "quit-results",
+        }:
             self._notify("Search is running. Wait or press Cancel.")
             return
         if button_id == "quit-kind":
@@ -1828,10 +1851,28 @@ class LogBrowser(App):
             return
         if event.state == WorkerState.CANCELLED:
             self._set_search_running(False)
+            if self._live_rendered_lines:
+                self.last_rendered_lines = self._live_rendered_lines.copy()
+                self.last_rendered_kind = self._live_kind
+                self._display_results(
+                    self.last_rendered_lines,
+                    self.last_rendered_kind,
+                )
+            elif self.step == WizardStep.RESULTS:
+                self._show_step_search()
             self._notify("Search canceled.")
             return
         if event.state == WorkerState.ERROR:
             self._set_search_running(False)
+            if self._live_rendered_lines:
+                self.last_rendered_lines = self._live_rendered_lines.copy()
+                self.last_rendered_kind = self._live_kind
+                self._display_results(
+                    self.last_rendered_lines,
+                    self.last_rendered_kind,
+                )
+            elif self.step == WizardStep.RESULTS:
+                self._show_step_search()
             error = event.worker.error
             if error is None:
                 self._notify("Search failed.")
@@ -2043,6 +2084,7 @@ class LogBrowser(App):
         if request is None:
             return
         self._set_search_running(True)
+        self._start_live_results(request)
         self._notify("Search submitted. Preparing logs...")
         self._search_worker = self.run_worker(
             partial(self._run_search_job, request),
@@ -2052,6 +2094,18 @@ class LogBrowser(App):
             exclusive=True,
             exit_on_error=False,
         )
+
+    def _start_live_results(self, request: SearchRequest) -> None:
+        self._live_rendered_lines = []
+        self._live_pending_results = {}
+        self._live_next_index = 0
+        self._live_kind = request.kind
+        self._search_started_at = time.perf_counter()
+        self._first_result_notified = False
+        self._show_step_results()
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.set_log_kind(request.kind)
+        self._write_output_lines([])
 
     def _build_search_request(self) -> SearchRequest | None:
         if self.staging_dir is None:
@@ -2105,12 +2159,31 @@ class LogBrowser(App):
         if search_fn is None:
             raise ValueError(f"No search handler for log kind: {request.kind}")
         targets = self._stage_targets(request, worker)
-        results = self._search_targets(request, targets, search_fn, worker)
+        results = self._search_targets(
+            request,
+            targets,
+            search_fn,
+            worker,
+            on_result=self._post_live_search_result,
+        )
         return SearchOutput(
             kind=request.kind,
             term=request.term,
             targets=targets,
             results=results,
+        )
+
+    def _post_live_search_result(
+        self,
+        index: int,
+        target: Path,
+        result: SmtpSearchResult,
+    ) -> None:
+        self.call_from_thread(
+            self._on_live_search_result,
+            index,
+            target,
+            result,
         )
 
     def _stage_targets(
@@ -2146,6 +2219,7 @@ class LogBrowser(App):
         targets: list[Path],
         search_fn,
         worker: Worker[SearchOutput],
+        on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
     ) -> list[SmtpSearchResult]:
         parallel_workers = _parallel_worker_count(len(targets))
         if parallel_workers <= 1:
@@ -2154,6 +2228,7 @@ class LogBrowser(App):
                 targets,
                 search_fn,
                 worker,
+                on_result=on_result,
             )
         return self._search_targets_parallel(
             request,
@@ -2161,6 +2236,7 @@ class LogBrowser(App):
             parallel_workers,
             search_fn,
             worker,
+            on_result=on_result,
         )
 
     def _search_targets_serial(
@@ -2169,6 +2245,7 @@ class LogBrowser(App):
         targets: list[Path],
         search_fn,
         worker: Worker[SearchOutput],
+        on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
     ) -> list[SmtpSearchResult]:
         total = len(targets)
         results: list[SmtpSearchResult] = []
@@ -2190,6 +2267,8 @@ class LogBrowser(App):
                 ignore_case=request.ignore_case,
             )
             results.append(result)
+            if on_result is not None:
+                on_result(index - 1, target, result)
             self.call_from_thread(
                 self._notify_search_progress,
                 "Searched",
@@ -2206,6 +2285,7 @@ class LogBrowser(App):
         workers: int,
         search_fn,
         worker: Worker[SearchOutput],
+        on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
     ) -> list[SmtpSearchResult]:
         total = len(targets)
         self.call_from_thread(
@@ -2218,6 +2298,7 @@ class LogBrowser(App):
                 targets,
                 workers=workers,
                 is_cancelled=lambda: worker.is_cancelled,
+                on_result=on_result,
                 on_completed=lambda done, count, target: self.call_from_thread(
                     self._notify_search_progress,
                     "Searched",
@@ -2236,7 +2317,35 @@ class LogBrowser(App):
                 targets,
                 search_fn,
                 worker,
+                on_result=on_result,
             )
+
+    def _on_live_search_result(
+        self,
+        index: int,
+        target: Path,
+        result: SmtpSearchResult,
+    ) -> None:
+        self._live_pending_results[index] = (target, result)
+        while self._live_next_index in self._live_pending_results:
+            next_target, next_result = self._live_pending_results.pop(
+                self._live_next_index
+            )
+            kind = self._live_kind or (self.current_kind or "")
+            lines = render_search_results(
+                [next_result],
+                [next_target],
+                kind,
+            )
+            self._live_rendered_lines.extend(lines)
+            self._write_output_lines(self._live_rendered_lines)
+            self._live_next_index += 1
+            if not self._first_result_notified:
+                elapsed = time.perf_counter() - self._search_started_at
+                self._notify(
+                    f"First results visible after {elapsed:.2f}s."
+                )
+                self._first_result_notified = True
 
     def _notify_search_progress(
         self,
@@ -2256,6 +2365,8 @@ class LogBrowser(App):
             output.targets,
             output.kind,
         )
+        self._live_rendered_lines = rendered_lines.copy()
+        self._live_pending_results = {}
         self.last_rendered_lines = rendered_lines
         self.last_rendered_kind = output.kind
         self._write_subsearch_snapshot(
@@ -2284,6 +2395,7 @@ class LogBrowser(App):
         self._search_in_progress = running
         if not running:
             self._search_worker = None
+            self._live_pending_results = {}
         if self.search_input is not None:
             self.search_input.disabled = running
         if self.search_mode_button is not None:
