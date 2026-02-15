@@ -1574,6 +1574,7 @@ class LogBrowser(App):
     .result-log {
         height: 1fr;
         width: 1fr;
+        background: $panel;
     }
 
     .results-header {
@@ -1637,6 +1638,7 @@ class LogBrowser(App):
 
     .selection-list {
         margin-bottom: 1;
+        background: $panel;
     }
     """
 
