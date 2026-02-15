@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import Enum, auto
 from functools import partial
@@ -65,6 +65,8 @@ from ..search_modes import (
 )
 from ..search import SmtpSearchResult
 from ..search import get_search_function
+from ..search import has_search_index
+from ..search import prime_search_index
 from ..syntax import spans_for_line
 from ..staging import stage_log
 
@@ -776,6 +778,7 @@ class SearchRequest:
     ignore_case: bool
     source_paths: list[Path]
     needs_staging: bool
+    use_index_cache: bool
 
 
 @dataclass(frozen=True)
@@ -798,6 +801,7 @@ def _search_single_target(
     mode: str,
     fuzzy_threshold: float,
     ignore_case: bool,
+    use_index_cache: bool,
 ) -> SmtpSearchResult:
     search_fn = get_search_function(kind)
     if search_fn is None:
@@ -808,6 +812,7 @@ def _search_single_target(
         mode=mode,
         fuzzy_threshold=fuzzy_threshold,
         ignore_case=ignore_case,
+        use_index_cache=use_index_cache,
     )
 
 
@@ -847,6 +852,7 @@ def _search_targets_in_process_pool(
                 request.mode,
                 request.fuzzy_threshold,
                 request.ignore_case,
+                request.use_index_cache,
             )
             future_to_index[future] = index
 
@@ -1489,6 +1495,7 @@ class LogBrowser(App):
         self._result_log_counter = 0
         self._context_menu_open = False
         self._search_worker: Worker[SearchOutput] | None = None
+        self._index_worker: Worker[None] | None = None
         self._search_in_progress = False
         self._live_rendered_lines: list[str] = []
         self._live_pending_results: dict[
@@ -2151,6 +2158,7 @@ class LogBrowser(App):
             ignore_case=True,
             source_paths=source_paths,
             needs_staging=needs_staging,
+            use_index_cache=needs_staging,
         )
 
     def _run_search_job(self, request: SearchRequest) -> SearchOutput:
@@ -2221,17 +2229,37 @@ class LogBrowser(App):
         worker: Worker[SearchOutput],
         on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
     ) -> list[SmtpSearchResult]:
+        use_index_cache = (
+            request.use_index_cache
+            and bool(targets)
+            and all(
+                has_search_index(path, request.kind)
+                for path in targets
+            )
+        )
+        active_request = replace(
+            request,
+            use_index_cache=use_index_cache,
+        )
+        if active_request.use_index_cache:
+            return self._search_targets_serial(
+                active_request,
+                targets,
+                search_fn,
+                worker,
+                on_result=on_result,
+            )
         parallel_workers = _parallel_worker_count(len(targets))
         if parallel_workers <= 1:
             return self._search_targets_serial(
-                request,
+                active_request,
                 targets,
                 search_fn,
                 worker,
                 on_result=on_result,
             )
         return self._search_targets_parallel(
-            request,
+            active_request,
             targets,
             parallel_workers,
             search_fn,
@@ -2265,6 +2293,7 @@ class LogBrowser(App):
                 mode=request.mode,
                 fuzzy_threshold=request.fuzzy_threshold,
                 ignore_case=request.ignore_case,
+                use_index_cache=request.use_index_cache,
             )
             results.append(result)
             if on_result is not None:
@@ -2379,6 +2408,45 @@ class LogBrowser(App):
         self._notify(
             f"Search complete. Processed {len(output.targets)} log(s)."
         )
+        self._schedule_index_warmup(output.kind, output.targets)
+
+    def _schedule_index_warmup(
+        self,
+        kind: str,
+        targets: list[Path],
+    ) -> None:
+        pending = [
+            path
+            for path in targets
+            if not has_search_index(path, kind)
+        ]
+        if not pending:
+            return
+        worker = self._index_worker
+        if worker is not None and not worker.is_finished:
+            return
+        self._index_worker = self.run_worker(
+            partial(self._run_index_warmup_job, kind, pending),
+            name="index-warmup-worker",
+            group="index-warmup",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _run_index_warmup_job(
+        self,
+        kind: str,
+        targets: list[Path],
+    ) -> None:
+        worker = get_current_worker()
+        for target in targets:
+            if worker.is_cancelled:
+                return
+            try:
+                prime_search_index(target, kind)
+            except Exception:
+                return
 
     def _cancel_search(self) -> None:
         worker = self._search_worker

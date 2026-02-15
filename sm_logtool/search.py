@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from array import array
+from collections import OrderedDict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 import re
+from threading import Lock
 from typing import Callable, List, Protocol, Tuple
 
 from .log_kinds import (
@@ -78,6 +81,7 @@ SUPPORTED_MATERIALIZATION_MODES = (
 _AUTO_SAMPLE_LINES = 10000
 _AUTO_MAX_LINE_MATCH_RATIO = 0.002
 _AUTO_MAX_OWNER_MATCH_RATIO = 0.04
+_INDEX_CACHE_MAX_BYTES = 256 * 1024 * 1024
 
 
 @dataclass
@@ -114,7 +118,26 @@ class SearchFunction(Protocol):
         fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
         ignore_case: bool = True,
         materialization: str = MATERIALIZATION_AUTO,
+        use_index_cache: bool = False,
     ) -> SmtpSearchResult: ...
+
+
+@dataclass(frozen=True)
+class _OwnerLineIndex:
+    key: str
+    signature: tuple[int, int]
+    owner_codes: array
+    owner_ids: list[str]
+    owner_first_lines: list[int]
+    line_count: int
+    size_bytes: int
+
+
+_INDEX_CACHE: "OrderedDict[tuple[str, str, int, int], _OwnerLineIndex]" = (
+    OrderedDict()
+)
+_INDEX_CACHE_BYTES = 0
+_INDEX_CACHE_LOCK = Lock()
 
 
 def search_smtp_conversations(
@@ -125,6 +148,7 @@ def search_smtp_conversations(
     fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
     materialization: str = MATERIALIZATION_AUTO,
+    use_index_cache: bool = False,
 ) -> SmtpSearchResult:
     """Return SMTP conversations containing ``term``.
 
@@ -141,6 +165,8 @@ def search_smtp_conversations(
         fuzzy_threshold=fuzzy_threshold,
         ignore_case=ignore_case,
         materialization=materialization,
+        use_index_cache=use_index_cache,
+        owner_key="smtp",
     )
 
 
@@ -152,6 +178,7 @@ def search_delivery_conversations(
     fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
     materialization: str = MATERIALIZATION_AUTO,
+    use_index_cache: bool = False,
 ) -> SmtpSearchResult:
     """Return delivery conversations containing ``term``."""
 
@@ -163,6 +190,8 @@ def search_delivery_conversations(
         fuzzy_threshold=fuzzy_threshold,
         ignore_case=ignore_case,
         materialization=materialization,
+        use_index_cache=use_index_cache,
+        owner_key="delivery",
     )
 
 
@@ -174,6 +203,7 @@ def search_admin_entries(
     fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
     materialization: str = MATERIALIZATION_AUTO,
+    use_index_cache: bool = False,
 ) -> SmtpSearchResult:
     """Return administrative log entries containing ``term``."""
 
@@ -185,6 +215,8 @@ def search_admin_entries(
         fuzzy_threshold=fuzzy_threshold,
         ignore_case=ignore_case,
         materialization=materialization,
+        use_index_cache=use_index_cache,
+        owner_key="admin",
     )
 
 
@@ -196,6 +228,7 @@ def search_imap_retrieval_entries(
     fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
     materialization: str = MATERIALIZATION_AUTO,
+    use_index_cache: bool = False,
 ) -> SmtpSearchResult:
     """Return IMAP retrieval entries containing ``term``."""
 
@@ -207,6 +240,8 @@ def search_imap_retrieval_entries(
         fuzzy_threshold=fuzzy_threshold,
         ignore_case=ignore_case,
         materialization=materialization,
+        use_index_cache=use_index_cache,
+        owner_key="imap-retrieval",
     )
 
 
@@ -218,6 +253,7 @@ def search_ungrouped_entries(
     fuzzy_threshold: float = DEFAULT_FUZZY_THRESHOLD,
     ignore_case: bool = True,
     materialization: str = MATERIALIZATION_AUTO,
+    use_index_cache: bool = False,
 ) -> SmtpSearchResult:
     """Return ungrouped log entries containing ``term``."""
 
@@ -228,6 +264,8 @@ def search_ungrouped_entries(
         fuzzy_threshold,
     )
     resolved_materialization = normalize_materialization_mode(materialization)
+    if use_index_cache:
+        return _search_ungrouped_with_index(log_path, term, matcher)
     if resolved_materialization == MATERIALIZATION_TWO_PASS:
         return _search_ungrouped_two_pass(log_path, term, matcher)
 
@@ -250,6 +288,343 @@ def normalize_materialization_mode(value: str) -> str:
     )
 
 
+def _owner_index_cache_key(
+    log_path: Path,
+    owner_key: str,
+) -> tuple[tuple[str, str, int, int], tuple[int, int]]:
+    stat = log_path.stat()
+    signature = (stat.st_size, stat.st_mtime_ns)
+    cache_key = (
+        str(log_path.resolve()),
+        owner_key,
+        signature[0],
+        signature[1],
+    )
+    return cache_key, signature
+
+
+def _estimate_owner_index_size(
+    owner_codes: array,
+    owner_ids: list[str],
+    owner_first_lines: list[int],
+) -> int:
+    owner_bytes = sum(len(value) for value in owner_ids)
+    return (
+        owner_codes.itemsize * len(owner_codes)
+        + len(owner_ids) * 64
+        + len(owner_first_lines) * 8
+        + owner_bytes
+    )
+
+
+def _evict_index_cache_if_needed() -> None:
+    global _INDEX_CACHE_BYTES
+    while _INDEX_CACHE and _INDEX_CACHE_BYTES > _INDEX_CACHE_MAX_BYTES:
+        _, oldest = _INDEX_CACHE.popitem(last=False)
+        _INDEX_CACHE_BYTES = max(0, _INDEX_CACHE_BYTES - oldest.size_bytes)
+
+
+def _cache_owner_line_index(
+    cache_key: tuple[str, str, int, int],
+    index: _OwnerLineIndex,
+) -> None:
+    global _INDEX_CACHE_BYTES
+    with _INDEX_CACHE_LOCK:
+        previous = _INDEX_CACHE.get(cache_key)
+        if previous is not None:
+            _INDEX_CACHE_BYTES = max(
+                0,
+                _INDEX_CACHE_BYTES - previous.size_bytes,
+            )
+        _INDEX_CACHE[cache_key] = index
+        _INDEX_CACHE.move_to_end(cache_key)
+        _INDEX_CACHE_BYTES += index.size_bytes
+        _evict_index_cache_if_needed()
+
+
+def _lookup_owner_line_index(
+    cache_key: tuple[str, str, int, int],
+) -> _OwnerLineIndex | None:
+    with _INDEX_CACHE_LOCK:
+        cached = _INDEX_CACHE.get(cache_key)
+        if cached is None:
+            return None
+        _INDEX_CACHE.move_to_end(cache_key)
+        return cached
+
+
+def _build_grouped_owner_line_index_with_scan(
+    log_path: Path,
+    owner_for_line: Callable[[str], str | None],
+    owner_key: str,
+    signature: tuple[int, int],
+    matcher: Callable[[str], bool],
+) -> tuple[_OwnerLineIndex, set[int], list[tuple[int, str]], int]:
+    owner_codes = array("i")
+    owner_ids: list[str] = []
+    owner_first_lines: list[int] = []
+    owner_to_code: dict[str, int] = {}
+    matched_codes: set[int] = set()
+    orphan_matches: list[tuple[int, str]] = []
+    current_code = -1
+    line_count = 0
+
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            line_count += 1
+            line = raw_line.rstrip("\r\n")
+            owner_id = owner_for_line(line)
+            if owner_id is not None:
+                code = owner_to_code.get(owner_id)
+                if code is None:
+                    code = len(owner_ids)
+                    owner_to_code[owner_id] = code
+                    owner_ids.append(owner_id)
+                    owner_first_lines.append(line_number)
+                current_code = code
+                owner_codes.append(code)
+                owner_code = code
+            else:
+                if starts_with_timestamp(line):
+                    current_code = -1
+                owner_codes.append(current_code)
+                owner_code = current_code
+
+            if not matcher(line):
+                continue
+            if owner_code >= 0:
+                matched_codes.add(owner_code)
+            else:
+                orphan_matches.append((line_number, line))
+
+    size_bytes = _estimate_owner_index_size(
+        owner_codes,
+        owner_ids,
+        owner_first_lines,
+    )
+    index = _OwnerLineIndex(
+        key=owner_key,
+        signature=signature,
+        owner_codes=owner_codes,
+        owner_ids=owner_ids,
+        owner_first_lines=owner_first_lines,
+        line_count=line_count,
+        size_bytes=size_bytes,
+    )
+    return index, matched_codes, orphan_matches, line_count
+
+
+def _build_ungrouped_owner_line_index_with_scan(
+    log_path: Path,
+    signature: tuple[int, int],
+    matcher: Callable[[str], bool],
+) -> tuple[_OwnerLineIndex, set[int], list[tuple[int, str]], int]:
+    owner_codes = array("i")
+    owner_ids: list[str] = []
+    owner_first_lines: list[int] = []
+    matched_codes: set[int] = set()
+    orphan_matches: list[tuple[int, str]] = []
+    current_code = -1
+    line_count = 0
+
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_number, raw_line in enumerate(handle, start=1):
+            line_count += 1
+            line = raw_line.rstrip("\r\n")
+            if starts_with_timestamp(line):
+                current_code = len(owner_ids)
+                owner_ids.append(f"{line_number}")
+                owner_first_lines.append(line_number)
+            owner_codes.append(current_code)
+            if not matcher(line):
+                continue
+            if current_code >= 0:
+                matched_codes.add(current_code)
+            else:
+                orphan_matches.append((line_number, line))
+
+    size_bytes = _estimate_owner_index_size(
+        owner_codes,
+        owner_ids,
+        owner_first_lines,
+    )
+    index = _OwnerLineIndex(
+        key="ungrouped",
+        signature=signature,
+        owner_codes=owner_codes,
+        owner_ids=owner_ids,
+        owner_first_lines=owner_first_lines,
+        line_count=line_count,
+        size_bytes=size_bytes,
+    )
+    return index, matched_codes, orphan_matches, line_count
+
+
+def _search_grouped_with_index(
+    log_path: Path,
+    term: str,
+    matcher: Callable[[str], bool],
+    owner_for_line: Callable[[str], str | None],
+    *,
+    owner_key: str,
+) -> SmtpSearchResult:
+    cache_key, signature = _owner_index_cache_key(log_path, owner_key)
+    cached = _lookup_owner_line_index(cache_key)
+    if cached is None:
+        (
+            index,
+            matched_codes,
+            orphan_matches,
+            total_lines,
+        ) = _build_grouped_owner_line_index_with_scan(
+            log_path,
+            owner_for_line,
+            owner_key,
+            signature,
+            matcher,
+        )
+        _cache_owner_line_index(cache_key, index)
+    else:
+        index = cached
+        matched_codes = set()
+        orphan_matches = []
+        total_lines = 0
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for zero_based, raw_line in enumerate(handle):
+                total_lines += 1
+                line = raw_line.rstrip("\r\n")
+                owner_code = (
+                    index.owner_codes[zero_based]
+                    if zero_based < len(index.owner_codes)
+                    else -1
+                )
+                if not matcher(line):
+                    continue
+                if owner_code >= 0:
+                    matched_codes.add(owner_code)
+                else:
+                    orphan_matches.append((zero_based + 1, line))
+
+    if not matched_codes:
+        return SmtpSearchResult(
+            term=term,
+            log_path=log_path,
+            conversations=[],
+            total_lines=total_lines,
+            orphan_matches=orphan_matches,
+        )
+
+    conversations_by_code: dict[int, Conversation] = {}
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for zero_based, raw_line in enumerate(handle):
+            owner_code = (
+                index.owner_codes[zero_based]
+                if zero_based < len(index.owner_codes)
+                else -1
+            )
+            if owner_code not in matched_codes:
+                continue
+            conversation = conversations_by_code.get(owner_code)
+            if conversation is None:
+                conversation = Conversation(
+                    message_id=index.owner_ids[owner_code],
+                    lines=[],
+                    first_line_number=index.owner_first_lines[owner_code],
+                )
+                conversations_by_code[owner_code] = conversation
+            conversation.lines.append(raw_line.rstrip("\r\n"))
+
+    conversations = list(conversations_by_code.values())
+    conversations.sort(key=lambda conv: conv.first_line_number)
+    return SmtpSearchResult(
+        term=term,
+        log_path=log_path,
+        conversations=conversations,
+        total_lines=total_lines,
+        orphan_matches=orphan_matches,
+    )
+
+
+def _search_ungrouped_with_index(
+    log_path: Path,
+    term: str,
+    matcher: Callable[[str], bool],
+) -> SmtpSearchResult:
+    cache_key, signature = _owner_index_cache_key(log_path, "ungrouped")
+    cached = _lookup_owner_line_index(cache_key)
+    if cached is None:
+        (
+            index,
+            matched_codes,
+            orphan_matches,
+            total_lines,
+        ) = _build_ungrouped_owner_line_index_with_scan(
+            log_path,
+            signature,
+            matcher,
+        )
+        _cache_owner_line_index(cache_key, index)
+    else:
+        index = cached
+        matched_codes = set()
+        orphan_matches = []
+        total_lines = 0
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            for zero_based, raw_line in enumerate(handle):
+                total_lines += 1
+                line = raw_line.rstrip("\r\n")
+                owner_code = (
+                    index.owner_codes[zero_based]
+                    if zero_based < len(index.owner_codes)
+                    else -1
+                )
+                if not matcher(line):
+                    continue
+                if owner_code >= 0:
+                    matched_codes.add(owner_code)
+                else:
+                    orphan_matches.append((zero_based + 1, line))
+
+    if not matched_codes:
+        return SmtpSearchResult(
+            term=term,
+            log_path=log_path,
+            conversations=[],
+            total_lines=total_lines,
+            orphan_matches=orphan_matches,
+        )
+
+    conversations_by_code: dict[int, Conversation] = {}
+    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+        for zero_based, raw_line in enumerate(handle):
+            owner_code = (
+                index.owner_codes[zero_based]
+                if zero_based < len(index.owner_codes)
+                else -1
+            )
+            if owner_code not in matched_codes:
+                continue
+            conversation = conversations_by_code.get(owner_code)
+            if conversation is None:
+                conversation = Conversation(
+                    message_id=index.owner_ids[owner_code],
+                    lines=[],
+                    first_line_number=index.owner_first_lines[owner_code],
+                )
+                conversations_by_code[owner_code] = conversation
+            conversation.lines.append(raw_line.rstrip("\r\n"))
+
+    conversations = list(conversations_by_code.values())
+    conversations.sort(key=lambda conv: conv.first_line_number)
+    return SmtpSearchResult(
+        term=term,
+        log_path=log_path,
+        conversations=conversations,
+        total_lines=total_lines,
+        orphan_matches=orphan_matches,
+    )
+
+
 def _search_grouped_entries(
     log_path: Path,
     term: str,
@@ -259,6 +634,8 @@ def _search_grouped_entries(
     fuzzy_threshold: float,
     ignore_case: bool,
     materialization: str,
+    use_index_cache: bool,
+    owner_key: str,
 ) -> SmtpSearchResult:
     matcher = _compile_line_matcher(
         term,
@@ -266,6 +643,14 @@ def _search_grouped_entries(
         ignore_case,
         fuzzy_threshold,
     )
+    if use_index_cache:
+        return _search_grouped_with_index(
+            log_path,
+            term,
+            matcher,
+            owner_for_line,
+            owner_key=owner_key,
+        )
     resolved_materialization = normalize_materialization_mode(materialization)
     if resolved_materialization == MATERIALIZATION_TWO_PASS:
         return _search_grouped_two_pass(
@@ -912,6 +1297,71 @@ def _window_similarity(
     if matcher.quick_ratio() < threshold:
         return 0.0
     return matcher.ratio()
+
+
+def _owner_strategy_for_kind(
+    kind: str,
+) -> tuple[str, Callable[[str], str | None] | None]:
+    kind_key = normalize_kind(kind)
+    if kind_key in {KIND_SMTP, KIND_IMAP, KIND_POP}:
+        return "smtp", _smtp_owner_id
+    if kind_key == KIND_DELIVERY:
+        return "delivery", _delivery_owner_id
+    if kind_key == KIND_ADMINISTRATIVE:
+        return "admin", _admin_owner_id
+    if kind_key == KIND_IMAP_RETRIEVAL:
+        return "imap-retrieval", _imap_retrieval_owner_id
+    if kind_key in {
+        KIND_ACTIVATION,
+        KIND_AUTOCLEANFOLDERS,
+        KIND_CALENDARS,
+        KIND_CONTENTFILTER,
+        KIND_EVENT,
+        KIND_GENERALERRORS,
+        KIND_INDEXING,
+        KIND_LDAP,
+        KIND_MAINTENANCE,
+        KIND_PROFILER,
+        KIND_SPAMCHECKS,
+        KIND_WEBDAV,
+    }:
+        return "ungrouped", None
+    raise ValueError(f"Unsupported log kind: {kind}")
+
+
+def has_search_index(log_path: Path, kind: str) -> bool:
+    owner_key, _owner_for_line = _owner_strategy_for_kind(kind)
+    cache_key, _signature = _owner_index_cache_key(log_path, owner_key)
+    return _lookup_owner_line_index(cache_key) is not None
+
+
+def prime_search_index(log_path: Path, kind: str) -> None:
+    owner_key, owner_for_line = _owner_strategy_for_kind(kind)
+    cache_key, signature = _owner_index_cache_key(log_path, owner_key)
+    if _lookup_owner_line_index(cache_key) is not None:
+        return
+
+    never_match = lambda _line: False
+    if owner_key == "ungrouped":
+        index, _matched, _orphans, _count = (
+            _build_ungrouped_owner_line_index_with_scan(
+                log_path,
+                signature,
+                never_match,
+            )
+        )
+    else:
+        assert owner_for_line is not None
+        index, _matched, _orphans, _count = (
+            _build_grouped_owner_line_index_with_scan(
+                log_path,
+                owner_for_line,
+                owner_key,
+                signature,
+                never_match,
+            )
+        )
+    _cache_owner_line_index(cache_key, index)
 
 
 def _smtp_owner_id(line: str) -> str | None:

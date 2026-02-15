@@ -475,3 +475,71 @@ def test_search_auto_materialization_can_fallback_to_two_pass(
     )
 
     assert called["value"]
+
+
+def test_search_index_cache_matches_non_cached_results(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n"
+        "00:00:01 [1.1.1.1][ABC123] User HELLO logged in\n"
+        "00:00:02 [2.2.2.2][XYZ789] hello world\n"
+    )
+
+    uncached = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        use_index_cache=False,
+    )
+    cached = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        use_index_cache=True,
+    )
+
+    assert cached == uncached
+
+
+def test_search_index_cache_reuses_owner_index(monkeypatch, tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+
+    first = search.search_smtp_conversations(
+        log_path,
+        "First",
+        use_index_cache=True,
+    )
+    assert first.total_conversations == 1
+
+    def fail_owner_parse(_line: str) -> str | None:
+        raise AssertionError("owner parser should not run for cached index")
+
+    monkeypatch.setattr(search, "_smtp_owner_id", fail_owner_parse)
+    second = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+    )
+
+    assert second.total_conversations == 1
+
+
+def test_prime_search_index_marks_index_cached(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+
+    assert not search.has_search_index(log_path, "smtp")
+    search.prime_search_index(log_path, "smtp")
+    assert search.has_search_index(log_path, "smtp")
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+    )
+    assert result.total_conversations == 1
