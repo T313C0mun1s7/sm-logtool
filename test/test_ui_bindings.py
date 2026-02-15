@@ -389,6 +389,67 @@ async def test_search_step_busy_state_toggles_controls(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_perform_search_notifies_submit_immediately(
+    tmp_path,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
+
+    class _WorkerStub:
+        is_finished = False
+        is_cancelled = False
+
+    def _run_worker_stub(*_args, **_kwargs):
+        return _WorkerStub()
+
+    monkeypatch.setattr(app, "run_worker", _run_worker_stub)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        assert app.search_input is not None
+        app.search_input.value = "Connection"
+        app._perform_search()
+        await pilot.pause()
+
+        status = app.wizard.query_one("#status", Static)
+        assert "Search submitted. Preparing logs..." in str(status.render())
+        assert app._search_in_progress is True
+        cancel_button = app.wizard.query_one("#cancel-search", Button)
+        assert cancel_button.disabled is False
+
+
+@pytest.mark.asyncio
+async def test_target_progress_status_is_determinate(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._notify_target_search_progress(
+            1,
+            2,
+            "2024.01.01-smtpLog.log",
+            512,
+            1024,
+        )
+        await pilot.pause()
+
+        status = app.wizard.query_one("#status", Static)
+        status_text = str(status.render())
+        assert "Searching 1/2 log(s): 2024.01.01-smtpLog.log" in status_text
+        assert "50%" in status_text
+        assert "(512.0B/1.0KB)" in status_text
+
+
+@pytest.mark.asyncio
 async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
     logs_dir = tmp_path / "logs"
     staging_dir = tmp_path / "staging"
