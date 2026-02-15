@@ -62,7 +62,9 @@ Configuration is YAML with these keys:
 - `logs_dir`: source SmarterMail logs directory.
 - `staging_dir`: working directory used for copied/unzipped logs.
 - `default_kind`: default log kind (for example `smtp`).
-- `theme`: Textual UI theme name (for example `textual-dark`).
+- `theme`: Textual UI theme name (for example `Cyberdark`,
+  `Cybernotdark`, or `textual-dark`).
+  Results syntax highlighting follows the selected UI theme palette.
 
 Example:
 
@@ -70,7 +72,7 @@ Example:
 logs_dir: /var/lib/smartermail/Logs
 staging_dir: /var/tmp/sm-logtool/logs
 default_kind: smtp
-theme: textual-dark
+theme: Cyberdark
 ```
 
 If `staging_dir` does not exist yet, the app creates it automatically.

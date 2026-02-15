@@ -20,7 +20,7 @@ _DEFAULT_CONFIG_ENV = "SM_LOGTOOL_CONFIG"
 DEFAULT_LOGS_DIR = Path("/var/lib/smartermail/Logs")
 DEFAULT_STAGING_DIR = Path("/var/tmp/sm-logtool/logs")
 DEFAULT_KIND = KIND_SMTP
-DEFAULT_THEME = "textual-dark"
+DEFAULT_THEME = "Cyberdark"
 
 
 @dataclass(frozen=True)

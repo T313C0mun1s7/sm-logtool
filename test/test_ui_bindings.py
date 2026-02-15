@@ -12,6 +12,8 @@ from sm_logtool.search import get_search_function
 from sm_logtool.search import SmtpSearchResult
 from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
+from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
+from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
 
 
 def write_sample_logs(root: Path) -> None:
@@ -684,13 +686,50 @@ async def test_startup_applies_configured_theme_when_available(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_first_party_themes_are_registered_by_default(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app.theme == CYBERDARK_THEME_NAME
+        assert CYBERDARK_THEME_NAME in app.available_themes
+        assert CYBERNOTDARK_THEME_NAME in app.available_themes
+
+
+@pytest.mark.asyncio
+async def test_results_area_switches_with_app_theme(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+
+        assert app.output_log is not None
+        assert app.output_log.theme == CYBERDARK_THEME_NAME
+
+        app.theme = CYBERNOTDARK_THEME_NAME
+        await pilot.pause()
+        assert app.output_log.theme == CYBERNOTDARK_THEME_NAME
+
+        app.theme = CYBERDARK_THEME_NAME
+        await pilot.pause()
+        assert app.output_log.theme == CYBERDARK_THEME_NAME
+
+        app.theme = "dracula"
+        await pilot.pause()
+        assert app.output_log.theme == "dracula"
+
+
+@pytest.mark.asyncio
 async def test_startup_handles_invalid_configured_theme_gracefully(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
     app = LogBrowser(logs_dir=logs_dir, theme="no-such-theme")
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert app.theme == "textual-dark"
+        assert app.theme == CYBERDARK_THEME_NAME
         status = app.wizard.query_one("#status", Static)
         assert "no-such-theme" in str(status.render())
 
@@ -704,18 +743,18 @@ async def test_theme_change_persists_to_config_file(tmp_path):
         "logs_dir: /var/lib/smartermail/Logs\n"
         "staging_dir: /var/tmp/sm-logtool/logs\n"
         "default_kind: smtp\n"
-        "theme: textual-dark\n",
+        "theme: Cyberdark\n",
         encoding="utf-8",
     )
     app = LogBrowser(
         logs_dir=logs_dir,
         config_path=cfg_path,
-        theme="textual-dark",
+        theme="Cyberdark",
     )
     async with app.run_test() as pilot:
         await pilot.pause()
-        app.theme = "textual-light"
+        app.theme = "Cybernotdark"
         await pilot.pause()
 
     saved = config_module.load_config(cfg_path)
-    assert saved.theme == "textual-light"
+    assert saved.theme == "Cybernotdark"

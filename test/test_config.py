@@ -34,7 +34,7 @@ def test_load_config_creates_default_config_file(tmp_path, monkeypatch):
     assert app_config.logs_dir == Path("/var/lib/smartermail/Logs")
     assert app_config.staging_dir == Path("/var/tmp/sm-logtool/logs")
     assert app_config.default_kind == "smtp"
-    assert app_config.theme == "textual-dark"
+    assert app_config.theme == "Cyberdark"
 
 
 def test_load_config_creates_env_config_file(tmp_path, monkeypatch):
@@ -48,7 +48,7 @@ def test_load_config_creates_env_config_file(tmp_path, monkeypatch):
     assert app_config.logs_dir == Path("/var/lib/smartermail/Logs")
     assert app_config.staging_dir == Path("/var/tmp/sm-logtool/logs")
     assert app_config.default_kind == "smtp"
-    assert app_config.theme == "textual-dark"
+    assert app_config.theme == "Cyberdark"
 
 
 def test_load_config_reads_values(tmp_path):
