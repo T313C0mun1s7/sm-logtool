@@ -47,6 +47,11 @@ from .search_modes import (
     wildcard_to_regex,
 )
 
+
+_FUZZY_ANCHOR_LIMIT = 120
+_FUZZY_STRIDE_DIVISOR = 6
+
+
 @dataclass
 class Conversation:
     """Log conversation grouped by message identifier."""
@@ -501,10 +506,10 @@ def _compile_line_matcher(
     if resolved_mode == MODE_FUZZY:
         threshold = normalize_fuzzy_threshold(fuzzy_threshold)
         normalized_term = term.lower() if ignore_case else term
-        return lambda line: _fuzzy_line_match(
+        return _compile_fuzzy_line_matcher(
             normalized_term,
-            line.lower() if ignore_case else line,
             threshold,
+            ignore_case=ignore_case,
         )
 
     pattern = _compile_match_pattern(term, resolved_mode, ignore_case)
@@ -521,31 +526,139 @@ def _compile_literal_line_matcher(
     return lambda line: term in line
 
 
-def _fuzzy_line_match(term: str, line: str, threshold: float) -> bool:
+def _compile_fuzzy_line_matcher(
+    term: str,
+    threshold: float,
+    *,
+    ignore_case: bool,
+) -> Callable[[str], bool]:
+    term_len = len(term)
+    if term_len <= 0:
+        return lambda _line: False
+    stride = max(1, term_len // _FUZZY_STRIDE_DIVISOR)
+    anchor_offsets = _build_anchor_offsets(term_len)
+    anchor_chars = tuple(term[offset] for offset in anchor_offsets)
+
+    if ignore_case:
+        return lambda line: _fuzzy_line_match(
+            term,
+            line.lower(),
+            threshold,
+            term_len,
+            stride,
+            anchor_offsets,
+            anchor_chars,
+        )
+    return lambda line: _fuzzy_line_match(
+        term,
+        line,
+        threshold,
+        term_len,
+        stride,
+        anchor_offsets,
+        anchor_chars,
+    )
+
+
+def _fuzzy_line_match(
+    term: str,
+    line: str,
+    threshold: float,
+    term_len: int,
+    stride: int,
+    anchor_offsets: tuple[int, ...],
+    anchor_chars: tuple[str, ...],
+) -> bool:
     if not term:
         return False
     if term in line:
         return True
-    ratio = _max_similarity(term, line)
-    return ratio >= threshold
-
-
-def _max_similarity(term: str, line: str) -> float:
     if not line:
-        return 0.0
-    if len(line) <= len(term):
-        return SequenceMatcher(None, term, line).ratio()
+        return False
+    if len(line) <= term_len:
+        return SequenceMatcher(None, term, line).ratio() >= threshold
 
-    window = len(term)
-    best = SequenceMatcher(None, term, line).ratio()
-    for start in range(0, len(line) - window + 1):
-        chunk = line[start:start + window]
-        ratio = SequenceMatcher(None, term, chunk).ratio()
-        if ratio > best:
-            best = ratio
-            if best >= 1.0:
-                return best
-    return best
+    max_start = len(line) - term_len
+    starts = _candidate_window_starts(
+        line,
+        max_start,
+        stride,
+        anchor_offsets,
+        anchor_chars,
+    )
+    matcher = SequenceMatcher(None, term)
+    best_start = 0
+    best_ratio = 0.0
+
+    for start in starts:
+        ratio = _window_similarity(matcher, line, start, term_len, threshold)
+        if ratio >= threshold:
+            return True
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_start = start
+
+    if best_ratio <= 0.0 or stride <= 1:
+        return False
+
+    begin = max(0, best_start - stride + 1)
+    end = min(max_start, best_start + stride - 1)
+    for start in range(begin, end + 1):
+        if start in starts:
+            continue
+        ratio = _window_similarity(matcher, line, start, term_len, threshold)
+        if ratio >= threshold:
+            return True
+    return False
+
+
+def _build_anchor_offsets(term_len: int) -> tuple[int, ...]:
+    if term_len <= 1:
+        return (0,)
+    midpoint = term_len // 2
+    return (0, midpoint, term_len - 1)
+
+
+def _candidate_window_starts(
+    line: str,
+    max_start: int,
+    stride: int,
+    anchor_offsets: tuple[int, ...],
+    anchor_chars: tuple[str, ...],
+) -> set[int]:
+    starts: set[int] = {0, max_start}
+    for start in range(0, max_start + 1, stride):
+        starts.add(start)
+
+    for offset, char in zip(anchor_offsets, anchor_chars):
+        hits = 0
+        position = line.find(char)
+        while position != -1 and hits < _FUZZY_ANCHOR_LIMIT:
+            start = position - offset
+            if start < 0:
+                start = 0
+            if start > max_start:
+                start = max_start
+            starts.add(start)
+            position = line.find(char, position + 1)
+            hits += 1
+    return starts
+
+
+def _window_similarity(
+    matcher: SequenceMatcher,
+    line: str,
+    start: int,
+    window: int,
+    threshold: float,
+) -> float:
+    chunk = line[start:start + window]
+    matcher.set_seq2(chunk)
+    if matcher.real_quick_ratio() < threshold:
+        return 0.0
+    if matcher.quick_ratio() < threshold:
+        return 0.0
+    return matcher.ratio()
 
 
 def get_search_function(
