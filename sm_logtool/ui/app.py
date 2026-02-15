@@ -5,7 +5,6 @@ from __future__ import annotations
 import inspect
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import Enum, auto
@@ -2029,13 +2028,17 @@ class LogBrowser(App):
                     self.last_rendered_lines,
                     self.last_rendered_kind,
                 )
-            elif self.step == WizardStep.RESULTS:
-                self._show_step_search()
             error = event.worker.error
-            if error is None:
-                self._notify("Search failed.")
-                return
-            self._notify(str(error))
+            message = "Search failed." if error is None else str(error)
+            if not self._live_rendered_lines:
+                self._show_step_results()
+                self._write_output_lines(
+                    [
+                        "[search error]",
+                        message,
+                    ]
+                )
+            self._notify(message)
             return
         if event.state != WorkerState.SUCCESS:
             return
@@ -2370,11 +2373,20 @@ class LogBrowser(App):
                 total,
                 source_path.name,
             )
-            staged = stage_log(
-                source_path,
-                staging_dir=self.staging_dir,
-            )
+            try:
+                staged = stage_log(
+                    source_path,
+                    staging_dir=self.staging_dir,
+                )
+            except Exception as exc:
+                self.call_from_thread(
+                    self._notify,
+                    f"Skipping {source_path.name}: {exc}",
+                )
+                continue
             targets.append(staged.staged_path)
+        if not targets:
+            raise ValueError("No selected logs were available for search.")
         return targets
 
     def _search_targets(
@@ -2573,15 +2585,13 @@ class LogBrowser(App):
                     target.name,
                 ),
             )
-        except (
-            BrokenProcessPool,
-            OSError,
-            PermissionError,
-            RuntimeError,
-        ):
+        except WorkerCancelled:
+            raise
+        except Exception as exc:
             self.call_from_thread(
                 self._notify,
-                "Parallel search unavailable; falling back to serial mode.",
+                "Parallel search unavailable; falling back to serial mode. "
+                f"({type(exc).__name__})",
             )
             return self._search_targets_serial(
                 request,

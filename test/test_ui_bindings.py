@@ -456,7 +456,11 @@ async def test_target_progress_status_is_determinate(tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "raised_error",
-    [PermissionError("no access"), RuntimeError("pool failed")],
+    [
+        PermissionError("no access"),
+        RuntimeError("pool failed"),
+        ValueError("bad pool state"),
+    ],
 )
 async def test_parallel_search_falls_back_to_serial(
     tmp_path,
@@ -514,6 +518,37 @@ async def test_parallel_search_falls_back_to_serial(
             "2024.01.01-smtpLog.log",
             "2024.01.02-smtpLog.log",
         ]
+
+
+@pytest.mark.asyncio
+async def test_worker_error_stays_on_results_and_shows_message(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        app._set_search_running(True)
+        await pilot.pause()
+
+        class _WorkerStub:
+            error = ValueError("boom")
+            result = None
+
+        worker = _WorkerStub()
+        app._search_worker = worker
+
+        class _EventStub:
+            def __init__(self) -> None:
+                self.worker = worker
+                self.state = ui_app_module.WorkerState.ERROR
+
+        app.on_worker_state_changed(_EventStub())
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        text = app._get_full_results_text() or ""
+        assert "[search error]" in text
+        assert "boom" in text
 
 
 @pytest.mark.asyncio
