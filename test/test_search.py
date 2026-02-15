@@ -384,3 +384,94 @@ def test_search_rejects_unknown_mode(tmp_path):
 
     with pytest.raises(ValueError):
         search.search_smtp_conversations(log_path, "Connection", mode="bad")
+
+
+def test_search_grouped_two_pass_matches_single_pass(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Start conversation\n"
+        "00:00:01 [1.1.1.1][ABC123] Continuation details\n"
+        "00:00:02 [2.2.2.2][XYZ789] Nothing interesting\n"
+        "00:00:03 [2.2.2.2][XYZ789] needle appears here\n"
+        "00:00:04 Orphan needle line\n"
+    )
+
+    single = search.search_smtp_conversations(
+        log_path,
+        "needle",
+        materialization="single-pass",
+    )
+    two_pass = search.search_smtp_conversations(
+        log_path,
+        "needle",
+        materialization="two-pass",
+    )
+
+    assert two_pass == single
+
+
+def test_search_ungrouped_two_pass_matches_single_pass(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 First entry\n"
+        "  detail line\n"
+        "00:00:02.200 Second entry needle\n"
+        "  traceback detail\n"
+    )
+
+    single = search.search_ungrouped_entries(
+        log_path,
+        "needle",
+        materialization="single-pass",
+    )
+    two_pass = search.search_ungrouped_entries(
+        log_path,
+        "needle",
+        materialization="two-pass",
+    )
+
+    assert two_pass == single
+
+
+def test_search_rejects_unknown_materialization_mode(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported materialization mode"):
+        search.search_smtp_conversations(
+            log_path,
+            "Connection",
+            materialization="bad-mode",
+        )
+
+
+def test_search_auto_materialization_can_fallback_to_two_pass(
+    monkeypatch,
+    tmp_path,
+):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Start conversation\n"
+        "00:00:01 [1.1.1.1][ABC123] Continuation details\n"
+        "00:00:02 [2.2.2.2][XYZ789] Nothing interesting\n"
+    )
+
+    called = {"value": False}
+    original = search._search_grouped_two_pass
+
+    def wrapped(*args, **kwargs):  # type: ignore[no-untyped-def]
+        called["value"] = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(search, "_AUTO_SAMPLE_LINES", 2)
+    monkeypatch.setattr(search, "_search_grouped_two_pass", wrapped)
+
+    search.search_smtp_conversations(
+        log_path,
+        "needle-that-does-not-exist",
+        materialization="auto",
+    )
+
+    assert called["value"]

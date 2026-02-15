@@ -28,6 +28,8 @@ from sm_logtool.logfiles import (
 from sm_logtool.logfiles import parse_stamp
 from sm_logtool.search import _compile_line_matcher
 from sm_logtool.search import get_search_function
+from sm_logtool.search import normalize_materialization_mode
+from sm_logtool.search import SUPPORTED_MATERIALIZATION_MODES
 from sm_logtool.search_modes import DEFAULT_FUZZY_THRESHOLD
 from sm_logtool.search_modes import SUPPORTED_SEARCH_MODES
 from sm_logtool.search_modes import normalize_search_mode
@@ -63,6 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--staging-dir", type=Path, required=True)
     parser.add_argument("--kind", required=True)
     parser.add_argument("--term", required=True)
+    parser.add_argument(
+        "--materialization",
+        choices=SUPPORTED_MATERIALIZATION_MODES,
+        default="auto",
+        help=(
+            "Conversation materialization strategy. "
+            "auto switches to two-pass for sparse queries."
+        ),
+    )
     parser.add_argument(
         "--mode",
         action="append",
@@ -241,6 +252,7 @@ def _run_worker(args: argparse.Namespace) -> int:
     today_value = _parse_today(args.today)
     kind = normalize_kind(args.kind)
     search_mode = normalize_search_mode(args.worker_mode)
+    materialization = normalize_materialization_mode(args.materialization)
     search_fn = get_search_function(kind)
     if search_fn is None:
         raise ValueError(f"No search handler for log kind: {kind}")
@@ -283,6 +295,7 @@ def _run_worker(args: argparse.Namespace) -> int:
             mode=search_mode,
             fuzzy_threshold=args.fuzzy_threshold,
             ignore_case=not args.case_sensitive,
+            materialization=materialization,
         )
         results.append(result)
     elapsed = time.perf_counter() - started
@@ -345,6 +358,8 @@ def _worker_command(
         command.extend(["--today", args.today])
     if args.skip_first_match_scan:
         command.append("--skip-first-match-scan")
+    if args.materialization:
+        command.extend(["--materialization", args.materialization])
     for value in args.date or []:
         command.extend(["--date", value])
     for value in args.log_file or []:
@@ -402,6 +417,7 @@ def _print_summary(
         print(f"Label: {args.label}")
     print(f"Kind: {normalize_kind(args.kind)}")
     print(f"Modes: {', '.join(modes)}")
+    print(f"Materialization: {args.materialization}")
     print(f"Repeat: {args.repeat}, Warmup: {args.warmup}")
     print(f"Logs dir: {args.logs_dir}")
     print(f"Staging dir: {args.staging_dir}")
@@ -459,6 +475,7 @@ def _write_json(
         "term": args.term,
         "repeat": args.repeat,
         "warmup": args.warmup,
+        "materialization": args.materialization,
         "runs": [asdict(run) for run in runs],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
