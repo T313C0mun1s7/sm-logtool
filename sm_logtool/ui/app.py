@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import Enum, auto
 from functools import partial
 from itertools import groupby
+import multiprocessing as mp
+import os
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -782,6 +785,90 @@ class SearchOutput:
     term: str
     targets: list[Path]
     results: list[SmtpSearchResult]
+
+
+MAX_SEARCH_WORKERS = 4
+
+
+def _search_single_target(
+    kind: str,
+    target: Path,
+    term: str,
+    mode: str,
+    fuzzy_threshold: float,
+    ignore_case: bool,
+) -> SmtpSearchResult:
+    search_fn = get_search_function(kind)
+    if search_fn is None:
+        raise ValueError(f"No search handler for log kind: {kind}")
+    return search_fn(
+        target,
+        term,
+        mode=mode,
+        fuzzy_threshold=fuzzy_threshold,
+        ignore_case=ignore_case,
+    )
+
+
+def _parallel_worker_count(target_count: int) -> int:
+    if target_count < 2:
+        return 1
+    cpu_count = os.cpu_count() or 1
+    return max(1, min(target_count, cpu_count, MAX_SEARCH_WORKERS))
+
+
+def _search_targets_in_process_pool(
+    request: SearchRequest,
+    targets: list[Path],
+    *,
+    workers: int,
+    is_cancelled: Callable[[], bool] | None = None,
+    on_completed: Callable[[int, int, Path], None] | None = None,
+) -> list[SmtpSearchResult]:
+    executor = ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=mp.get_context("spawn"),
+    )
+    future_to_index = {}
+    results: list[SmtpSearchResult | None] = [None] * len(targets)
+    completed = 0
+    try:
+        for index, target in enumerate(targets):
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            future = executor.submit(
+                _search_single_target,
+                request.kind,
+                target,
+                request.term,
+                request.mode,
+                request.fuzzy_threshold,
+                request.ignore_case,
+            )
+            future_to_index[future] = index
+
+        while future_to_index:
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            done, _pending = wait(
+                set(future_to_index),
+                timeout=0.2,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                continue
+            for future in done:
+                index = future_to_index.pop(future)
+                result = future.result()
+                results[index] = result
+                completed += 1
+                if on_completed is not None:
+                    on_completed(completed, len(targets), targets[index])
+    finally:
+        executor.shutdown(cancel_futures=True)
+    return [result for result in results if result is not None]
 
 
 class KindListItem(ListItem):
@@ -2060,6 +2147,29 @@ class LogBrowser(App):
         search_fn,
         worker: Worker[SearchOutput],
     ) -> list[SmtpSearchResult]:
+        parallel_workers = _parallel_worker_count(len(targets))
+        if parallel_workers <= 1:
+            return self._search_targets_serial(
+                request,
+                targets,
+                search_fn,
+                worker,
+            )
+        return self._search_targets_parallel(
+            request,
+            targets,
+            parallel_workers,
+            search_fn,
+            worker,
+        )
+
+    def _search_targets_serial(
+        self,
+        request: SearchRequest,
+        targets: list[Path],
+        search_fn,
+        worker: Worker[SearchOutput],
+    ) -> list[SmtpSearchResult]:
         total = len(targets)
         results: list[SmtpSearchResult] = []
         for index, target in enumerate(targets, start=1):
@@ -2088,6 +2198,45 @@ class LogBrowser(App):
                 target.name,
             )
         return results
+
+    def _search_targets_parallel(
+        self,
+        request: SearchRequest,
+        targets: list[Path],
+        workers: int,
+        search_fn,
+        worker: Worker[SearchOutput],
+    ) -> list[SmtpSearchResult]:
+        total = len(targets)
+        self.call_from_thread(
+            self._notify,
+            f"Searching {total} log(s) with {workers} workers...",
+        )
+        try:
+            return _search_targets_in_process_pool(
+                request,
+                targets,
+                workers=workers,
+                is_cancelled=lambda: worker.is_cancelled,
+                on_completed=lambda done, count, target: self.call_from_thread(
+                    self._notify_search_progress,
+                    "Searched",
+                    done,
+                    count,
+                    target.name,
+                ),
+            )
+        except (PermissionError, OSError):
+            self.call_from_thread(
+                self._notify,
+                "Parallel search unavailable; falling back to serial mode.",
+            )
+            return self._search_targets_serial(
+                request,
+                targets,
+                search_fn,
+                worker,
+            )
 
     def _notify_search_progress(
         self,

@@ -5,6 +5,8 @@ from rich.text import Text
 from textual.widgets import Button, Static
 
 from sm_logtool import config as config_module
+from sm_logtool.search import get_search_function
+from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 
 
@@ -263,6 +265,60 @@ async def test_search_step_busy_state_toggles_controls(tmp_path):
         assert app.search_input.disabled is False
         assert search_button.disabled is False
         assert cancel_button.disabled is True
+
+
+@pytest.mark.asyncio
+async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "2024.01.01-smtpLog.log").write_text(
+        "00:00:00 [1.1.1.1][A] Connection initiated\n",
+        encoding="utf-8",
+    )
+    (logs_dir / "2024.01.02-smtpLog.log").write_text(
+        "00:00:00 [2.2.2.2][B] Connection initiated\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        ui_app_module,
+        "_search_targets_in_process_pool",
+        lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError()),
+    )
+
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        infos = app._logs_by_kind["smtp"]
+        app.current_kind = "smtp"
+        app.selected_logs = [infos[1], infos[0]]
+        app._show_step_search()
+        await pilot.pause()
+        assert app.search_input is not None
+        app.search_input.value = "Connection"
+        request = app._build_search_request()
+        assert request is not None
+        search_fn = get_search_function("smtp")
+        assert search_fn is not None
+        app.call_from_thread = (  # type: ignore[assignment]
+            lambda fn, *args: fn(*args)
+        )
+
+        class _Worker:
+            is_cancelled = False
+
+        results = app._search_targets_parallel(
+            request,
+            request.source_paths,
+            workers=2,
+            search_fn=search_fn,
+            worker=_Worker(),
+        )
+        names = [result.log_path.name for result in results]
+        assert names == [
+            "2024.01.01-smtpLog.log",
+            "2024.01.02-smtpLog.log",
+        ]
 
 
 @pytest.mark.asyncio
