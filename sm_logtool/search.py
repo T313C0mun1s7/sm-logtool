@@ -1261,6 +1261,10 @@ def _compile_line_matcher(
     resolved_mode = normalize_search_mode(mode)
     if resolved_mode == MODE_LITERAL:
         return _compile_literal_line_matcher(term, ignore_case)
+    if resolved_mode == MODE_WILDCARD:
+        return _compile_wildcard_line_matcher(term, ignore_case)
+    if resolved_mode == MODE_REGEX:
+        return _compile_regex_line_matcher(term, ignore_case)
 
     if resolved_mode == MODE_FUZZY:
         threshold = normalize_fuzzy_threshold(fuzzy_threshold)
@@ -1285,6 +1289,71 @@ def _compile_literal_line_matcher(
         lower = str.lower
         return lambda line: term in lower(line)
     return lambda line: term in line
+
+
+def _compile_wildcard_line_matcher(
+    term: str,
+    ignore_case: bool,
+) -> Callable[[str], bool]:
+    if "*" not in term and "?" not in term:
+        return _compile_literal_line_matcher(term, ignore_case)
+    pattern = _compile_match_pattern(term, MODE_WILDCARD, ignore_case)
+    search = pattern.search
+    literal_hint = _longest_wildcard_literal(term)
+    if len(literal_hint) < 2:
+        return lambda line: search(line) is not None
+    if ignore_case:
+        hint = literal_hint.lower()
+        return lambda line: hint in line.lower() and search(line) is not None
+    return lambda line: literal_hint in line and search(line) is not None
+
+
+def _longest_wildcard_literal(term: str) -> str:
+    longest = ""
+    current: list[str] = []
+    for char in term:
+        if char in {"*", "?"}:
+            token = "".join(current)
+            if len(token) > len(longest):
+                longest = token
+            current.clear()
+            continue
+        current.append(char)
+    token = "".join(current)
+    if len(token) > len(longest):
+        longest = token
+    return longest
+
+
+def _compile_regex_line_matcher(
+    term: str,
+    ignore_case: bool,
+) -> Callable[[str], bool]:
+    if _is_plain_regex_literal(term):
+        return _compile_literal_line_matcher(term, ignore_case)
+    pattern = _compile_match_pattern(term, MODE_REGEX, ignore_case)
+    search = pattern.search
+    return lambda line: search(line) is not None
+
+
+def _is_plain_regex_literal(term: str) -> bool:
+    regex_meta = {
+        "\\",
+        ".",
+        "^",
+        "$",
+        "*",
+        "+",
+        "?",
+        "{",
+        "}",
+        "[",
+        "]",
+        "|",
+        "(",
+        ")",
+    }
+    return all(char not in regex_meta for char in term)
 
 
 def _compile_fuzzy_line_matcher(

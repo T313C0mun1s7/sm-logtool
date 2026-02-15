@@ -148,6 +148,28 @@ def test_search_literal_mode_respects_case_sensitivity_flag(tmp_path):
     assert sensitive.total_conversations == 0
 
 
+def test_search_regex_mode_respects_case_sensitivity_flag(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] User HELLO logged in\n",
+    )
+
+    insensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="regex",
+    )
+    sensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="regex",
+        ignore_case=False,
+    )
+
+    assert insensitive.total_conversations == 1
+    assert sensitive.total_conversations == 0
+
+
 def test_search_delivery_conversations_continuations(tmp_path):
     log_path = tmp_path / "delivery.log"
     log_path.write_text(
@@ -260,6 +282,16 @@ def test_search_ungrouped_entries_supports_wildcard_mode(tmp_path):
         mode="wildcard",
     )
     assert single_char.total_conversations == 1
+
+
+def test_longest_wildcard_literal_prefers_longest_token():
+    assert search._longest_wildcard_literal("ab*cd??efghi*j") == "efghi"
+    assert search._longest_wildcard_literal("*?*") == ""
+
+
+def test_plain_regex_literal_detection():
+    assert search._is_plain_regex_literal("AUTH")
+    assert not search._is_plain_regex_literal("AUTH.*")
 
 
 def test_search_ungrouped_entries_supports_regex_mode(tmp_path):

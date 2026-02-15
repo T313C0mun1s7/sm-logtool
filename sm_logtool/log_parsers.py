@@ -8,7 +8,6 @@ from typing import Iterable, List, Tuple
 
 
 _TIME_PATTERN = r"\d{2}:\d{2}:\d{2}(?:\.\d{3})?"
-_TIME_PREFIX = re.compile(rf"^{_TIME_PATTERN}")
 
 _SMTP_PATTERN = re.compile(
     rf"^(?P<time>{_TIME_PATTERN}) "
@@ -232,7 +231,18 @@ def parse_time_line(line: str) -> TimeLogLine | None:
 def starts_with_timestamp(line: str) -> bool:
     """Return True when a line begins with the timestamp format."""
 
-    return bool(_TIME_PREFIX.match(line))
+    if len(line) < 8:
+        return False
+    return (
+        line[0].isdigit()
+        and line[1].isdigit()
+        and line[2] == ":"
+        and line[3].isdigit()
+        and line[4].isdigit()
+        and line[5] == ":"
+        and line[6].isdigit()
+        and line[7].isdigit()
+    )
 
 
 def parse_delivery_line(line: str) -> DeliveryLogLine | None:
