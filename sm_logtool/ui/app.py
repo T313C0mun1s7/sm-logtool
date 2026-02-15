@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 from collections import defaultdict
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import Enum, auto
@@ -796,6 +797,7 @@ MAX_SEARCH_WORKERS = 4
 _LIVE_MATCH_BATCH_SIZE = 64
 _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
+_LIVE_PROGRESS_BAR_WIDTH = 24
 
 
 def _search_single_target(
@@ -846,6 +848,17 @@ def _format_size(value: int) -> str:
             break
         amount /= 1024.0
     return f"{amount:.1f}{unit}"
+
+
+def _progress_bar(
+    percent: int,
+    *,
+    width: int = _LIVE_PROGRESS_BAR_WIDTH,
+) -> str:
+    safe_width = max(4, width)
+    safe_percent = max(0, min(percent, 100))
+    filled = int((safe_percent / 100) * safe_width)
+    return f"[{'#' * filled}{'-' * (safe_width - filled)}]"
 
 
 def _search_targets_in_process_pool(
@@ -1560,6 +1573,8 @@ class LogBrowser(App):
         self._live_next_index = 0
         self._live_kind: str | None = None
         self._live_target_label: str | None = None
+        self._live_progress_label: str | None = None
+        self._live_progress_percent = 0
         self._live_match_total = 0
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
@@ -2244,6 +2259,8 @@ class LogBrowser(App):
         self._live_next_index = 0
         self._live_kind = request.kind
         self._live_target_label = None
+        self._live_progress_label = "Search submitted. Preparing logs..."
+        self._live_progress_percent = 0
         self._live_match_total = 0
         self._live_match_preview_lines = []
         self._search_started_at = time.perf_counter()
@@ -2251,7 +2268,7 @@ class LogBrowser(App):
         self._show_step_results()
         if isinstance(self.output_log, ResultsArea):
             self.output_log.set_log_kind(request.kind)
-        self._write_output_lines([])
+        self._refresh_live_output()
 
     def _build_search_request(self) -> SearchRequest | None:
         if self.staging_dir is None:
@@ -2518,10 +2535,12 @@ class LogBrowser(App):
         percent = int((scanned / safe_total) * 100)
         scanned_label = _format_size(scanned)
         total_label = _format_size(safe_total)
-        self._notify(
+        detail = (
             f"Searching {current}/{total} log(s): {target_name} "
             f"{percent}% ({scanned_label}/{total_label})"
         )
+        self._notify(detail)
+        self._set_live_progress(detail, percent)
 
     def _search_targets_parallel(
         self,
@@ -2537,10 +2556,8 @@ class LogBrowser(App):
         message = f"Searching {total} log(s) with {workers} workers..."
         if reason:
             message = f"{message} ({reason})"
-        self.call_from_thread(
-            self._notify,
-            message,
-        )
+        self.call_from_thread(self._notify, message)
+        self.call_from_thread(self._set_live_progress, message, 0)
         try:
             return _search_targets_in_process_pool(
                 request,
@@ -2556,7 +2573,12 @@ class LogBrowser(App):
                     target.name,
                 ),
             )
-        except (PermissionError, OSError):
+        except (
+            BrokenProcessPool,
+            OSError,
+            PermissionError,
+            RuntimeError,
+        ):
             self.call_from_thread(
                 self._notify,
                 "Parallel search unavailable; falling back to serial mode.",
@@ -2576,6 +2598,10 @@ class LogBrowser(App):
         target_name: str,
     ) -> None:
         self._live_target_label = f"{current}/{total} {target_name}"
+        self._set_live_progress(
+            f"Searching {current}/{total} log(s): {target_name}",
+            0,
+        )
         self._live_match_preview_lines = []
 
     def _on_live_target_match_batch(
@@ -2604,19 +2630,33 @@ class LogBrowser(App):
 
     def _refresh_live_output(self) -> None:
         lines = self._live_rendered_lines.copy()
-        if not self._live_match_preview_lines:
-            self._write_output_lines(lines)
-            return
-        label = self._live_target_label or "current target"
-        header = (
-            f"[live preview] {self._live_match_total} matched line(s) so far "
-            f"while scanning {label}"
-        )
-        preview = [header, ""] + self._live_match_preview_lines
+        output_lines: list[str] = []
+        if self._search_in_progress and self._live_progress_label:
+            bar = _progress_bar(self._live_progress_percent)
+            output_lines.extend(
+                [
+                    "[progress]",
+                    f"{bar} {self._live_progress_percent:>3}%",
+                    self._live_progress_label,
+                ]
+            )
+
+        if self._live_match_preview_lines:
+            label = self._live_target_label or "current target"
+            header = (
+                f"[live preview] {self._live_match_total} matched line(s) "
+                f"so far while scanning {label}"
+            )
+            if output_lines:
+                output_lines.append("")
+            output_lines.extend([header, ""])
+            output_lines.extend(self._live_match_preview_lines)
+
         if lines:
-            preview.extend(["", "[completed targets]", ""])
-            preview.extend(lines)
-        self._write_output_lines(preview)
+            if output_lines:
+                output_lines.extend(["", "[completed targets]", ""])
+            output_lines.extend(lines)
+        self._write_output_lines(output_lines)
 
     def _on_live_search_result(
         self,
@@ -2654,9 +2694,20 @@ class LogBrowser(App):
         target_name: str,
     ) -> None:
         percent = int((current / total) * 100) if total else 0
-        self._notify(
-            f"{phase} {current}/{total} log(s) ({percent}%): {target_name}"
+        detail = f"{phase} {current}/{total} log(s) ({percent}%): {target_name}"
+        self._notify(detail)
+        self._set_live_progress(detail, percent)
+
+    def _set_live_progress(self, label: str, percent: int) -> None:
+        safe_percent = max(0, min(percent, 100))
+        has_changed = (
+            label != self._live_progress_label
+            or safe_percent != self._live_progress_percent
         )
+        self._live_progress_label = label
+        self._live_progress_percent = safe_percent
+        if has_changed and self.step == WizardStep.RESULTS:
+            self._refresh_live_output()
 
     def _apply_search_output(self, output: SearchOutput) -> None:
         rendered_lines = self._render_results(
@@ -2735,6 +2786,8 @@ class LogBrowser(App):
             self._search_worker = None
             self._live_pending_results = {}
             self._live_target_label = None
+            self._live_progress_label = None
+            self._live_progress_percent = 0
             self._live_match_preview_lines = []
             self._live_match_total = 0
         if self.search_input is not None:

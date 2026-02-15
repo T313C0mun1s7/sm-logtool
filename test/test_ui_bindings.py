@@ -421,6 +421,10 @@ async def test_perform_search_notifies_submit_immediately(
 
         status = app.wizard.query_one("#status", Static)
         assert "Search submitted. Preparing logs..." in str(status.render())
+        assert app.step == WizardStep.RESULTS
+        progress_text = app._get_full_results_text() or ""
+        assert "[progress]" in progress_text
+        assert "Search submitted. Preparing logs..." in progress_text
         assert app._search_in_progress is True
         cancel_button = app.wizard.query_one("#cancel-search", Button)
         assert cancel_button.disabled is False
@@ -450,7 +454,15 @@ async def test_target_progress_status_is_determinate(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "raised_error",
+    [PermissionError("no access"), RuntimeError("pool failed")],
+)
+async def test_parallel_search_falls_back_to_serial(
+    tmp_path,
+    monkeypatch,
+    raised_error,
+):
     logs_dir = tmp_path / "logs"
     staging_dir = tmp_path / "staging"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -465,7 +477,7 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
     monkeypatch.setattr(
         ui_app_module,
         "_search_targets_in_process_pool",
-        lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError()),
+        lambda *args, **kwargs: (_ for _ in ()).throw(raised_error),
     )
 
     app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
