@@ -82,3 +82,6 @@ Search handlers currently exist for:
 
 - Historical bash behavior is useful context, but current product behavior is
   defined by the Python codebase and documented in `README.md`.
+- For issue #21 baseline capture, run `scripts/benchmark_search.py` against
+  your real logs/staging paths to measure per-mode wall-clock time, peak RSS,
+  and first-match scan timing before optimization changes.
