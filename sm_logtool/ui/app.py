@@ -1392,6 +1392,14 @@ class LogBrowser(App):
         margin-right: 1;
     }
 
+    .action-button {
+        min-width: 0;
+        height: 1;
+        min-height: 1;
+        padding: 0;
+        border: none;
+    }
+
     .selected .label {
         text-style: bold;
         background: #444444;
@@ -1689,13 +1697,34 @@ class LogBrowser(App):
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
-        self.search_back_button = Button(back_label, id=back_id)
-        self.search_submit_button = Button("Search", id="do-search")
-        self.search_cancel_button = Button("Cancel", id="cancel-search")
+        self.search_back_button = Button(
+            back_label,
+            id=back_id,
+            classes="action-button",
+        )
+        self.search_submit_button = Button(
+            "Search",
+            id="do-search",
+            classes="action-button",
+        )
+        self.search_cancel_button = Button(
+            "Cancel",
+            id="cancel-search",
+            classes="action-button",
+        )
         self.search_mode_button = Button(
             self._search_mode_button_text(),
             id="cycle-search-mode",
+            classes="action-button",
         )
+        self._set_uniform_button_group_widths(
+            [
+                self.search_back_button,
+                self.search_submit_button,
+                self.search_cancel_button,
+            ]
+        )
+        self._set_uniform_button_group_widths([self.search_mode_button])
         button_row = Horizontal(
             Horizontal(
                 self.search_back_button,
@@ -1735,25 +1764,55 @@ class LogBrowser(App):
         self.output_log = ResultsArea(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        left_buttons: list[Static]
+        left_buttons: list[Button]
         if self._search_in_progress:
             left_buttons = [
-                Button("Cancel", id="cancel-search"),
-                Button("Quit", id="quit-results"),
+                Button(
+                    "Cancel",
+                    id="cancel-search",
+                    classes="action-button",
+                ),
+                Button(
+                    "Quit",
+                    id="quit-results",
+                    classes="action-button",
+                ),
             ]
         else:
             show_back = len(self.subsearch_terms) > 1
             left_buttons = [
-                Button("New Search", id="new-search"),
-                Button("Sub-search", id="sub-search"),
+                Button(
+                    "New Search",
+                    id="new-search",
+                    classes="action-button",
+                ),
+                Button(
+                    "Sub-search",
+                    id="sub-search",
+                    classes="action-button",
+                ),
             ]
             if show_back:
-                left_buttons.append(Button("Back", id="back-subsearch"))
-            left_buttons.append(Button("Quit", id="quit-results"))
+                left_buttons.append(
+                    Button(
+                        "Back",
+                        id="back-subsearch",
+                        classes="action-button",
+                    )
+                )
+            left_buttons.append(
+                Button("Quit", id="quit-results", classes="action-button")
+            )
         right_buttons = [
-            Button("Copy", id="copy-selection"),
-            Button("Copy All", id="copy-all"),
+            Button("Copy", id="copy-selection", classes="action-button"),
+            Button(
+                "Copy All",
+                id="copy-all",
+                classes="action-button",
+            ),
         ]
+        self._set_uniform_button_group_widths(left_buttons)
+        self._set_uniform_button_group_widths(right_buttons)
         button_row = Horizontal(
             Horizontal(*left_buttons, classes="left-buttons"),
             Static("", classes="button-spacer"),
@@ -2689,6 +2748,7 @@ class LogBrowser(App):
             self.search_mode_status.update(self._search_mode_status_text())
         if self.search_mode_button is not None:
             self.search_mode_button.label = self._search_mode_button_text()
+            self._set_uniform_button_group_widths([self.search_mode_button])
 
     def _search_mode_button_text(self) -> str:
         label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
@@ -2702,6 +2762,29 @@ class LogBrowser(App):
                 "Adjust with Ctrl+Up/Ctrl+Down."
             )
         return description
+
+    @staticmethod
+    def _button_label_text(button: Button) -> str:
+        label = button.label
+        if isinstance(label, Text):
+            return label.plain
+        return str(label)
+
+    def _set_uniform_button_group_widths(
+        self,
+        buttons: Iterable[Button],
+    ) -> None:
+        button_list = list(buttons)
+        if not button_list:
+            return
+        longest_label = max(
+            len(self._button_label_text(button))
+            for button in button_list
+        )
+        width = longest_label + 2
+        for button in button_list:
+            button.styles.width = width
+            button.styles.min_width = width
 
     def _notify(self, message: str) -> None:
         try:
