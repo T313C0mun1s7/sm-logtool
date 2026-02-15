@@ -103,7 +103,7 @@ CYBERNOTDARK_THEME = Theme(
     foreground="#10233b",
     background="#98fb98",
     surface="#98fb98",
-    panel="#eeee00",
+    panel="#ffffe0",
     dark=False,
     variables={
         **CYBER_THEME_VARIABLE_DEFAULTS,
@@ -196,7 +196,7 @@ RESULTS_THEME_DARK = TextAreaTheme(
 
 RESULTS_THEME_LIGHT = TextAreaTheme(
     name=RESULTS_THEME_LIGHT_NAME,
-    base_style=Style(color="#10233b", bgcolor="#eeee00"),
+    base_style=Style(color="#10233b", bgcolor="#ffffe0"),
     cursor_line_style=Style(bgcolor="#d6d600"),
     selection_style=Style(bgcolor="#b7b700"),
     syntax_styles=_cybernotdark_syntax_styles(),
