@@ -44,11 +44,9 @@ from textual.widgets import (
     TextArea,
 )
 from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
-from textual._text_area_theme import TextAreaTheme
 from rich.text import Text
 
 from ..config import ConfigError, save_theme
-from ..highlighting import TOKEN_STYLES
 from ..log_kinds import KIND_SMTP, normalize_kind
 from ..logfiles import (
     LogFileInfo,
@@ -75,6 +73,11 @@ from ..search import prime_search_index
 from ..search_planning import choose_search_execution_plan
 from ..syntax import spans_for_line
 from ..staging import stage_log
+from .themes import CYBERDARK_THEME
+from .themes import CYBER_THEME_VARIABLE_DEFAULTS
+from .themes import FIRST_PARTY_APP_THEMES
+from .themes import FIRST_PARTY_RESULTS_THEMES
+from .themes import results_theme_name
 
 try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
@@ -524,12 +527,6 @@ else:
             return
 
 
-_SMLOG_THEME = TextAreaTheme(
-    name="smlog",
-    syntax_styles=dict(TOKEN_STYLES),
-)
-
-
 class ResultsArea(TextArea):
     """Read-only results viewer with log-aware highlights."""
 
@@ -552,13 +549,20 @@ class ResultsArea(TextArea):
             id=id,
             classes=classes,
         )
-        self.register_theme(_SMLOG_THEME)
-        self.theme = "smlog"
+        for theme in FIRST_PARTY_RESULTS_THEMES:
+            self.register_theme(theme)
+        self.set_visual_theme(dark=True)
 
     def set_log_kind(self, log_kind: str | None) -> None:
         self._log_kind = log_kind or ""
         self._build_highlight_map()
         self.refresh()
+
+    def set_visual_theme(self, *, dark: bool) -> None:
+        theme_name = results_theme_name(dark=dark)
+        if self.theme == theme_name:
+            return
+        self.theme = theme_name
 
     async def _on_mouse_down(
         self,
@@ -649,8 +653,8 @@ class ContextMenuScreen(ModalScreen[str | None]):
     #context-menu {
         position: absolute;
         layer: overlay;
-        background: #1f1f1f;
-        border: solid #5f5f5f;
+        background: $context-menu-background;
+        border: solid $context-menu-border;
         padding: 0 1;
         height: auto;
         width: auto;
@@ -744,8 +748,19 @@ class TopAction(Static):
         text = Text(self.label)
         index = self.label.lower().find(self.mnemonic)
         if index >= 0:
-            text.stylize("bold #ffd75f", index, index + 1)
+            text.stylize(self._mnemonic_style(), index, index + 1)
         return text
+
+    def _mnemonic_style(self) -> str:
+        default = "bold #ffd75f"
+        app = getattr(self, "app", None)
+        if app is None:
+            return default
+        variables = getattr(app, "theme_variables", {})
+        color = variables.get("top-action-mnemonic-foreground")
+        if not isinstance(color, str) or not color:
+            return default
+        return f"bold {color}"
 
     def _dispatch(self) -> None:
         self.post_message(TopActionPressed(self, self.action))
@@ -1432,7 +1447,7 @@ class LogBrowser(App):
     #top-actions {
         height: 1;
         padding: 0 1;
-        background: #1f1f1f;
+        background: $top-actions-background;
     }
 
     .top-action {
@@ -1441,11 +1456,11 @@ class LogBrowser(App):
         min-height: 1;
         padding: 0 1;
         margin-right: 1;
-        background: #333333;
+        background: $top-action-background;
     }
 
     .top-action:hover {
-        background: #4a4a4a;
+        background: $top-action-hover-background;
     }
 
     .top-action:focus {
@@ -1481,28 +1496,28 @@ class LogBrowser(App):
 
     .selected .label {
         text-style: bold;
-        background: #444444;
-        color: yellow;
+        background: $selection-selected-background;
+        color: $selection-selected-foreground;
     }
 
     .active .label {
-        background: #005f87;
-        color: white;
+        background: $selection-active-background;
+        color: $selection-active-foreground;
     }
 
     .selected.active .label {
-        background: #1b98d3;
-        color: black;
+        background: $selection-selected-active-background;
+        color: $selection-selected-active-foreground;
     }
 
     .cursor--true .label {
-        background: #005f87;
-        color: white;
+        background: $selection-active-background;
+        color: $selection-active-foreground;
     }
 
     .selected.cursor--true .label {
-        background: #1b98d3;
-        color: black;
+        background: $selection-selected-active-background;
+        color: $selection-selected-active-foreground;
     }
 
     .result-log {
@@ -1593,6 +1608,8 @@ class LogBrowser(App):
         theme: str | None = None,
     ) -> None:
         super().__init__()
+        for theme_model in FIRST_PARTY_APP_THEMES:
+            self.register_theme(theme_model)
         self.logs_dir = logs_dir
         self.staging_dir = staging_dir
         self.default_kind = normalize_kind(default_kind or KIND_SMTP)
@@ -1646,6 +1663,7 @@ class LogBrowser(App):
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
         self._first_result_notified = False
+        self.theme = CYBERDARK_THEME.name
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Horizontal(
@@ -1672,11 +1690,15 @@ class LogBrowser(App):
 
     def _watch_theme(self, theme_name: str) -> None:
         super()._watch_theme(theme_name)
+        self._sync_results_theme()
         if not self._persist_theme_changes:
             return
         if self._suppress_theme_persist:
             return
         self._persist_theme(theme_name)
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        return dict(CYBER_THEME_VARIABLE_DEFAULTS)
 
     # Step rendering -----------------------------------------------------
     def _show_step_kind(self) -> None:
@@ -1879,6 +1901,7 @@ class LogBrowser(App):
         self._result_log_counter += 1
         result_id = f"result-log-{self._result_log_counter}"
         self.output_log = ResultsArea(id=result_id, classes="result-log")
+        self._sync_results_theme()
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
         left_buttons: list[Button]
@@ -3048,6 +3071,12 @@ class LogBrowser(App):
             self.theme = configured
         finally:
             self._suppress_theme_persist = False
+
+    def _sync_results_theme(self) -> None:
+        output_log = getattr(self, "output_log", None)
+        if not isinstance(output_log, ResultsArea):
+            return
+        output_log.set_visual_theme(dark=self.current_theme.dark)
 
     def _persist_theme(self, theme_name: str) -> None:
         if self.config_path is None:
