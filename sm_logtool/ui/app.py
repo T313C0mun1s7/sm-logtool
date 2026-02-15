@@ -1386,6 +1386,7 @@ class LogBrowser(App):
     .button-row {
         width: 1fr;
         height: auto;
+        margin-top: 1;
     }
 
     .button-row Button {
@@ -1484,6 +1485,14 @@ class LogBrowser(App):
 
     .mode-description {
         width: 1fr;
+    }
+
+    .search-term-input {
+        margin-bottom: 1;
+    }
+
+    .selection-list {
+        margin-bottom: 1;
     }
     """
 
@@ -1595,9 +1604,20 @@ class LogBrowser(App):
         self.wizard.mount(
             Static("Step 1: Choose a log type", classes="instruction")
         )
+        next_button = Button(
+            "Next",
+            id="next-kind",
+            classes="action-button",
+        )
+        quit_button = Button(
+            "Quit",
+            id="quit-kind",
+            classes="action-button",
+        )
+        self._set_uniform_button_group_widths([next_button, quit_button])
         button_row = Horizontal(
-            Button("Next", id="next-kind"),
-            Button("Quit", id="quit-kind"),
+            next_button,
+            quit_button,
             classes="button-row",
         )
 
@@ -1605,6 +1625,7 @@ class LogBrowser(App):
             self.kind_list = KindListView(
                 ListItem(Static("No logs discovered"))
             )
+            self.kind_list.add_class("selection-list")
             self.current_kind = None
             self.wizard.mount(self.kind_list)
             self.kind_list.focus()
@@ -1623,6 +1644,7 @@ class LogBrowser(App):
                 *items,
                 initial_index=initial_index,
             )
+            self.kind_list.add_class("selection-list")
             self.current_kind = preferred
             self.wizard.mount(self.kind_list)
             if preferred:
@@ -1649,11 +1671,23 @@ class LogBrowser(App):
         self.wizard.mount(instructions)
 
         self.date_list = DateListView()
+        self.date_list.add_class("selection-list")
         self.wizard.mount(self.date_list)
 
+        back_button = Button(
+            "Back",
+            id="back-date",
+            classes="action-button",
+        )
+        next_button = Button(
+            "Next",
+            id="next-date",
+            classes="action-button",
+        )
+        self._set_uniform_button_group_widths([back_button, next_button])
         button_row = Horizontal(
-            Button("Back", id="back-date"),
-            Button("Next", id="next-date"),
+            back_button,
+            next_button,
             classes="button-row",
         )
         self.wizard.mount(button_row)
@@ -1685,6 +1719,7 @@ class LogBrowser(App):
             placeholder="Enter search term",
             id="search-term",
         )
+        self.search_input.add_class("search-term-input")
         self.wizard.mount(self.search_input)
         self.search_mode_status = Static(
             self._search_mode_status_text(),

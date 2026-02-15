@@ -211,6 +211,57 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_kind_and_date_steps_use_compact_uniform_action_buttons(
+    tmp_path,
+):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        def _label_text(button: Button) -> str:
+            rendered = button.render()
+            if isinstance(rendered, Text):
+                return rendered.plain
+            return str(button.label)
+
+        await pilot.pause()
+        assert app.kind_list is not None
+        assert "selection-list" in app.kind_list.classes
+        kind_row = app.wizard.query_one(".button-row", Horizontal)
+        kind_buttons = list(kind_row.query(Button))
+        assert kind_buttons
+        assert all(
+            "action-button" in button.classes
+            for button in kind_buttons
+        )
+        assert len({button.size.width for button in kind_buttons}) == 1
+        assert kind_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in kind_buttons) + 2
+        )
+
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_date()
+        await pilot.pause()
+
+        assert app.date_list is not None
+        assert "selection-list" in app.date_list.classes
+        date_row = app.wizard.query_one(".button-row", Horizontal)
+        date_buttons = list(date_row.query(Button))
+        assert date_buttons
+        assert all(
+            "action-button" in button.classes
+            for button in date_buttons
+        )
+        assert len({button.size.width for button in date_buttons}) == 1
+        assert date_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in date_buttons) + 2
+        )
+
+
+@pytest.mark.asyncio
 async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
@@ -229,6 +280,8 @@ async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
 
         app._show_step_search()
         await pilot.pause()
+        assert app.search_input is not None
+        assert "search-term-input" in app.search_input.classes
         search_row = app.wizard.query_one(".button-row", Horizontal)
         search_left = search_row.query_one(".left-buttons", Horizontal)
         search_right = search_row.query_one(".right-buttons", Horizontal)
