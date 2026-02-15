@@ -232,6 +232,40 @@ async def test_fuzzy_threshold_shortcuts_adjust_value(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_search_step_busy_state_toggles_controls(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        search_button = app.wizard.query_one("#do-search", Button)
+        cancel_button = app.wizard.query_one("#cancel-search", Button)
+        assert app.search_input is not None
+        assert app.search_input.disabled is False
+        assert search_button.disabled is False
+        assert cancel_button.disabled is True
+
+        app._set_search_running(True)
+        await pilot.pause()
+        assert app.search_input.disabled is True
+        assert search_button.disabled is True
+        assert cancel_button.disabled is False
+        assert app.check_action("next_search_mode", ()) is False
+
+        app._set_search_running(False)
+        await pilot.pause()
+        assert app.search_input.disabled is False
+        assert search_button.disabled is False
+        assert cancel_button.disabled is True
+
+
+@pytest.mark.asyncio
 async def test_plain_question_mark_remains_input_text(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
