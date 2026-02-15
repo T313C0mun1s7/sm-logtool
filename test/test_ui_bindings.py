@@ -3,6 +3,7 @@ import time
 
 import pytest
 from rich.text import Text
+from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
 from sm_logtool import config as config_module
@@ -207,6 +208,123 @@ async def test_search_step_mode_shortcuts_cycle_with_input_focus(tmp_path):
         await pilot.pause()
         assert app.search_mode == "literal"
         assert app.search_input.value == ""
+
+
+@pytest.mark.asyncio
+async def test_kind_and_date_steps_use_compact_uniform_action_buttons(
+    tmp_path,
+):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        def _label_text(button: Button) -> str:
+            rendered = button.render()
+            if isinstance(rendered, Text):
+                return rendered.plain
+            return str(button.label)
+
+        await pilot.pause()
+        assert app.kind_list is not None
+        assert "selection-list" in app.kind_list.classes
+        kind_row = app.wizard.query_one(".button-row", Horizontal)
+        kind_buttons = list(kind_row.query(Button))
+        assert kind_buttons
+        assert all(
+            "action-button" in button.classes
+            for button in kind_buttons
+        )
+        assert len({button.size.width for button in kind_buttons}) == 1
+        assert kind_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in kind_buttons) + 2
+        )
+
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_date()
+        await pilot.pause()
+
+        assert app.date_list is not None
+        assert "selection-list" in app.date_list.classes
+        date_row = app.wizard.query_one(".button-row", Horizontal)
+        date_buttons = list(date_row.query(Button))
+        assert date_buttons
+        assert all(
+            "action-button" in button.classes
+            for button in date_buttons
+        )
+        assert len({button.size.width for button in date_buttons}) == 1
+        assert date_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in date_buttons) + 2
+        )
+
+
+@pytest.mark.asyncio
+async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        def _label_text(button: Button) -> str:
+            rendered = button.render()
+            if isinstance(rendered, Text):
+                return rendered.plain
+            return str(button.label)
+
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+
+        app._show_step_search()
+        await pilot.pause()
+        assert app.search_input is not None
+        assert "search-term-input" in app.search_input.classes
+        search_row = app.wizard.query_one(".button-row", Horizontal)
+        search_left = search_row.query_one(".left-buttons", Horizontal)
+        search_right = search_row.query_one(".right-buttons", Horizontal)
+        search_left_buttons = list(search_left.query(Button))
+        search_right_buttons = list(search_right.query(Button))
+        assert search_left.query_one("#cancel-search", Button)
+        assert search_right.query_one("#cycle-search-mode", Button)
+        assert search_left_buttons
+        assert search_right_buttons
+        assert len({button.size.width for button in search_left_buttons}) == 1
+        assert len({button.size.width for button in search_right_buttons}) == 1
+        assert search_left_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in search_left_buttons) + 2
+        )
+        assert search_right_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in search_right_buttons)
+            + 2
+        )
+
+        app._show_step_results()
+        await pilot.pause()
+        results_row = app.wizard.query_one("#results-buttons", Horizontal)
+        results_left = results_row.query_one(".left-buttons", Horizontal)
+        results_right = results_row.query_one(".right-buttons", Horizontal)
+        results_left_buttons = list(results_left.query(Button))
+        results_right_buttons = list(results_right.query(Button))
+        assert results_left.query_one("#quit-results", Button)
+        assert results_left.query_one("#sub-search", Button)
+        assert results_right.query_one("#copy-all", Button)
+        assert results_left_buttons
+        assert results_right_buttons
+        assert len({button.size.width for button in results_left_buttons}) == 1
+        assert len(
+            {button.size.width for button in results_right_buttons}
+        ) == 1
+        assert results_left_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in results_left_buttons)
+            + 2
+        )
+        assert results_right_buttons[0].size.width == (
+            max(len(_label_text(button)) for button in results_right_buttons)
+            + 2
+        )
 
 
 @pytest.mark.asyncio

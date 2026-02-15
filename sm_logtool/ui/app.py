@@ -1384,11 +1384,21 @@ class LogBrowser(App):
     }
 
     .button-row {
+        width: 1fr;
         height: auto;
+        margin-top: 1;
     }
 
     .button-row Button {
         margin-right: 1;
+    }
+
+    .action-button {
+        min-width: 0;
+        height: 1;
+        min-height: 1;
+        padding: 0;
+        border: none;
     }
 
     .selected .label {
@@ -1440,10 +1450,22 @@ class LogBrowser(App):
 
     .button-spacer {
         width: 1fr;
+        min-width: 0;
         height: 1;
     }
 
+    .left-buttons {
+        width: auto;
+        height: auto;
+    }
+
+    .right-buttons {
+        width: auto;
+        height: auto;
+    }
+
     .button-row > Horizontal {
+        width: auto;
         height: auto;
     }
 
@@ -1463,6 +1485,14 @@ class LogBrowser(App):
 
     .mode-description {
         width: 1fr;
+    }
+
+    .search-term-input {
+        margin-bottom: 1;
+    }
+
+    .selection-list {
+        margin-bottom: 1;
     }
     """
 
@@ -1574,9 +1604,20 @@ class LogBrowser(App):
         self.wizard.mount(
             Static("Step 1: Choose a log type", classes="instruction")
         )
+        next_button = Button(
+            "Next",
+            id="next-kind",
+            classes="action-button",
+        )
+        quit_button = Button(
+            "Quit",
+            id="quit-kind",
+            classes="action-button",
+        )
+        self._set_uniform_button_group_widths([next_button, quit_button])
         button_row = Horizontal(
-            Button("Next", id="next-kind"),
-            Button("Quit", id="quit-kind"),
+            next_button,
+            quit_button,
             classes="button-row",
         )
 
@@ -1584,6 +1625,7 @@ class LogBrowser(App):
             self.kind_list = KindListView(
                 ListItem(Static("No logs discovered"))
             )
+            self.kind_list.add_class("selection-list")
             self.current_kind = None
             self.wizard.mount(self.kind_list)
             self.kind_list.focus()
@@ -1602,6 +1644,7 @@ class LogBrowser(App):
                 *items,
                 initial_index=initial_index,
             )
+            self.kind_list.add_class("selection-list")
             self.current_kind = preferred
             self.wizard.mount(self.kind_list)
             if preferred:
@@ -1628,11 +1671,23 @@ class LogBrowser(App):
         self.wizard.mount(instructions)
 
         self.date_list = DateListView()
+        self.date_list.add_class("selection-list")
         self.wizard.mount(self.date_list)
 
+        back_button = Button(
+            "Back",
+            id="back-date",
+            classes="action-button",
+        )
+        next_button = Button(
+            "Next",
+            id="next-date",
+            classes="action-button",
+        )
+        self._set_uniform_button_group_widths([back_button, next_button])
         button_row = Horizontal(
-            Button("Back", id="back-date"),
-            Button("Next", id="next-date"),
+            back_button,
+            next_button,
             classes="button-row",
         )
         self.wizard.mount(button_row)
@@ -1664,6 +1719,7 @@ class LogBrowser(App):
             placeholder="Enter search term",
             id="search-term",
         )
+        self.search_input.add_class("search-term-input")
         self.wizard.mount(self.search_input)
         self.search_mode_status = Static(
             self._search_mode_status_text(),
@@ -1676,18 +1732,40 @@ class LogBrowser(App):
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
-        self.search_back_button = Button(back_label, id=back_id)
-        self.search_submit_button = Button("Search", id="do-search")
-        self.search_cancel_button = Button("Cancel", id="cancel-search")
+        self.search_back_button = Button(
+            back_label,
+            id=back_id,
+            classes="action-button",
+        )
+        self.search_submit_button = Button(
+            "Search",
+            id="do-search",
+            classes="action-button",
+        )
+        self.search_cancel_button = Button(
+            "Cancel",
+            id="cancel-search",
+            classes="action-button",
+        )
         self.search_mode_button = Button(
             self._search_mode_button_text(),
             id="cycle-search-mode",
+            classes="action-button",
         )
+        self._set_uniform_button_group_widths(
+            [
+                self.search_back_button,
+                self.search_submit_button,
+                self.search_cancel_button,
+            ]
+        )
+        self._set_uniform_button_group_widths([self.search_mode_button])
         button_row = Horizontal(
             Horizontal(
                 self.search_back_button,
                 self.search_submit_button,
                 self.search_cancel_button,
+                classes="left-buttons",
             ),
             Static("", classes="button-spacer"),
             Horizontal(
@@ -1721,27 +1799,57 @@ class LogBrowser(App):
         self.output_log = ResultsArea(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        left_buttons: list[Static]
+        left_buttons: list[Button]
         if self._search_in_progress:
             left_buttons = [
-                Button("Cancel", id="cancel-search"),
-                Button("Quit", id="quit-results"),
+                Button(
+                    "Cancel",
+                    id="cancel-search",
+                    classes="action-button",
+                ),
+                Button(
+                    "Quit",
+                    id="quit-results",
+                    classes="action-button",
+                ),
             ]
         else:
             show_back = len(self.subsearch_terms) > 1
             left_buttons = [
-                Button("New Search", id="new-search"),
-                Button("Sub-search", id="sub-search"),
+                Button(
+                    "New Search",
+                    id="new-search",
+                    classes="action-button",
+                ),
+                Button(
+                    "Sub-search",
+                    id="sub-search",
+                    classes="action-button",
+                ),
             ]
             if show_back:
-                left_buttons.append(Button("Back", id="back-subsearch"))
-            left_buttons.append(Button("Quit", id="quit-results"))
+                left_buttons.append(
+                    Button(
+                        "Back",
+                        id="back-subsearch",
+                        classes="action-button",
+                    )
+                )
+            left_buttons.append(
+                Button("Quit", id="quit-results", classes="action-button")
+            )
         right_buttons = [
-            Button("Copy", id="copy-selection"),
-            Button("Copy All", id="copy-all"),
+            Button("Copy", id="copy-selection", classes="action-button"),
+            Button(
+                "Copy All",
+                id="copy-all",
+                classes="action-button",
+            ),
         ]
+        self._set_uniform_button_group_widths(left_buttons)
+        self._set_uniform_button_group_widths(right_buttons)
         button_row = Horizontal(
-            Horizontal(*left_buttons),
+            Horizontal(*left_buttons, classes="left-buttons"),
             Static("", classes="button-spacer"),
             Horizontal(*right_buttons, classes="right-buttons"),
             classes="button-row",
@@ -2675,6 +2783,7 @@ class LogBrowser(App):
             self.search_mode_status.update(self._search_mode_status_text())
         if self.search_mode_button is not None:
             self.search_mode_button.label = self._search_mode_button_text()
+            self._set_uniform_button_group_widths([self.search_mode_button])
 
     def _search_mode_button_text(self) -> str:
         label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
@@ -2688,6 +2797,29 @@ class LogBrowser(App):
                 "Adjust with Ctrl+Up/Ctrl+Down."
             )
         return description
+
+    @staticmethod
+    def _button_label_text(button: Button) -> str:
+        label = button.label
+        if isinstance(label, Text):
+            return label.plain
+        return str(label)
+
+    def _set_uniform_button_group_widths(
+        self,
+        buttons: Iterable[Button],
+    ) -> None:
+        button_list = list(buttons)
+        if not button_list:
+            return
+        longest_label = max(
+            len(self._button_label_text(button))
+            for button in button_list
+        )
+        width = longest_label + 2
+        for button in button_list:
+            button.styles.width = width
+            button.styles.min_width = width
 
     def _notify(self, message: str) -> None:
         try:
