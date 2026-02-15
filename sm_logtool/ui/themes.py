@@ -84,7 +84,7 @@ CYBERDARK_THEME = Theme(
         "selection-selected-active-background": "#d700af",
         "selection-selected-active-foreground": "#1a0a1f",
         "action-button-background": "#87005f",
-        "action-button-foreground": "#f8ecff",
+        "action-button-foreground": "#00d5ff",
         "action-button-hover-background": "#d70087",
         "action-button-focus-background": "#ff4fd8",
         "context-menu-background": "#0e0e0e",
