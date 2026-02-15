@@ -6,6 +6,7 @@ from sm_logtool.log_parsers import (
     parse_delivery_entries,
     parse_smtp_line,
     parse_time_line,
+    starts_with_timestamp,
 )
 
 
@@ -115,3 +116,16 @@ def test_parse_time_line_extracts_message():
     assert entry is not None
     assert entry.timestamp == "01:02:03.004"
     assert entry.message == "Something happened"
+
+
+def test_starts_with_timestamp_accepts_seconds_prefix():
+    assert starts_with_timestamp("01:02:03 message")
+    assert starts_with_timestamp("01:02:03.456 message")
+    assert starts_with_timestamp("01:02:03.")
+
+
+def test_starts_with_timestamp_rejects_invalid_prefixes():
+    assert not starts_with_timestamp("")
+    assert not starts_with_timestamp("1:02:03 message")
+    assert not starts_with_timestamp("01-02-03 message")
+    assert not starts_with_timestamp("xx:yy:zz message")

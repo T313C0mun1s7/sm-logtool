@@ -109,6 +109,67 @@ def test_search_smtp_conversations_continuations(tmp_path):
     assert result.conversations[0].lines[1].startswith("  continuation")
 
 
+def test_search_literal_mode_treats_regex_tokens_as_plain_text(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 Message with regex-like token (foo|bar)\n"
+        "00:00:02.200 Message without token\n"
+    )
+
+    result = search.search_ungrouped_entries(
+        log_path,
+        "(foo|bar)",
+        mode="literal",
+    )
+
+    assert result.total_conversations == 1
+    assert result.conversations[0].lines[0].endswith("(foo|bar)")
+
+
+def test_search_literal_mode_respects_case_sensitivity_flag(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] User HELLO logged in\n",
+    )
+
+    insensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="literal",
+    )
+    sensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="literal",
+        ignore_case=False,
+    )
+
+    assert insensitive.total_conversations == 1
+    assert sensitive.total_conversations == 0
+
+
+def test_search_regex_mode_respects_case_sensitivity_flag(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] User HELLO logged in\n",
+    )
+
+    insensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="regex",
+    )
+    sensitive = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        mode="regex",
+        ignore_case=False,
+    )
+
+    assert insensitive.total_conversations == 1
+    assert sensitive.total_conversations == 0
+
+
 def test_search_delivery_conversations_continuations(tmp_path):
     log_path = tmp_path / "delivery.log"
     log_path.write_text(
@@ -154,6 +215,20 @@ def test_search_admin_entries_groups_same_timestamp(tmp_path):
         "10:13:13.367 [23.127.140.125] IMAP Attempting login",
         "10:13:13.367 [23.127.140.125] IMAP Login successful",
     ]
+
+
+def test_search_admin_entries_supports_trailing_timestamp_format(tmp_path):
+    log_path = tmp_path / "admin.log"
+    log_path.write_text(
+        "00:00:01.100 [1.2.3.4] SMTP Login failed\n"
+        "[9.8.7.6] IMAP Login successful 00:00:03.300\n"
+    )
+
+    result = search.search_admin_entries(log_path, "IMAP")
+
+    assert result.total_conversations == 1
+    assert result.orphan_matches == []
+    assert result.conversations[0].message_id == "9.8.7.6 00:00:03.300"
 
 
 def test_search_imap_retrieval_entries_groups_by_id(tmp_path):
@@ -209,6 +284,16 @@ def test_search_ungrouped_entries_supports_wildcard_mode(tmp_path):
     assert single_char.total_conversations == 1
 
 
+def test_longest_wildcard_literal_prefers_longest_token():
+    assert search._longest_wildcard_literal("ab*cd??efghi*j") == "efghi"
+    assert search._longest_wildcard_literal("*?*") == ""
+
+
+def test_plain_regex_literal_detection():
+    assert search._is_plain_regex_literal("AUTH")
+    assert not search._is_plain_regex_literal("AUTH.*")
+
+
 def test_search_ungrouped_entries_supports_regex_mode(tmp_path):
     log_path = tmp_path / "generalErrors.log"
     log_path.write_text(
@@ -241,6 +326,38 @@ def test_search_ungrouped_entries_supports_fuzzy_mode(tmp_path):
     )
 
     assert result.total_conversations == 1
+
+
+def test_fuzzy_matcher_uses_accelerator_when_available(monkeypatch):
+    class StubFuzz:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, float]] = []
+
+        def partial_ratio(
+            self,
+            term: str,
+            line: str,
+            *,
+            score_cutoff: float,
+        ) -> float:
+            self.calls.append((term, line, score_cutoff))
+            return 80.0
+
+    stub = StubFuzz()
+    monkeypatch.setattr(search, "_rapidfuzz_fuzz", stub)
+    matcher = search._compile_line_matcher(
+        "authentication failed",
+        "fuzzy",
+        True,
+        0.75,
+    )
+
+    assert matcher("authentcation faild for user")
+    assert stub.calls
+    called_term, called_line, called_cutoff = stub.calls[0]
+    assert called_term == "authentication failed"
+    assert called_line == "authentcation faild for user"
+    assert called_cutoff == pytest.approx(75.0)
 
 
 def test_search_fuzzy_threshold_changes_match_sensitivity(tmp_path):
@@ -299,3 +416,256 @@ def test_search_rejects_unknown_mode(tmp_path):
 
     with pytest.raises(ValueError):
         search.search_smtp_conversations(log_path, "Connection", mode="bad")
+
+
+def test_search_grouped_two_pass_matches_single_pass(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Start conversation\n"
+        "00:00:01 [1.1.1.1][ABC123] Continuation details\n"
+        "00:00:02 [2.2.2.2][XYZ789] Nothing interesting\n"
+        "00:00:03 [2.2.2.2][XYZ789] needle appears here\n"
+        "00:00:04 Orphan needle line\n"
+    )
+
+    single = search.search_smtp_conversations(
+        log_path,
+        "needle",
+        materialization="single-pass",
+    )
+    two_pass = search.search_smtp_conversations(
+        log_path,
+        "needle",
+        materialization="two-pass",
+    )
+
+    assert two_pass == single
+
+
+def test_search_ungrouped_two_pass_matches_single_pass(tmp_path):
+    log_path = tmp_path / "generalErrors.log"
+    log_path.write_text(
+        "00:00:01.100 First entry\n"
+        "  detail line\n"
+        "00:00:02.200 Second entry needle\n"
+        "  traceback detail\n"
+    )
+
+    single = search.search_ungrouped_entries(
+        log_path,
+        "needle",
+        materialization="single-pass",
+    )
+    two_pass = search.search_ungrouped_entries(
+        log_path,
+        "needle",
+        materialization="two-pass",
+    )
+
+    assert two_pass == single
+
+
+def test_search_rejects_unknown_materialization_mode(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported materialization mode"):
+        search.search_smtp_conversations(
+            log_path,
+            "Connection",
+            materialization="bad-mode",
+        )
+
+
+def test_search_auto_materialization_can_fallback_to_two_pass(
+    monkeypatch,
+    tmp_path,
+):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Start conversation\n"
+        "00:00:01 [1.1.1.1][ABC123] Continuation details\n"
+        "00:00:02 [2.2.2.2][XYZ789] Nothing interesting\n"
+    )
+
+    called = {"value": False}
+    original = search._search_grouped_two_pass
+
+    def wrapped(*args, **kwargs):  # type: ignore[no-untyped-def]
+        called["value"] = True
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(search, "_AUTO_SAMPLE_LINES", 2)
+    monkeypatch.setattr(search, "_search_grouped_two_pass", wrapped)
+
+    search.search_smtp_conversations(
+        log_path,
+        "needle-that-does-not-exist",
+        materialization="auto",
+    )
+
+    assert called["value"]
+
+
+def test_search_index_cache_matches_non_cached_results(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] Connection initiated\n"
+        "00:00:01 [1.1.1.1][ABC123] User HELLO logged in\n"
+        "00:00:02 [2.2.2.2][XYZ789] hello world\n"
+    )
+
+    uncached = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        use_index_cache=False,
+    )
+    cached = search.search_smtp_conversations(
+        log_path,
+        "hello",
+        use_index_cache=True,
+    )
+
+    assert cached == uncached
+
+
+def test_search_index_cache_reuses_owner_index(monkeypatch, tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+
+    first = search.search_smtp_conversations(
+        log_path,
+        "First",
+        use_index_cache=True,
+    )
+    assert first.total_conversations == 1
+
+    def fail_owner_parse(_line: str) -> str | None:
+        raise AssertionError("owner parser should not run for cached index")
+
+    monkeypatch.setattr(search, "_smtp_owner_id", fail_owner_parse)
+    second = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+    )
+
+    assert second.total_conversations == 1
+
+
+def test_prime_search_index_marks_index_cached(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+
+    assert not search.has_search_index(log_path, "smtp")
+    search.prime_search_index(log_path, "smtp")
+    assert search.has_search_index(log_path, "smtp")
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+    )
+    assert result.total_conversations == 1
+
+
+def test_search_progress_callback_reports_completion(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+        "00:00:02 [2.2.2.2][XYZ789] Third line\n"
+    )
+    updates: list[tuple[int, int]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "line",
+        materialization="single-pass",
+        progress_callback=lambda scanned, total: updates.append(
+            (scanned, total)
+        ),
+    )
+
+    assert result.total_conversations == 2
+    assert updates
+    assert updates[-1][0] == updates[-1][1]
+    assert all(updates[idx][0] <= updates[idx + 1][0]
+               for idx in range(len(updates) - 1))
+
+
+def test_search_progress_callback_works_with_index_cache(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+    updates: list[tuple[int, int]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+        progress_callback=lambda scanned, total: updates.append(
+            (scanned, total)
+        ),
+    )
+
+    assert result.total_conversations == 1
+    assert updates
+    assert updates[-1][0] == updates[-1][1]
+
+
+def test_search_match_callback_reports_matches_once(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] First line again\n"
+        "00:00:02 [2.2.2.2][XYZ789] No hit\n"
+    )
+    hits: list[tuple[int, str]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "First",
+        materialization="single-pass",
+        match_callback=lambda line_number, line: hits.append(
+            (line_number, line)
+        ),
+    )
+
+    assert result.total_conversations == 1
+    assert [line_number for line_number, _line in hits] == [1, 2]
+    assert all("First" in line for _line_number, line in hits)
+
+
+def test_search_match_callback_works_with_index_cache(tmp_path):
+    log_path = tmp_path / "smtp.log"
+    log_path.write_text(
+        "00:00:00 [1.1.1.1][ABC123] First line\n"
+        "00:00:01 [1.1.1.1][ABC123] Second line\n"
+    )
+    search.prime_search_index(log_path, "smtp")
+    hits: list[tuple[int, str]] = []
+
+    result = search.search_smtp_conversations(
+        log_path,
+        "Second",
+        use_index_cache=True,
+        match_callback=lambda line_number, line: hits.append(
+            (line_number, line)
+        ),
+    )
+
+    assert result.total_conversations == 1
+    assert hits == [
+        (2, "00:00:01 [1.1.1.1][ABC123] Second line"),
+    ]

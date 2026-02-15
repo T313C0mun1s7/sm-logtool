@@ -8,7 +8,6 @@ from typing import Iterable, List, Tuple
 
 
 _TIME_PATTERN = r"\d{2}:\d{2}:\d{2}(?:\.\d{3})?"
-_TIME_PREFIX = re.compile(rf"^{_TIME_PATTERN}")
 
 _SMTP_PATTERN = re.compile(
     rf"^(?P<time>{_TIME_PATTERN}) "
@@ -157,11 +156,12 @@ def parse_smtp_line(line: str) -> SmtpLogEntry | None:
     match = _SMTP_PATTERN.match(line)
     if not match:
         return None
+    timestamp, ip, log_id, message = match.groups()
     return SmtpLogEntry(
-        timestamp=match.group("time"),
-        ip=match.group("ip"),
-        log_id=match.group("log_id"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        ip=ip,
+        log_id=log_id,
+        message=message,
         raw=line,
     )
 
@@ -172,11 +172,12 @@ def parse_bracket2_line(line: str) -> Bracket2LogLine | None:
     match = _BRACKET2_PATTERN.match(line)
     if not match:
         return None
+    timestamp, field1, field2, message = match.groups()
     return Bracket2LogLine(
-        timestamp=match.group("time"),
-        field1=match.group("field1"),
-        field2=match.group("field2"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        field1=field1,
+        field2=field2,
+        message=message,
         raw=line,
     )
 
@@ -187,10 +188,11 @@ def parse_bracket1_line(line: str) -> Bracket1LogLine | None:
     match = _BRACKET1_PATTERN.match(line)
     if not match:
         return None
+    timestamp, field1, message = match.groups()
     return Bracket1LogLine(
-        timestamp=match.group("time"),
-        field1=match.group("field1"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        field1=field1,
+        message=message,
         raw=line,
     )
 
@@ -203,10 +205,11 @@ def parse_bracket1_trailing_time_line(
     match = _BRACKET1_TRAILING_TIME_PATTERN.match(line)
     if not match:
         return None
+    field1, message, timestamp = match.groups()
     return Bracket1LogLine(
-        timestamp=match.group("time"),
-        field1=match.group("field1"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        field1=field1,
+        message=message,
         raw=line,
     )
 
@@ -217,9 +220,10 @@ def parse_time_line(line: str) -> TimeLogLine | None:
     match = _TIME_ONLY_PATTERN.match(line)
     if not match:
         return None
+    timestamp, message = match.groups()
     return TimeLogLine(
-        timestamp=match.group("time"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        message=message,
         raw=line,
     )
 
@@ -227,7 +231,18 @@ def parse_time_line(line: str) -> TimeLogLine | None:
 def starts_with_timestamp(line: str) -> bool:
     """Return True when a line begins with the timestamp format."""
 
-    return bool(_TIME_PREFIX.match(line))
+    if len(line) < 8:
+        return False
+    return (
+        line[0].isdigit()
+        and line[1].isdigit()
+        and line[2] == ":"
+        and line[3].isdigit()
+        and line[4].isdigit()
+        and line[5] == ":"
+        and line[6].isdigit()
+        and line[7].isdigit()
+    )
 
 
 def parse_delivery_line(line: str) -> DeliveryLogLine | None:
@@ -236,10 +251,11 @@ def parse_delivery_line(line: str) -> DeliveryLogLine | None:
     match = _DELIVERY_PATTERN.match(line)
     if not match:
         return None
+    timestamp, delivery_id, message = match.groups()
     return DeliveryLogLine(
-        timestamp=match.group("time"),
-        delivery_id=match.group("delivery_id"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        delivery_id=delivery_id,
+        message=message,
         raw=line,
     )
 
@@ -266,11 +282,12 @@ def parse_imap_retrieval_line(line: str) -> ImapRetrievalLogLine | None:
     match = _BRACKET2_PATTERN.match(line)
     if not match:
         return None
+    timestamp, retrieval_id, context, message = match.groups()
     return ImapRetrievalLogLine(
-        timestamp=match.group("time"),
-        retrieval_id=match.group("field1"),
-        context=match.group("field2"),
-        message=match.group("message"),
+        timestamp=timestamp,
+        retrieval_id=retrieval_id,
+        context=context,
+        message=message,
         raw=line,
     )
 
@@ -292,10 +309,11 @@ def parse_delivery_entries(
     for line in lines:
         match = _DELIVERY_PATTERN.match(line)
         if match:
+            timestamp, delivery_id, message = match.groups()
             current = DeliveryLogEntry(
-                timestamp=match.group("time"),
-                delivery_id=match.group("delivery_id"),
-                message=match.group("message"),
+                timestamp=timestamp,
+                delivery_id=delivery_id,
+                message=message,
                 raw_lines=[line],
             )
             entries.append(current)

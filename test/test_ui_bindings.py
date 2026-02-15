@@ -1,10 +1,15 @@
 from pathlib import Path
+import time
 
 import pytest
 from rich.text import Text
 from textual.widgets import Button, Static
 
 from sm_logtool import config as config_module
+from sm_logtool.search import Conversation
+from sm_logtool.search import get_search_function
+from sm_logtool.search import SmtpSearchResult
+from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 
 
@@ -229,6 +234,153 @@ async def test_fuzzy_threshold_shortcuts_adjust_value(tmp_path):
         await pilot.press("ctrl+down")
         await pilot.pause()
         assert app.fuzzy_threshold == pytest.approx(0.75)
+
+
+@pytest.mark.asyncio
+async def test_search_step_busy_state_toggles_controls(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        search_button = app.wizard.query_one("#do-search", Button)
+        cancel_button = app.wizard.query_one("#cancel-search", Button)
+        assert app.search_input is not None
+        assert app.search_input.disabled is False
+        assert search_button.disabled is False
+        assert cancel_button.disabled is True
+
+        app._set_search_running(True)
+        await pilot.pause()
+        assert app.search_input.disabled is True
+        assert search_button.disabled is True
+        assert cancel_button.disabled is False
+        assert app.check_action("next_search_mode", ()) is False
+
+        app._set_search_running(False)
+        await pilot.pause()
+        assert app.search_input.disabled is False
+        assert search_button.disabled is False
+        assert cancel_button.disabled is True
+
+
+@pytest.mark.asyncio
+async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "2024.01.01-smtpLog.log").write_text(
+        "00:00:00 [1.1.1.1][A] Connection initiated\n",
+        encoding="utf-8",
+    )
+    (logs_dir / "2024.01.02-smtpLog.log").write_text(
+        "00:00:00 [2.2.2.2][B] Connection initiated\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        ui_app_module,
+        "_search_targets_in_process_pool",
+        lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError()),
+    )
+
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        infos = app._logs_by_kind["smtp"]
+        app.current_kind = "smtp"
+        app.selected_logs = [infos[1], infos[0]]
+        app._show_step_search()
+        await pilot.pause()
+        assert app.search_input is not None
+        app.search_input.value = "Connection"
+        request = app._build_search_request()
+        assert request is not None
+        search_fn = get_search_function("smtp")
+        assert search_fn is not None
+        def _direct(f, *a):
+            return f(*a)
+
+        app.call_from_thread = _direct
+
+        class _Worker:
+            is_cancelled = False
+
+        results = app._search_targets_parallel(
+            request,
+            request.source_paths,
+            workers=2,
+            search_fn=search_fn,
+            worker=_Worker(),
+        )
+        names = [result.log_path.name for result in results]
+        assert names == [
+            "2024.01.01-smtpLog.log",
+            "2024.01.02-smtpLog.log",
+        ]
+
+
+@pytest.mark.asyncio
+async def test_live_result_stream_keeps_target_order(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    target_a = logs_dir / "2024.01.01-smtpLog.log"
+    target_b = logs_dir / "2024.01.02-smtpLog.log"
+    target_b.write_text(
+        "00:00:00 [2.2.2.2][B] Connection initiated\n",
+        encoding="utf-8",
+    )
+    result_a = SmtpSearchResult(
+        term="Connection",
+        log_path=target_a,
+        conversations=[
+            Conversation(
+                message_id="A",
+                lines=["00:00:00 [1.1.1.1][A] Connection initiated"],
+                first_line_number=1,
+            )
+        ],
+        total_lines=1,
+        orphan_matches=[],
+    )
+    result_b = SmtpSearchResult(
+        term="Connection",
+        log_path=target_b,
+        conversations=[
+            Conversation(
+                message_id="B",
+                lines=["00:00:00 [2.2.2.2][B] Connection initiated"],
+                first_line_number=1,
+            )
+        ],
+        total_lines=1,
+        orphan_matches=[],
+    )
+    async with app.run_test() as pilot:
+        app._live_kind = "smtp"
+        app._search_started_at = time.perf_counter() - 1.0
+        app._show_step_results()
+        await pilot.pause()
+
+        app._on_live_search_result(1, target_b, result_b)
+        app._on_live_search_result(0, target_a, result_a)
+        await pilot.pause()
+
+        headers = [
+            line
+            for line in app._live_rendered_lines
+            if line.startswith("=== ")
+        ]
+        assert headers[:2] == [
+            "=== 2024.01.01-smtpLog.log ===",
+            "=== 2024.01.02-smtpLog.log ===",
+        ]
 
 
 @pytest.mark.asyncio

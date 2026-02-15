@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import Enum, auto
+from functools import partial
 from itertools import groupby
+import multiprocessing as mp
+import os
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+import time
+from typing import Callable, Dict, Iterable, List, Optional
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -19,6 +25,10 @@ from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.selection import Selection
+from textual.worker import Worker
+from textual.worker import WorkerCancelled
+from textual.worker import WorkerState
+from textual.worker import get_current_worker
 from textual.widgets import (
     Button,
     Footer,
@@ -53,7 +63,11 @@ from ..search_modes import (
     SEARCH_MODE_LABELS,
     normalize_fuzzy_threshold,
 )
+from ..search import SmtpSearchResult
 from ..search import get_search_function
+from ..search import has_search_index
+from ..search import prime_search_index
+from ..search_planning import choose_search_execution_plan
 from ..syntax import spans_for_line
 from ..staging import stage_log
 
@@ -754,6 +768,144 @@ class WizardStep(Enum):
     RESULTS = auto()
 
 
+@dataclass(frozen=True)
+class SearchRequest:
+    """Snapshot of search parameters submitted from the UI."""
+
+    kind: str
+    term: str
+    mode: str
+    fuzzy_threshold: float
+    ignore_case: bool
+    source_paths: list[Path]
+    needs_staging: bool
+    use_index_cache: bool
+
+
+@dataclass(frozen=True)
+class SearchOutput:
+    """Completed search payload returned by a worker."""
+
+    kind: str
+    term: str
+    targets: list[Path]
+    results: list[SmtpSearchResult]
+
+
+MAX_SEARCH_WORKERS = 4
+_LIVE_MATCH_BATCH_SIZE = 64
+_LIVE_MATCH_FLUSH_SECONDS = 0.2
+_LIVE_MATCH_PREVIEW_LINES = 240
+
+
+def _search_single_target(
+    kind: str,
+    target: Path,
+    term: str,
+    mode: str,
+    fuzzy_threshold: float,
+    ignore_case: bool,
+    use_index_cache: bool,
+) -> SmtpSearchResult:
+    search_fn = get_search_function(kind)
+    if search_fn is None:
+        raise ValueError(f"No search handler for log kind: {kind}")
+    return search_fn(
+        target,
+        term,
+        mode=mode,
+        fuzzy_threshold=fuzzy_threshold,
+        ignore_case=ignore_case,
+        use_index_cache=use_index_cache,
+    )
+
+
+def _parallel_worker_count(target_count: int) -> int:
+    if target_count < 2:
+        return 1
+    cpu_count = os.cpu_count() or 1
+    return max(1, min(target_count, cpu_count, MAX_SEARCH_WORKERS))
+
+
+def _target_workload_bytes(targets: list[Path]) -> int:
+    total = 0
+    for target in targets:
+        try:
+            total += target.stat().st_size
+        except OSError:
+            return 0
+    return total
+
+
+def _format_size(value: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    amount = float(max(value, 0))
+    unit = units[0]
+    for unit in units:
+        if amount < 1024.0 or unit == units[-1]:
+            break
+        amount /= 1024.0
+    return f"{amount:.1f}{unit}"
+
+
+def _search_targets_in_process_pool(
+    request: SearchRequest,
+    targets: list[Path],
+    *,
+    workers: int,
+    is_cancelled: Callable[[], bool] | None = None,
+    on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+    on_completed: Callable[[int, int, Path], None] | None = None,
+) -> list[SmtpSearchResult]:
+    executor = ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=mp.get_context("spawn"),
+    )
+    future_to_index = {}
+    results: list[SmtpSearchResult | None] = [None] * len(targets)
+    completed = 0
+    try:
+        for index, target in enumerate(targets):
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            future = executor.submit(
+                _search_single_target,
+                request.kind,
+                target,
+                request.term,
+                request.mode,
+                request.fuzzy_threshold,
+                request.ignore_case,
+                request.use_index_cache,
+            )
+            future_to_index[future] = index
+
+        while future_to_index:
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            done, _pending = wait(
+                set(future_to_index),
+                timeout=0.2,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                continue
+            for future in done:
+                index = future_to_index.pop(future)
+                result = future.result()
+                results[index] = result
+                if on_result is not None:
+                    on_result(index, targets[index], result)
+                completed += 1
+                if on_completed is not None:
+                    on_completed(completed, len(targets), targets[index])
+    finally:
+        executor.shutdown(cancel_futures=True)
+    return [result for result in results if result is not None]
+
+
 class KindListItem(ListItem):
     def __init__(self, kind: str) -> None:
         self.label_widget = Static(kind, classes="label")
@@ -1351,6 +1503,9 @@ class LogBrowser(App):
         self.fuzzy_threshold = DEFAULT_FUZZY_THRESHOLD
         self.search_mode_status: Static | None = None
         self.search_mode_button: Button | None = None
+        self.search_back_button: Button | None = None
+        self.search_submit_button: Button | None = None
+        self.search_cancel_button: Button | None = None
         self.output_log: ResultsArea | None = None
         self.footer: Footer | None = None
         self.subsearch_path: Path | None = None
@@ -1364,6 +1519,21 @@ class LogBrowser(App):
         self.subsearch_rendered: list[list[str]] = []
         self._result_log_counter = 0
         self._context_menu_open = False
+        self._search_worker: Worker[SearchOutput] | None = None
+        self._index_worker: Worker[None] | None = None
+        self._search_in_progress = False
+        self._live_rendered_lines: list[str] = []
+        self._live_pending_results: dict[
+            int,
+            tuple[Path, SmtpSearchResult],
+        ] = {}
+        self._live_next_index = 0
+        self._live_kind: str | None = None
+        self._live_target_label: str | None = None
+        self._live_match_total = 0
+        self._live_match_preview_lines: list[str] = []
+        self._search_started_at = 0.0
+        self._first_result_notified = False
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
         yield Horizontal(
@@ -1506,14 +1676,18 @@ class LogBrowser(App):
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
+        self.search_back_button = Button(back_label, id=back_id)
+        self.search_submit_button = Button("Search", id="do-search")
+        self.search_cancel_button = Button("Cancel", id="cancel-search")
         self.search_mode_button = Button(
             self._search_mode_button_text(),
             id="cycle-search-mode",
         )
         button_row = Horizontal(
             Horizontal(
-                Button(back_label, id=back_id),
-                Button("Search", id="do-search"),
+                self.search_back_button,
+                self.search_submit_button,
+                self.search_cancel_button,
             ),
             Static("", classes="button-spacer"),
             Horizontal(
@@ -1523,6 +1697,7 @@ class LogBrowser(App):
             classes="button-row",
         )
         self.wizard.mount(button_row)
+        self._set_search_running(False)
         self.search_input.focus()
         self._refresh_footer_bindings()
 
@@ -1546,14 +1721,21 @@ class LogBrowser(App):
         self.output_log = ResultsArea(id=result_id, classes="result-log")
         self.output_log.styles.height = "1fr"
         self.output_log.styles.min_height = 5
-        show_back = len(self.subsearch_terms) > 1
-        left_buttons: list[Static] = [
-            Button("New Search", id="new-search"),
-            Button("Sub-search", id="sub-search"),
-        ]
-        if show_back:
-            left_buttons.append(Button("Back", id="back-subsearch"))
-        left_buttons.append(Button("Quit", id="quit-results"))
+        left_buttons: list[Static]
+        if self._search_in_progress:
+            left_buttons = [
+                Button("Cancel", id="cancel-search"),
+                Button("Quit", id="quit-results"),
+            ]
+        else:
+            show_back = len(self.subsearch_terms) > 1
+            left_buttons = [
+                Button("New Search", id="new-search"),
+                Button("Sub-search", id="sub-search"),
+            ]
+            if show_back:
+                left_buttons.append(Button("Back", id="back-subsearch"))
+            left_buttons.append(Button("Quit", id="quit-results"))
         right_buttons = [
             Button("Copy", id="copy-selection"),
             Button("Copy All", id="copy-all"),
@@ -1611,6 +1793,12 @@ class LogBrowser(App):
         event: Button.Pressed,
     ) -> None:  # type: ignore[override]
         button_id = event.button.id
+        if self._search_in_progress and button_id not in {
+            "cancel-search",
+            "quit-results",
+        }:
+            self._notify("Search is running. Wait or press Cancel.")
+            return
         if button_id == "quit-kind":
             self.exit()
         elif button_id == "next-kind":
@@ -1629,6 +1817,8 @@ class LogBrowser(App):
             self._cycle_search_mode()
         elif button_id == "do-search":
             self._perform_search()
+        elif button_id == "cancel-search":
+            self._cancel_search()
         elif button_id == "new-search":
             self._reset_subsearch()
             self._show_step_kind()
@@ -1685,6 +1875,50 @@ class LogBrowser(App):
     ) -> None:  # type: ignore[override]
         if self.step == WizardStep.SEARCH and event.input is self.search_input:
             self._perform_search()
+
+    def on_worker_state_changed(
+        self,
+        event: Worker.StateChanged,
+    ) -> None:
+        if event.worker is not self._search_worker:
+            return
+        if event.state == WorkerState.RUNNING:
+            return
+        if event.state == WorkerState.CANCELLED:
+            self._set_search_running(False)
+            if self._live_rendered_lines:
+                self.last_rendered_lines = self._live_rendered_lines.copy()
+                self.last_rendered_kind = self._live_kind
+                self._display_results(
+                    self.last_rendered_lines,
+                    self.last_rendered_kind,
+                )
+            elif self.step == WizardStep.RESULTS:
+                self._show_step_search()
+            self._notify("Search canceled.")
+            return
+        if event.state == WorkerState.ERROR:
+            self._set_search_running(False)
+            if self._live_rendered_lines:
+                self.last_rendered_lines = self._live_rendered_lines.copy()
+                self.last_rendered_kind = self._live_kind
+                self._display_results(
+                    self.last_rendered_lines,
+                    self.last_rendered_kind,
+                )
+            elif self.step == WizardStep.RESULTS:
+                self._show_step_search()
+            error = event.worker.error
+            if error is None:
+                self._notify("Search failed.")
+                return
+            self._notify(str(error))
+            return
+        if event.state != WorkerState.SUCCESS:
+            return
+        result = event.worker.result
+        self._set_search_running(False)
+        self._apply_search_output(result)
 
     def _highlight_kind_item(self, item: ListItem) -> None:
         if not isinstance(item, KindListItem):
@@ -1762,6 +1996,15 @@ class LogBrowser(App):
         action: str,
         parameters: tuple[object, ...],
     ) -> bool | None:
+        if self._search_in_progress:
+            if action in {
+                "focus_search",
+                "next_search_mode",
+                "prev_search_mode",
+                "raise_fuzzy_threshold",
+                "lower_fuzzy_threshold",
+            }:
+                return False
         if action == "focus_search":
             return self.step == WizardStep.SEARCH
         if action == "next_search_mode":
@@ -1781,6 +2024,9 @@ class LogBrowser(App):
         return True
 
     def action_reset(self) -> None:
+        if self._search_in_progress:
+            self._notify("Search is running. Cancel before resetting.")
+            return
         self._refresh_logs()
         self.selected_logs = []
         self.current_kind = None
@@ -1815,6 +2061,12 @@ class LogBrowser(App):
         if hasattr(self, 'wizard'):
             for child in list(self.wizard.children):
                 child.remove()
+        self.search_input = None
+        self.search_mode_status = None
+        self.search_mode_button = None
+        self.search_back_button = None
+        self.search_submit_button = None
+        self.search_cancel_button = None
 
     def _show_context_menu(
         self,
@@ -1860,74 +2112,534 @@ class LogBrowser(App):
             self.current_kind = None
 
     def _perform_search(self) -> None:
+        if self._search_in_progress:
+            self._notify("Search is already running.")
+            return
+        request = self._build_search_request()
+        if request is None:
+            return
+        self._set_search_running(True)
+        self._start_live_results(request)
+        self._notify("Search submitted. Preparing logs...")
+        self._search_worker = self.run_worker(
+            partial(self._run_search_job, request),
+            name="search-worker",
+            group="search",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _start_live_results(self, request: SearchRequest) -> None:
+        self._live_rendered_lines = []
+        self._live_pending_results = {}
+        self._live_next_index = 0
+        self._live_kind = request.kind
+        self._live_target_label = None
+        self._live_match_total = 0
+        self._live_match_preview_lines = []
+        self._search_started_at = time.perf_counter()
+        self._first_result_notified = False
+        self._show_step_results()
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.set_log_kind(request.kind)
+        self._write_output_lines([])
+
+    def _build_search_request(self) -> SearchRequest | None:
         if self.staging_dir is None:
             self._notify(
                 "Staging directory is not configured. Set 'staging_dir' in "
                 "config.yaml or pass --staging-dir."
             )
-            return
+            return None
 
+        source_paths: list[Path]
+        needs_staging = False
         if self.subsearch_active:
             if self.subsearch_path is None:
                 self._notify("No prior results available for sub-search.")
-                return
-            search_targets = [self.subsearch_path]
+                return None
+            source_paths = [self.subsearch_path]
         else:
             if not self.selected_logs:
                 self._notify("Select at least one log date before searching.")
-                return
-            search_targets = []
-            for info in self.selected_logs:
-                try:
-                    staged = stage_log(
-                        info.path,
-                        staging_dir=self.staging_dir,
-                    )
-                except Exception as exc:
-                    # pragma: no cover - filesystem feedback
-                    self._notify(f"Failed to stage {info.path.name}: {exc}")
-                    return
-                search_targets.append(staged.staged_path)
+                return None
+            source_paths = [info.path for info in self.selected_logs]
+            needs_staging = True
         search_kind = self.subsearch_kind if self.subsearch_active else None
         if search_kind is None:
             search_kind = self.current_kind
         if search_kind is None:
             self._notify("Select a log type before searching.")
-            return
+            return None
         search_fn = get_search_function(search_kind)
         if search_fn is None:
             self._notify(f"No search handler for log kind: {search_kind}")
-            return
+            return None
         term = (self.search_input.value if self.search_input else "").strip()
         if not term:
             self._notify("Enter a search term.")
-            return
+            return None
 
-        try:
-            results = [
-                search_fn(
-                    target,
-                    term,
-                    mode=self.search_mode,
-                    fuzzy_threshold=self.fuzzy_threshold,
-                )
-                for target in search_targets
-            ]
-        except ValueError as exc:
-            self._notify(str(exc))
-            return
-        rendered_lines = self._render_results(
-            results,
-            search_targets,
-            search_kind,
+        return SearchRequest(
+            kind=search_kind,
+            term=term,
+            mode=self.search_mode,
+            fuzzy_threshold=self.fuzzy_threshold,
+            ignore_case=True,
+            source_paths=source_paths,
+            needs_staging=needs_staging,
+            use_index_cache=needs_staging,
         )
-        self.last_rendered_lines = rendered_lines
-        self.last_rendered_kind = search_kind
-        self._write_subsearch_snapshot(results, term, rendered_lines)
-        self.subsearch_kind = search_kind
 
-        self._display_results(rendered_lines, search_kind)
-        self._notify("Search complete.")
+    def _run_search_job(self, request: SearchRequest) -> SearchOutput:
+        worker = get_current_worker()
+        search_fn = get_search_function(request.kind)
+        if search_fn is None:
+            raise ValueError(f"No search handler for log kind: {request.kind}")
+        targets = self._stage_targets(request, worker)
+        results = self._search_targets(
+            request,
+            targets,
+            search_fn,
+            worker,
+            on_result=self._post_live_search_result,
+        )
+        return SearchOutput(
+            kind=request.kind,
+            term=request.term,
+            targets=targets,
+            results=results,
+        )
+
+    def _post_live_search_result(
+        self,
+        index: int,
+        target: Path,
+        result: SmtpSearchResult,
+    ) -> None:
+        self.call_from_thread(
+            self._on_live_search_result,
+            index,
+            target,
+            result,
+        )
+
+    def _stage_targets(
+        self,
+        request: SearchRequest,
+        worker: Worker[SearchOutput],
+    ) -> list[Path]:
+        if not request.needs_staging:
+            return request.source_paths.copy()
+        assert self.staging_dir is not None
+        total = len(request.source_paths)
+        targets: list[Path] = []
+        for index, source_path in enumerate(request.source_paths, start=1):
+            if worker.is_cancelled:
+                raise WorkerCancelled()
+            self.call_from_thread(
+                self._notify_search_progress,
+                "Staging",
+                index,
+                total,
+                source_path.name,
+            )
+            staged = stage_log(
+                source_path,
+                staging_dir=self.staging_dir,
+            )
+            targets.append(staged.staged_path)
+        return targets
+
+    def _search_targets(
+        self,
+        request: SearchRequest,
+        targets: list[Path],
+        search_fn,
+        worker: Worker[SearchOutput],
+        on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+    ) -> list[SmtpSearchResult]:
+        use_index_cache = (
+            request.use_index_cache
+            and bool(targets)
+            and all(
+                has_search_index(path, request.kind)
+                for path in targets
+            )
+        )
+        active_request = replace(
+            request,
+            use_index_cache=use_index_cache,
+        )
+        max_workers = _parallel_worker_count(len(targets))
+        plan = choose_search_execution_plan(
+            len(targets),
+            _target_workload_bytes(targets),
+            use_index_cache=active_request.use_index_cache,
+            max_workers=max_workers,
+        )
+        if plan.workers <= 1:
+            if len(targets) > 1:
+                self.call_from_thread(
+                    self._notify,
+                    f"Using serial search ({plan.reason}).",
+                )
+            return self._search_targets_serial(
+                active_request,
+                targets,
+                search_fn,
+                worker,
+                on_result=on_result,
+            )
+        return self._search_targets_parallel(
+            active_request,
+            targets,
+            plan.workers,
+            search_fn,
+            worker,
+            on_result=on_result,
+            reason=plan.reason,
+        )
+
+    def _search_targets_serial(
+        self,
+        request: SearchRequest,
+        targets: list[Path],
+        search_fn,
+        worker: Worker[SearchOutput],
+        on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+    ) -> list[SmtpSearchResult]:
+        total = len(targets)
+        results: list[SmtpSearchResult] = []
+        for index, target in enumerate(targets, start=1):
+            if worker.is_cancelled:
+                raise WorkerCancelled()
+            self.call_from_thread(
+                self._start_live_target_preview,
+                index,
+                total,
+                target.name,
+            )
+            self.call_from_thread(
+                self._notify_search_progress,
+                "Searching",
+                index,
+                total,
+                target.name,
+            )
+            pending_matches: list[tuple[int, str]] = []
+            last_flush = time.perf_counter()
+
+            def _report_progress(
+                scanned_bytes: int,
+                total_bytes: int,
+                *,
+                current_index: int = index,
+                total_targets: int = total,
+                target_name: str = target.name,
+            ) -> None:
+                self.call_from_thread(
+                    self._notify_target_search_progress,
+                    current_index,
+                    total_targets,
+                    target_name,
+                    scanned_bytes,
+                    total_bytes,
+                )
+
+            def _flush_matches(*, force: bool = False) -> None:
+                nonlocal pending_matches, last_flush
+                if not pending_matches:
+                    return
+                now = time.perf_counter()
+                if (
+                    not force
+                    and len(pending_matches) < _LIVE_MATCH_BATCH_SIZE
+                    and now - last_flush < _LIVE_MATCH_FLUSH_SECONDS
+                ):
+                    return
+                batch = pending_matches
+                pending_matches = []
+                last_flush = now
+                self.call_from_thread(
+                    self._on_live_target_match_batch,
+                    index,
+                    total,
+                    target.name,
+                    batch,
+                )
+
+            def _report_match(line_number: int, line: str) -> None:
+                pending_matches.append((line_number, line))
+                _flush_matches(force=False)
+
+            result = search_fn(
+                target,
+                request.term,
+                mode=request.mode,
+                fuzzy_threshold=request.fuzzy_threshold,
+                ignore_case=request.ignore_case,
+                use_index_cache=request.use_index_cache,
+                progress_callback=_report_progress,
+                match_callback=_report_match,
+            )
+            _flush_matches(force=True)
+            results.append(result)
+            if on_result is not None:
+                on_result(index - 1, target, result)
+            self.call_from_thread(
+                self._notify_search_progress,
+                "Searched",
+                index,
+                total,
+                target.name,
+            )
+        return results
+
+    def _notify_target_search_progress(
+        self,
+        current: int,
+        total: int,
+        target_name: str,
+        scanned_bytes: int,
+        total_bytes: int,
+    ) -> None:
+        safe_total = max(total_bytes, 1)
+        scanned = min(max(scanned_bytes, 0), safe_total)
+        percent = int((scanned / safe_total) * 100)
+        scanned_label = _format_size(scanned)
+        total_label = _format_size(safe_total)
+        self._notify(
+            f"Searching {current}/{total} log(s): {target_name} "
+            f"{percent}% ({scanned_label}/{total_label})"
+        )
+
+    def _search_targets_parallel(
+        self,
+        request: SearchRequest,
+        targets: list[Path],
+        workers: int,
+        search_fn,
+        worker: Worker[SearchOutput],
+        on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+        reason: str | None = None,
+    ) -> list[SmtpSearchResult]:
+        total = len(targets)
+        message = f"Searching {total} log(s) with {workers} workers..."
+        if reason:
+            message = f"{message} ({reason})"
+        self.call_from_thread(
+            self._notify,
+            message,
+        )
+        try:
+            return _search_targets_in_process_pool(
+                request,
+                targets,
+                workers=workers,
+                is_cancelled=lambda: worker.is_cancelled,
+                on_result=on_result,
+                on_completed=lambda done, count, target: self.call_from_thread(
+                    self._notify_search_progress,
+                    "Searched",
+                    done,
+                    count,
+                    target.name,
+                ),
+            )
+        except (PermissionError, OSError):
+            self.call_from_thread(
+                self._notify,
+                "Parallel search unavailable; falling back to serial mode.",
+            )
+            return self._search_targets_serial(
+                request,
+                targets,
+                search_fn,
+                worker,
+                on_result=on_result,
+            )
+
+    def _start_live_target_preview(
+        self,
+        current: int,
+        total: int,
+        target_name: str,
+    ) -> None:
+        self._live_target_label = f"{current}/{total} {target_name}"
+        self._live_match_preview_lines = []
+
+    def _on_live_target_match_batch(
+        self,
+        current: int,
+        total: int,
+        target_name: str,
+        batch: list[tuple[int, str]],
+    ) -> None:
+        if not batch:
+            return
+        self._live_target_label = f"{current}/{total} {target_name}"
+        self._live_match_total += len(batch)
+        for line_number, line in batch:
+            preview_line = f"{target_name}:{line_number}: {line}"
+            self._live_match_preview_lines.append(preview_line)
+        if len(self._live_match_preview_lines) > _LIVE_MATCH_PREVIEW_LINES:
+            self._live_match_preview_lines = self._live_match_preview_lines[
+                -_LIVE_MATCH_PREVIEW_LINES:
+            ]
+        self._refresh_live_output()
+        if not self._first_result_notified:
+            elapsed = time.perf_counter() - self._search_started_at
+            self._notify(f"First results visible after {elapsed:.2f}s.")
+            self._first_result_notified = True
+
+    def _refresh_live_output(self) -> None:
+        lines = self._live_rendered_lines.copy()
+        if not self._live_match_preview_lines:
+            self._write_output_lines(lines)
+            return
+        label = self._live_target_label or "current target"
+        header = (
+            f"[live preview] {self._live_match_total} matched line(s) so far "
+            f"while scanning {label}"
+        )
+        preview = [header, ""] + self._live_match_preview_lines
+        if lines:
+            preview.extend(["", "[completed targets]", ""])
+            preview.extend(lines)
+        self._write_output_lines(preview)
+
+    def _on_live_search_result(
+        self,
+        index: int,
+        target: Path,
+        result: SmtpSearchResult,
+    ) -> None:
+        self._live_pending_results[index] = (target, result)
+        while self._live_next_index in self._live_pending_results:
+            next_target, next_result = self._live_pending_results.pop(
+                self._live_next_index
+            )
+            kind = self._live_kind or (self.current_kind or "")
+            lines = render_search_results(
+                [next_result],
+                [next_target],
+                kind,
+            )
+            self._live_rendered_lines.extend(lines)
+            self._live_match_preview_lines = []
+            self._refresh_live_output()
+            self._live_next_index += 1
+            if not self._first_result_notified:
+                elapsed = time.perf_counter() - self._search_started_at
+                self._notify(
+                    f"First results visible after {elapsed:.2f}s."
+                )
+                self._first_result_notified = True
+
+    def _notify_search_progress(
+        self,
+        phase: str,
+        current: int,
+        total: int,
+        target_name: str,
+    ) -> None:
+        percent = int((current / total) * 100) if total else 0
+        self._notify(
+            f"{phase} {current}/{total} log(s) ({percent}%): {target_name}"
+        )
+
+    def _apply_search_output(self, output: SearchOutput) -> None:
+        rendered_lines = self._render_results(
+            output.results,
+            output.targets,
+            output.kind,
+        )
+        self._live_rendered_lines = rendered_lines.copy()
+        self._live_pending_results = {}
+        self.last_rendered_lines = rendered_lines
+        self.last_rendered_kind = output.kind
+        self._write_subsearch_snapshot(
+            output.results,
+            output.term,
+            rendered_lines,
+        )
+        self.subsearch_kind = output.kind
+        self._display_results(rendered_lines, output.kind)
+        self._notify(
+            f"Search complete. Processed {len(output.targets)} log(s)."
+        )
+        self._schedule_index_warmup(output.kind, output.targets)
+
+    def _schedule_index_warmup(
+        self,
+        kind: str,
+        targets: list[Path],
+    ) -> None:
+        pending = [
+            path
+            for path in targets
+            if not has_search_index(path, kind)
+        ]
+        if not pending:
+            return
+        worker = self._index_worker
+        if worker is not None and not worker.is_finished:
+            return
+        self._index_worker = self.run_worker(
+            partial(self._run_index_warmup_job, kind, pending),
+            name="index-warmup-worker",
+            group="index-warmup",
+            thread=True,
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    def _run_index_warmup_job(
+        self,
+        kind: str,
+        targets: list[Path],
+    ) -> None:
+        worker = get_current_worker()
+        for target in targets:
+            if worker.is_cancelled:
+                return
+            try:
+                prime_search_index(target, kind)
+            except Exception:
+                return
+
+    def _cancel_search(self) -> None:
+        worker = self._search_worker
+        if worker is None:
+            self._notify("No active search to cancel.")
+            return
+        if worker.is_finished:
+            self._notify("No active search to cancel.")
+            return
+        worker.cancel()
+        self._notify("Cancel requested. Waiting for worker to stop...")
+
+    def _set_search_running(self, running: bool) -> None:
+        self._search_in_progress = running
+        if not running:
+            self._search_worker = None
+            self._live_pending_results = {}
+            self._live_target_label = None
+            self._live_match_preview_lines = []
+            self._live_match_total = 0
+        if self.search_input is not None:
+            self.search_input.disabled = running
+        if self.search_mode_button is not None:
+            self.search_mode_button.disabled = running
+        if self.search_back_button is not None:
+            self.search_back_button.disabled = running
+        if self.search_submit_button is not None:
+            self.search_submit_button.disabled = running
+        if self.search_cancel_button is not None:
+            self.search_cancel_button.disabled = not running
+        self._refresh_footer_bindings()
 
     def _cycle_search_mode(self) -> None:
         self._step_search_mode(1)
