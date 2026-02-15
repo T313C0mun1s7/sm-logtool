@@ -12,15 +12,26 @@ def test_plan_uses_serial_for_single_target():
     assert "single target" in plan.reason
 
 
-def test_plan_uses_serial_when_index_cache_is_active():
+def test_plan_uses_serial_for_small_two_target_indexed_workload():
     plan = choose_search_execution_plan(
-        3,
+        2,
         500_000_000,
         use_index_cache=True,
         max_workers=4,
     )
     assert plan.workers == 1
-    assert "indexed targets" in plan.reason
+    assert "indexed two-target" in plan.reason
+
+
+def test_plan_uses_parallel_for_large_indexed_workload():
+    plan = choose_search_execution_plan(
+        6,
+        2 * 1024 * 1024 * 1024,
+        use_index_cache=True,
+        max_workers=4,
+    )
+    assert plan.workers == 4
+    assert "indexed large workload" in plan.reason
 
 
 def test_plan_uses_serial_for_small_two_target_workload():

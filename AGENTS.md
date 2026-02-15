@@ -72,7 +72,7 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [x] Add explicit search mode switching plus clear CLI/TUI help text.
 - [x] Add support for additional compressed log formats (for example `.gz`)
   [Issue #20 closed as not planned; reopen if needed].
-- [ ] Improve large-log search performance/responsiveness (progress feedback,
+- [x] Improve large-log search performance/responsiveness (progress feedback,
   background work, reduced memory footprint).
 - [x] Add `--version` CLI flag to print installed package version.
 - [x] Add export controls (matched lines vs full conversations; optional

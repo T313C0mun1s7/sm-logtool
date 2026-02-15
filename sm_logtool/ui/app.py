@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    wait,
+)
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import Enum, auto
@@ -796,6 +801,7 @@ MAX_SEARCH_WORKERS = 4
 _LIVE_MATCH_BATCH_SIZE = 64
 _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
+_LIVE_PROGRESS_BAR_WIDTH = 24
 
 
 def _search_single_target(
@@ -848,6 +854,23 @@ def _format_size(value: int) -> str:
     return f"{amount:.1f}{unit}"
 
 
+def _progress_bar(
+    percent: int,
+    *,
+    width: int = _LIVE_PROGRESS_BAR_WIDTH,
+) -> str:
+    safe_width = max(4, width)
+    safe_percent = max(0, min(percent, 100))
+    filled = int((safe_percent / 100) * safe_width)
+    if filled <= 0:
+        return f"[>{'.' * (safe_width - 1)}]"
+    if filled >= safe_width:
+        return f"[{'=' * safe_width}]"
+    return (
+        f"[{'=' * (filled - 1)}>{'.' * (safe_width - filled)}]"
+    )
+
+
 def _search_targets_in_process_pool(
     request: SearchRequest,
     targets: list[Path],
@@ -861,6 +884,61 @@ def _search_targets_in_process_pool(
         max_workers=workers,
         mp_context=mp.get_context("spawn"),
     )
+    future_to_index = {}
+    results: list[SmtpSearchResult | None] = [None] * len(targets)
+    completed = 0
+    try:
+        for index, target in enumerate(targets):
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            future = executor.submit(
+                _search_single_target,
+                request.kind,
+                target,
+                request.term,
+                request.mode,
+                request.fuzzy_threshold,
+                request.ignore_case,
+                request.use_index_cache,
+            )
+            future_to_index[future] = index
+
+        while future_to_index:
+            if is_cancelled is not None and is_cancelled():
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise WorkerCancelled()
+            done, _pending = wait(
+                set(future_to_index),
+                timeout=0.2,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                continue
+            for future in done:
+                index = future_to_index.pop(future)
+                result = future.result()
+                results[index] = result
+                if on_result is not None:
+                    on_result(index, targets[index], result)
+                completed += 1
+                if on_completed is not None:
+                    on_completed(completed, len(targets), targets[index])
+    finally:
+        executor.shutdown(cancel_futures=True)
+    return [result for result in results if result is not None]
+
+
+def _search_targets_in_thread_pool(
+    request: SearchRequest,
+    targets: list[Path],
+    *,
+    workers: int,
+    is_cancelled: Callable[[], bool] | None = None,
+    on_result: Callable[[int, Path, SmtpSearchResult], None] | None = None,
+    on_completed: Callable[[int, int, Path], None] | None = None,
+) -> list[SmtpSearchResult]:
+    executor = ThreadPoolExecutor(max_workers=workers)
     future_to_index = {}
     results: list[SmtpSearchResult | None] = [None] * len(targets)
     completed = 0
@@ -1560,6 +1638,10 @@ class LogBrowser(App):
         self._live_next_index = 0
         self._live_kind: str | None = None
         self._live_target_label: str | None = None
+        self._live_progress_label: str | None = None
+        self._live_progress_percent = 0
+        self._live_execution_label: str | None = None
+        self._last_execution_label: str | None = None
         self._live_match_total = 0
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
@@ -2010,17 +2092,22 @@ class LogBrowser(App):
             if self._live_rendered_lines:
                 self.last_rendered_lines = self._live_rendered_lines.copy()
                 self.last_rendered_kind = self._live_kind
+                self._last_execution_label = self._live_execution_label
                 self._display_results(
-                    self.last_rendered_lines,
+                    self._prepend_execution_summary(
+                        self.last_rendered_lines,
+                    ),
                     self.last_rendered_kind,
                 )
-            elif self.step == WizardStep.RESULTS:
-                self._show_step_search()
             error = event.worker.error
-            if error is None:
-                self._notify("Search failed.")
-                return
-            self._notify(str(error))
+            message = "Search failed." if error is None else str(error)
+            if not self._live_rendered_lines:
+                self._show_step_results()
+                lines = ["[search error]", message]
+                if self._live_execution_label:
+                    lines.extend(["", "[execution]", self._live_execution_label])
+                self._write_output_lines(lines)
+            self._notify(message)
             return
         if event.state != WorkerState.SUCCESS:
             return
@@ -2244,6 +2331,10 @@ class LogBrowser(App):
         self._live_next_index = 0
         self._live_kind = request.kind
         self._live_target_label = None
+        self._live_progress_label = "Search submitted. Preparing logs..."
+        self._live_progress_percent = 0
+        self._live_execution_label = "Planning execution mode..."
+        self._last_execution_label = None
         self._live_match_total = 0
         self._live_match_preview_lines = []
         self._search_started_at = time.perf_counter()
@@ -2251,7 +2342,7 @@ class LogBrowser(App):
         self._show_step_results()
         if isinstance(self.output_log, ResultsArea):
             self.output_log.set_log_kind(request.kind)
-        self._write_output_lines([])
+        self._refresh_live_output()
 
     def _build_search_request(self) -> SearchRequest | None:
         if self.staging_dir is None:
@@ -2353,11 +2444,20 @@ class LogBrowser(App):
                 total,
                 source_path.name,
             )
-            staged = stage_log(
-                source_path,
-                staging_dir=self.staging_dir,
-            )
+            try:
+                staged = stage_log(
+                    source_path,
+                    staging_dir=self.staging_dir,
+                )
+            except Exception as exc:
+                self.call_from_thread(
+                    self._notify,
+                    f"Skipping {source_path.name}: {exc}",
+                )
+                continue
             targets.append(staged.staged_path)
+        if not targets:
+            raise ValueError("No selected logs were available for search.")
         return targets
 
     def _search_targets(
@@ -2387,6 +2487,9 @@ class LogBrowser(App):
             use_index_cache=active_request.use_index_cache,
             max_workers=max_workers,
         )
+        mode = "serial" if plan.workers <= 1 else "parallel"
+        execution = f"{mode} ({plan.reason})"
+        self.call_from_thread(self._set_live_execution, execution)
         if plan.workers <= 1:
             if len(targets) > 1:
                 self.call_from_thread(
@@ -2518,10 +2621,12 @@ class LogBrowser(App):
         percent = int((scanned / safe_total) * 100)
         scanned_label = _format_size(scanned)
         total_label = _format_size(safe_total)
-        self._notify(
+        detail = (
             f"Searching {current}/{total} log(s): {target_name} "
             f"{percent}% ({scanned_label}/{total_label})"
         )
+        self._notify(detail)
+        self._set_live_progress(detail, percent)
 
     def _search_targets_parallel(
         self,
@@ -2537,37 +2642,71 @@ class LogBrowser(App):
         message = f"Searching {total} log(s) with {workers} workers..."
         if reason:
             message = f"{message} ({reason})"
-        self.call_from_thread(
-            self._notify,
-            message,
+        self.call_from_thread(self._notify, message)
+        self.call_from_thread(self._set_live_progress, message, 0)
+        on_completed = lambda done, count, target: self.call_from_thread(
+            self._notify_search_progress,
+            "Searched",
+            done,
+            count,
+            target.name,
         )
         try:
-            return _search_targets_in_process_pool(
+            return _search_targets_in_thread_pool(
                 request,
                 targets,
                 workers=workers,
                 is_cancelled=lambda: worker.is_cancelled,
                 on_result=on_result,
-                on_completed=lambda done, count, target: self.call_from_thread(
-                    self._notify_search_progress,
-                    "Searched",
-                    done,
-                    count,
-                    target.name,
-                ),
+                on_completed=on_completed,
             )
-        except (PermissionError, OSError):
+        except WorkerCancelled:
+            raise
+        except Exception as thread_exc:
+            thread_reason = type(thread_exc).__name__
             self.call_from_thread(
                 self._notify,
-                "Parallel search unavailable; falling back to serial mode.",
+                "Thread parallel search unavailable; trying process workers. "
+                f"({thread_reason})",
             )
-            return self._search_targets_serial(
-                request,
-                targets,
-                search_fn,
-                worker,
-                on_result=on_result,
+            process_fallback = (
+                f"parallel (process fallback: {thread_reason})"
             )
+            self.call_from_thread(
+                self._set_live_execution,
+                process_fallback,
+            )
+            try:
+                return _search_targets_in_process_pool(
+                    request,
+                    targets,
+                    workers=workers,
+                    is_cancelled=lambda: worker.is_cancelled,
+                    on_result=on_result,
+                    on_completed=on_completed,
+                )
+            except WorkerCancelled:
+                raise
+            except Exception as process_exc:
+                process_error = type(process_exc).__name__
+                fallback = (
+                    "serial (parallel fallback: "
+                    f"{thread_reason}, {process_error})"
+                )
+                self.call_from_thread(self._set_live_execution, fallback)
+                self.call_from_thread(
+                    self._notify,
+                    "Parallel search unavailable; falling back to serial "
+                    "mode. "
+                    f"({thread_reason}, {process_error})",
+                )
+                return self._search_targets_serial(
+                    request,
+                    targets,
+                    search_fn,
+                    worker,
+                    on_result=on_result,
+                )
 
     def _start_live_target_preview(
         self,
@@ -2576,6 +2715,10 @@ class LogBrowser(App):
         target_name: str,
     ) -> None:
         self._live_target_label = f"{current}/{total} {target_name}"
+        self._set_live_progress(
+            f"Searching {current}/{total} log(s): {target_name}",
+            0,
+        )
         self._live_match_preview_lines = []
 
     def _on_live_target_match_batch(
@@ -2604,19 +2747,42 @@ class LogBrowser(App):
 
     def _refresh_live_output(self) -> None:
         lines = self._live_rendered_lines.copy()
-        if not self._live_match_preview_lines:
-            self._write_output_lines(lines)
-            return
-        label = self._live_target_label or "current target"
-        header = (
-            f"[live preview] {self._live_match_total} matched line(s) so far "
-            f"while scanning {label}"
-        )
-        preview = [header, ""] + self._live_match_preview_lines
+        output_lines: list[str] = []
+        if self._search_in_progress and self._live_progress_label:
+            bar = _progress_bar(self._live_progress_percent)
+            output_lines.extend(
+                [
+                    "[progress]",
+                    f"{bar} {self._live_progress_percent:>3}%",
+                    self._live_progress_label,
+                ]
+            )
+        if self._search_in_progress and self._live_execution_label:
+            if output_lines:
+                output_lines.append("")
+            output_lines.extend(
+                [
+                    "[execution]",
+                    self._live_execution_label,
+                ]
+            )
+
+        if self._live_match_preview_lines:
+            label = self._live_target_label or "current target"
+            header = (
+                f"[live preview] {self._live_match_total} matched line(s) "
+                f"so far while scanning {label}"
+            )
+            if output_lines:
+                output_lines.append("")
+            output_lines.extend([header, ""])
+            output_lines.extend(self._live_match_preview_lines)
+
         if lines:
-            preview.extend(["", "[completed targets]", ""])
-            preview.extend(lines)
-        self._write_output_lines(preview)
+            if output_lines:
+                output_lines.extend(["", "[completed targets]", ""])
+            output_lines.extend(lines)
+        self._write_output_lines(output_lines)
 
     def _on_live_search_result(
         self,
@@ -2654,9 +2820,38 @@ class LogBrowser(App):
         target_name: str,
     ) -> None:
         percent = int((current / total) * 100) if total else 0
-        self._notify(
-            f"{phase} {current}/{total} log(s) ({percent}%): {target_name}"
+        detail = f"{phase} {current}/{total} log(s) ({percent}%): {target_name}"
+        self._notify(detail)
+        self._set_live_progress(detail, percent)
+
+    def _set_live_progress(self, label: str, percent: int) -> None:
+        safe_percent = max(0, min(percent, 100))
+        has_changed = (
+            label != self._live_progress_label
+            or safe_percent != self._live_progress_percent
         )
+        self._live_progress_label = label
+        self._live_progress_percent = safe_percent
+        if has_changed and self.step == WizardStep.RESULTS:
+            self._refresh_live_output()
+
+    def _set_live_execution(self, label: str) -> None:
+        has_changed = label != self._live_execution_label
+        self._live_execution_label = label
+        if has_changed and self.step == WizardStep.RESULTS:
+            self._refresh_live_output()
+
+    def _prepend_execution_summary(self, lines: list[str]) -> list[str]:
+        if not self._last_execution_label:
+            return lines
+        summary = [
+            "[execution]",
+            self._last_execution_label,
+            "",
+        ]
+        if not lines:
+            return summary[:-1]
+        return summary + lines
 
     def _apply_search_output(self, output: SearchOutput) -> None:
         rendered_lines = self._render_results(
@@ -2668,13 +2863,15 @@ class LogBrowser(App):
         self._live_pending_results = {}
         self.last_rendered_lines = rendered_lines
         self.last_rendered_kind = output.kind
+        self._last_execution_label = self._live_execution_label
         self._write_subsearch_snapshot(
             output.results,
             output.term,
             rendered_lines,
         )
         self.subsearch_kind = output.kind
-        self._display_results(rendered_lines, output.kind)
+        display_lines = self._prepend_execution_summary(rendered_lines)
+        self._display_results(display_lines, output.kind)
         self._notify(
             f"Search complete. Processed {len(output.targets)} log(s)."
         )
@@ -2735,6 +2932,8 @@ class LogBrowser(App):
             self._search_worker = None
             self._live_pending_results = {}
             self._live_target_label = None
+            self._live_progress_label = None
+            self._live_progress_percent = 0
             self._live_match_preview_lines = []
             self._live_match_total = 0
         if self.search_input is not None:

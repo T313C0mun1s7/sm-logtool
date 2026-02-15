@@ -389,7 +389,86 @@ async def test_search_step_busy_state_toggles_controls(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
+async def test_perform_search_notifies_submit_immediately(
+    tmp_path,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
+
+    class _WorkerStub:
+        is_finished = False
+        is_cancelled = False
+
+    def _run_worker_stub(*_args, **_kwargs):
+        return _WorkerStub()
+
+    monkeypatch.setattr(app, "run_worker", _run_worker_stub)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        assert app.search_input is not None
+        app.search_input.value = "Connection"
+        app._perform_search()
+        await pilot.pause()
+
+        status = app.wizard.query_one("#status", Static)
+        assert "Search submitted. Preparing logs..." in str(status.render())
+        assert app.step == WizardStep.RESULTS
+        progress_text = app._get_full_results_text() or ""
+        assert "[progress]" in progress_text
+        assert "Search submitted. Preparing logs..." in progress_text
+        assert "[execution]" in progress_text
+        assert "Planning execution mode..." in progress_text
+        assert app._search_in_progress is True
+        cancel_button = app.wizard.query_one("#cancel-search", Button)
+        assert cancel_button.disabled is False
+
+
+@pytest.mark.asyncio
+async def test_target_progress_status_is_determinate(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._notify_target_search_progress(
+            1,
+            2,
+            "2024.01.01-smtpLog.log",
+            512,
+            1024,
+        )
+        await pilot.pause()
+
+        status = app.wizard.query_one("#status", Static)
+        status_text = str(status.render())
+        assert "Searching 1/2 log(s): 2024.01.01-smtpLog.log" in status_text
+        assert "50%" in status_text
+        assert "(512.0B/1.0KB)" in status_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raised_error",
+    [
+        PermissionError("no access"),
+        RuntimeError("pool failed"),
+        ValueError("bad pool state"),
+    ],
+)
+async def test_parallel_search_uses_process_fallback_before_serial(
+    tmp_path,
+    monkeypatch,
+    raised_error,
+):
     logs_dir = tmp_path / "logs"
     staging_dir = tmp_path / "staging"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -403,8 +482,8 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         ui_app_module,
-        "_search_targets_in_process_pool",
-        lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError()),
+        "_search_targets_in_thread_pool",
+        lambda *args, **kwargs: (_ for _ in ()).throw(raised_error),
     )
 
     app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
@@ -421,6 +500,7 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
         assert request is not None
         search_fn = get_search_function("smtp")
         assert search_fn is not None
+
         def _direct(f, *a):
             return f(*a)
 
@@ -429,6 +509,47 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
         class _Worker:
             is_cancelled = False
 
+        def _process_success(
+            request,
+            targets,
+            *,
+            workers,
+            is_cancelled=None,
+            on_result=None,
+            on_completed=None,
+        ):
+            _ = workers
+            results = []
+            total = len(targets)
+            for index, target in enumerate(targets):
+                if is_cancelled is not None and is_cancelled():
+                    raise AssertionError("cancelled unexpectedly")
+                result = ui_app_module._search_single_target(
+                    request.kind,
+                    target,
+                    request.term,
+                    request.mode,
+                    request.fuzzy_threshold,
+                    request.ignore_case,
+                    request.use_index_cache,
+                )
+                results.append(result)
+                if on_result is not None:
+                    on_result(index, target, result)
+                if on_completed is not None:
+                    on_completed(index + 1, total, target)
+            return results
+
+        monkeypatch.setattr(
+            ui_app_module,
+            "_search_targets_in_process_pool",
+            _process_success,
+        )
+
+        def _fail_serial(*_args, **_kwargs):
+            raise AssertionError("serial fallback should not run")
+
+        monkeypatch.setattr(app, "_search_targets_serial", _fail_serial)
         results = app._search_targets_parallel(
             request,
             request.source_paths,
@@ -441,6 +562,39 @@ async def test_parallel_search_falls_back_to_serial(tmp_path, monkeypatch):
             "2024.01.01-smtpLog.log",
             "2024.01.02-smtpLog.log",
         ]
+        assert app._live_execution_label is not None
+        assert "process fallback" in app._live_execution_label
+
+
+@pytest.mark.asyncio
+async def test_worker_error_stays_on_results_and_shows_message(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        app._set_search_running(True)
+        await pilot.pause()
+
+        class _WorkerStub:
+            error = ValueError("boom")
+            result = None
+
+        worker = _WorkerStub()
+        app._search_worker = worker
+
+        class _EventStub:
+            def __init__(self) -> None:
+                self.worker = worker
+                self.state = ui_app_module.WorkerState.ERROR
+
+        app.on_worker_state_changed(_EventStub())
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        text = app._get_full_results_text() or ""
+        assert "[search error]" in text
+        assert "boom" in text
 
 
 @pytest.mark.asyncio

@@ -73,7 +73,7 @@ Search handlers currently exist for:
 - [x] Add explicit search mode switching plus clear CLI/TUI help text.
 - [x] Add support for additional compressed formats (for example `.gz`)
   [Issue #20 closed as not planned; reopen if needed].
-- [ ] Improve large-log performance and responsiveness (progress feedback,
+- [x] Improve large-log performance and responsiveness (progress feedback,
   background work, reduced memory footprint).
 - [x] Add export controls (matched lines vs full conversations, optional
   structured output) [Issue #23 closed as not planned; reopen if needed].

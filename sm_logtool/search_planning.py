@@ -30,10 +30,20 @@ def choose_search_execution_plan(
     if target_count <= 1:
         return SearchExecutionPlan(1, "single target")
 
-    if use_index_cache:
-        return SearchExecutionPlan(1, "indexed targets use in-process cache")
-
     bounded_workers = max(1, min(target_count, max_workers))
+    if use_index_cache:
+        if target_count == 2:
+            return SearchExecutionPlan(1, "indexed two-target workload")
+        if total_bytes <= 0:
+            return SearchExecutionPlan(
+                bounded_workers,
+                "indexed workload size unavailable",
+            )
+        if total_bytes < _MEDIUM_TOTAL_BYTES:
+            workers = min(2, bounded_workers)
+            return SearchExecutionPlan(workers, "indexed medium workload")
+        return SearchExecutionPlan(bounded_workers, "indexed large workload")
+
     if total_bytes <= 0:
         return SearchExecutionPlan(bounded_workers, "workload size unavailable")
 
