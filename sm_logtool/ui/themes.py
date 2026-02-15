@@ -14,6 +14,17 @@ from ..syntax import TOKEN_ID
 from ..syntax import TOKEN_IP
 from ..syntax import TOKEN_LINE_NUMBER
 from ..syntax import TOKEN_MESSAGE_ID
+from ..syntax import TOKEN_PROTO_ACTIVESYNC
+from ..syntax import TOKEN_PROTO_API
+from ..syntax import TOKEN_PROTO_CALDAV
+from ..syntax import TOKEN_PROTO_CARDDAV
+from ..syntax import TOKEN_PROTO_EAS
+from ..syntax import TOKEN_PROTO_IMAP
+from ..syntax import TOKEN_PROTO_POP
+from ..syntax import TOKEN_PROTO_SMTP
+from ..syntax import TOKEN_PROTO_USER
+from ..syntax import TOKEN_PROTO_WEBMAIL
+from ..syntax import TOKEN_PROTO_XMPP
 from ..syntax import TOKEN_RESPONSE
 from ..syntax import TOKEN_STATUS_BAD
 from ..syntax import TOKEN_STATUS_GOOD
@@ -75,7 +86,7 @@ CYBERDARK_THEME = Theme(
         "action-button-background": "#2a1451",
         "action-button-foreground": "#f8ecff",
         "action-button-hover-background": "#4b1f82",
-        "action-button-focus-background": "#00bfe5",
+        "action-button-focus-background": "#ff4fd8",
         "context-menu-background": "#0e0e0e",
         "context-menu-border": "#8b2cff",
     },
@@ -144,10 +155,32 @@ def _cybernotdark_syntax_styles() -> dict[str, Style]:
     styles = _cyberdark_syntax_styles()
     styles.update(
         {
-            # Keep the same vivid token family and only tweak utility tokens
-            # that lose contrast on lighter backgrounds.
+            # Light theme keeps neon identity, but uses darker hues so tokens
+            # remain readable against light grey backgrounds.
+            TOKEN_TERM: Style(color="#9d007f", bold=True),
+            TOKEN_TIMESTAMP: Style(color="#006f92", bold=True),
             TOKEN_BRACKET: Style(color="#607d8b"),
+            TOKEN_IP: Style(color="#005fbf"),
+            TOKEN_ID: Style(color="#6f2dbd"),
+            TOKEN_TAG: Style(color="#007a8a"),
+            TOKEN_EMAIL: Style(color="#a4006b"),
+            TOKEN_COMMAND: Style(color="#0a7a36"),
+            TOKEN_RESPONSE: Style(color="#b14f00"),
             TOKEN_LINE_NUMBER: Style(color="#607d8b"),
+            TOKEN_MESSAGE_ID: Style(color="#0078a8"),
+            TOKEN_STATUS_BAD: Style(color="#b0002e", bold=True),
+            TOKEN_STATUS_GOOD: Style(color="#0c7a3a", bold=True),
+            TOKEN_PROTO_SMTP: Style(color="#0f8a54", bold=True),
+            TOKEN_PROTO_IMAP: Style(color="#0067c5", bold=True),
+            TOKEN_PROTO_POP: Style(color="#b06a00", bold=True),
+            TOKEN_PROTO_USER: Style(color="#a10073", bold=True),
+            TOKEN_PROTO_WEBMAIL: Style(color="#0086a6", bold=True),
+            TOKEN_PROTO_ACTIVESYNC: Style(color="#c62828", bold=True),
+            TOKEN_PROTO_EAS: Style(color="#a86a00", bold=True),
+            TOKEN_PROTO_CALDAV: Style(color="#5e35b1", bold=True),
+            TOKEN_PROTO_CARDDAV: Style(color="#7b1fa2", bold=True),
+            TOKEN_PROTO_XMPP: Style(color="#008b61", bold=True),
+            TOKEN_PROTO_API: Style(color="#bf5f00", bold=True),
         }
     )
     return styles
