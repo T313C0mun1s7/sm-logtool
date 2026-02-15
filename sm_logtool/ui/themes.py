@@ -39,6 +39,10 @@ CYBER_THEME_VARIABLE_DEFAULTS: dict[str, str] = {
     "selection-active-foreground": "white",
     "selection-selected-active-background": "#1b98d3",
     "selection-selected-active-foreground": "black",
+    "action-button-background": "#2a2a2a",
+    "action-button-foreground": "#f2f5f7",
+    "action-button-hover-background": "#3a3a3a",
+    "action-button-focus-background": "#4a4a4a",
     "context-menu-background": "#1f1f1f",
     "context-menu-border": "#5f5f5f",
 }
@@ -59,17 +63,21 @@ CYBERDARK_THEME = Theme(
     variables={
         **CYBER_THEME_VARIABLE_DEFAULTS,
         "top-actions-background": "#000000",
-        "top-action-background": "#121212",
-        "top-action-hover-background": "#1f1f1f",
-        "top-action-mnemonic-foreground": "#ffd166",
-        "selection-selected-background": "#1e1e1e",
+        "top-action-background": "#1c0c2e",
+        "top-action-hover-background": "#2a1451",
+        "top-action-mnemonic-foreground": "#32f7ff",
+        "selection-selected-background": "#201632",
         "selection-selected-foreground": "#f3f8ff",
-        "selection-active-background": "#005e9a",
+        "selection-active-background": "#8b2cff",
         "selection-active-foreground": "#f6fcff",
-        "selection-selected-active-background": "#22b8f2",
+        "selection-selected-active-background": "#00d5ff",
         "selection-selected-active-foreground": "#081423",
+        "action-button-background": "#2a1451",
+        "action-button-foreground": "#f8ecff",
+        "action-button-hover-background": "#4b1f82",
+        "action-button-focus-background": "#00bfe5",
         "context-menu-background": "#0e0e0e",
-        "context-menu-border": "#2b2b2b",
+        "context-menu-border": "#8b2cff",
     },
 )
 
@@ -88,30 +96,56 @@ CYBERNOTDARK_THEME = Theme(
     dark=False,
     variables={
         **CYBER_THEME_VARIABLE_DEFAULTS,
-        "top-actions-background": "#d4d4d4",
+        "top-actions-background": "#d6d6d6",
         "top-action-background": "#c4c4c4",
-        "top-action-hover-background": "#b4b4b4",
-        "top-action-mnemonic-foreground": "#8a4b00",
+        "top-action-hover-background": "#b6b6b6",
+        "top-action-mnemonic-foreground": "#8b2cff",
         "selection-selected-background": "#cfcfcf",
         "selection-selected-foreground": "#12263f",
         "selection-active-background": "#0079bf",
         "selection-active-foreground": "#ffffff",
         "selection-selected-active-background": "#0f95e0",
         "selection-selected-active-foreground": "#081a2f",
+        "action-button-background": "#bf8fff",
+        "action-button-foreground": "#1d1033",
+        "action-button-hover-background": "#9de9ff",
+        "action-button-focus-background": "#ff89d9",
         "context-menu-background": "#e2e2e2",
-        "context-menu-border": "#8a8a8a",
+        "context-menu-border": "#8f63ff",
     },
 )
 
 FIRST_PARTY_APP_THEMES = (CYBERDARK_THEME, CYBERNOTDARK_THEME)
 
 
-def _cybernotdark_syntax_styles() -> dict[str, Style]:
+def _cyberdark_syntax_styles() -> dict[str, Style]:
     styles = dict(TOKEN_STYLES)
     styles.update(
         {
-            # Keep the same vivid token family and only tweak low-contrast
-            # utility tokens for light backgrounds.
+            TOKEN_TERM: Style(color="#ff5edc", bold=True),
+            TOKEN_TIMESTAMP: Style(color="#32f7ff", bold=True),
+            TOKEN_BRACKET: Style(color="#7a8491"),
+            TOKEN_IP: Style(color="#45b5ff"),
+            TOKEN_ID: Style(color="#c78bff"),
+            TOKEN_TAG: Style(color="#32f7ff"),
+            TOKEN_EMAIL: Style(color="#ff75bd"),
+            TOKEN_COMMAND: Style(color="#4cff8a"),
+            TOKEN_RESPONSE: Style(color="#ffc759"),
+            TOKEN_LINE_NUMBER: Style(color="#7a8491"),
+            TOKEN_MESSAGE_ID: Style(color="#00d5ff"),
+            TOKEN_STATUS_BAD: Style(color="#ff6b81", bold=True),
+            TOKEN_STATUS_GOOD: Style(color="#52ffa8", bold=True),
+        }
+    )
+    return styles
+
+
+def _cybernotdark_syntax_styles() -> dict[str, Style]:
+    styles = _cyberdark_syntax_styles()
+    styles.update(
+        {
+            # Keep the same vivid token family and only tweak utility tokens
+            # that lose contrast on lighter backgrounds.
             TOKEN_BRACKET: Style(color="#607d8b"),
             TOKEN_LINE_NUMBER: Style(color="#607d8b"),
         }
@@ -121,10 +155,10 @@ def _cybernotdark_syntax_styles() -> dict[str, Style]:
 
 RESULTS_THEME_DARK = TextAreaTheme(
     name=RESULTS_THEME_DARK_NAME,
-    base_style=Style(color="#e8f2ff", bgcolor="#0a111f"),
-    cursor_line_style=Style(bgcolor="#111b31"),
-    selection_style=Style(bgcolor="#24406a"),
-    syntax_styles=dict(TOKEN_STYLES),
+    base_style=Style(color="#e8f2ff", bgcolor="#000000"),
+    cursor_line_style=Style(bgcolor="#171717"),
+    selection_style=Style(bgcolor="#2a1451"),
+    syntax_styles=_cyberdark_syntax_styles(),
 )
 
 RESULTS_THEME_LIGHT = TextAreaTheme(

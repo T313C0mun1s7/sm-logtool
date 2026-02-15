@@ -1511,6 +1511,17 @@ class LogBrowser(App):
         min-height: 1;
         padding: 0;
         border: none;
+        background: $action-button-background;
+        color: $action-button-foreground;
+    }
+
+    .action-button:hover {
+        background: $action-button-hover-background;
+    }
+
+    .action-button:focus {
+        background: $action-button-focus-background;
+        text-style: bold;
     }
 
     .selected .label {
