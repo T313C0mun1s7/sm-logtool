@@ -101,13 +101,13 @@ CYBERNOTDARK_THEME = Theme(
     success="#007f4f",
     accent="#d238c2",
     foreground="#10233b",
-    background="#7fff00",
-    surface="#7fff00",
-    panel="#7fff00",
+    background="#98fb98",
+    surface="#98fb98",
+    panel="#eeee00",
     dark=False,
     variables={
         **CYBER_THEME_VARIABLE_DEFAULTS,
-        "top-actions-background": "#d6d6d6",
+        "top-actions-background": "#98fb98",
         "top-action-background": "#c4c4c4",
         "top-action-hover-background": "#b6b6b6",
         "top-action-mnemonic-foreground": "#8b2cff",
@@ -196,9 +196,9 @@ RESULTS_THEME_DARK = TextAreaTheme(
 
 RESULTS_THEME_LIGHT = TextAreaTheme(
     name=RESULTS_THEME_LIGHT_NAME,
-    base_style=Style(color="#10233b", bgcolor="#7fff00"),
-    cursor_line_style=Style(bgcolor="#d4d4d4"),
-    selection_style=Style(bgcolor="#b4b4b4"),
+    base_style=Style(color="#10233b", bgcolor="#eeee00"),
+    cursor_line_style=Style(bgcolor="#d6d600"),
+    selection_style=Style(bgcolor="#b7b700"),
     syntax_styles=_cybernotdark_syntax_styles(),
 )
 
