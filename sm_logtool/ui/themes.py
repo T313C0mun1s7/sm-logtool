@@ -26,6 +26,7 @@ CYBERNOTDARK_THEME_NAME = "Cybernotdark"
 
 RESULTS_THEME_DARK_NAME = "smlog-cyberdark"
 RESULTS_THEME_LIGHT_NAME = "smlog-cybernotdark"
+RESULTS_THEME_DEFAULT_NAME = "smlog-default"
 
 CYBER_THEME_VARIABLE_DEFAULTS: dict[str, str] = {
     "top-actions-background": "#1f1f1f",
@@ -143,12 +144,31 @@ RESULTS_THEME_LIGHT = TextAreaTheme(
     syntax_styles=_cybernotdark_syntax_styles(),
 )
 
-FIRST_PARTY_RESULTS_THEMES = (RESULTS_THEME_DARK, RESULTS_THEME_LIGHT)
+RESULTS_THEME_DEFAULT = TextAreaTheme(
+    name=RESULTS_THEME_DEFAULT_NAME,
+    syntax_styles=dict(TOKEN_STYLES),
+)
+
+FIRST_PARTY_RESULTS_THEMES = (
+    RESULTS_THEME_DARK,
+    RESULTS_THEME_LIGHT,
+    RESULTS_THEME_DEFAULT,
+)
+
+APP_THEME_TO_RESULTS_THEME: dict[str, str] = {
+    CYBERDARK_THEME_NAME: RESULTS_THEME_DARK_NAME,
+    CYBERNOTDARK_THEME_NAME: RESULTS_THEME_LIGHT_NAME,
+    "textual-dark": RESULTS_THEME_DARK_NAME,
+    "textual-light": RESULTS_THEME_LIGHT_NAME,
+}
 
 
-def results_theme_name(*, dark: bool) -> str:
-    """Return the ResultsArea theme name for dark/light app themes."""
+def results_theme_for_app_theme(app_theme: str | None) -> str:
+    """Return the ResultsArea theme name for a given app theme name."""
 
-    if dark:
-        return RESULTS_THEME_DARK_NAME
-    return RESULTS_THEME_LIGHT_NAME
+    if app_theme is None:
+        return RESULTS_THEME_DEFAULT_NAME
+    return APP_THEME_TO_RESULTS_THEME.get(
+        app_theme,
+        RESULTS_THEME_DEFAULT_NAME,
+    )

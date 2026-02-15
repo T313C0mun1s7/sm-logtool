@@ -77,7 +77,7 @@ from .themes import CYBERDARK_THEME
 from .themes import CYBER_THEME_VARIABLE_DEFAULTS
 from .themes import FIRST_PARTY_APP_THEMES
 from .themes import FIRST_PARTY_RESULTS_THEMES
-from .themes import results_theme_name
+from .themes import results_theme_for_app_theme
 
 try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
@@ -551,15 +551,16 @@ class ResultsArea(TextArea):
         )
         for theme in FIRST_PARTY_RESULTS_THEMES:
             self.register_theme(theme)
-        self.set_visual_theme(dark=True)
+        self.set_visual_theme()
 
     def set_log_kind(self, log_kind: str | None) -> None:
         self._log_kind = log_kind or ""
         self._build_highlight_map()
         self.refresh()
 
-    def set_visual_theme(self, *, dark: bool) -> None:
-        theme_name = results_theme_name(dark=dark)
+    def set_visual_theme(self) -> None:
+        app_theme_name = getattr(getattr(self, "app", None), "theme", None)
+        theme_name = results_theme_for_app_theme(app_theme_name)
         if self.theme == theme_name:
             return
         self.theme = theme_name
@@ -3076,7 +3077,7 @@ class LogBrowser(App):
         output_log = getattr(self, "output_log", None)
         if not isinstance(output_log, ResultsArea):
             return
-        output_log.set_visual_theme(dark=self.current_theme.dark)
+        output_log.set_visual_theme()
 
     def _persist_theme(self, theme_name: str) -> None:
         if self.config_path is None:

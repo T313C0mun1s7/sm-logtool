@@ -7,8 +7,11 @@ Syntax highlighting now has separate but linked pieces:
 3. TUI UI themes and TUI syntax themes: `sm_logtool/ui/themes.py`
 
 In the TUI, app theme changes (for example `Cyberdark` to `Cybernotdark`)
-automatically switch the Results pane syntax theme via:
+automatically switch the Results pane syntax theme via an app-theme-name map
+with an explicit default fallback syntax theme via:
 - `sm_logtool/ui/app.py` (`_watch_theme` -> `_sync_results_theme`)
+- `sm_logtool/ui/themes.py` (`APP_THEME_TO_RESULTS_THEME`,
+  `results_theme_for_app_theme`)
 
 **Tokenizer Overview**
 
