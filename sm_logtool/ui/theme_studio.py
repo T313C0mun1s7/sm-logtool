@@ -22,6 +22,7 @@ from .theme_importer import (
 )
 from .theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 from .themes import CYBERDARK_THEME
+from .themes import FIRST_PARTY_APP_THEMES
 from .themes import build_results_theme
 
 _SAMPLE_KIND = "smtp"
@@ -130,6 +131,8 @@ class ThemeStudio(App):
         quantize_ansi256: bool,
     ) -> None:
         super().__init__()
+        for theme_model in FIRST_PARTY_APP_THEMES:
+            self.register_theme(theme_model)
         self.source_paths = source_paths
         self.store_dir = store_dir.expanduser()
         self.profile = profile
