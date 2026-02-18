@@ -57,48 +57,100 @@ class ThemeStudio(App):
     CSS = """
     Screen {
         layout: vertical;
+        background: $background;
+        color: $foreground;
     }
 
     #title {
         padding: 1 1;
         text-style: bold;
+        background: $top-actions-background;
+        color: $foreground;
+        border-bottom: solid $top-action-background;
     }
 
     #layout {
         height: 1fr;
+        background: $background;
     }
 
     #sources {
         width: 36;
         margin: 0 1 1 1;
-        border: round $accent;
+        border: round $top-action-background;
+        background: $panel;
+        color: $foreground;
         padding: 1;
     }
 
     #preview {
         margin: 0 1 1 0;
-        border: round $accent;
+        border: round $top-action-background;
+        background: $panel;
+        color: $foreground;
         padding: 1;
     }
 
     #source-list {
         height: 1fr;
         margin-top: 1;
+        border: round $selection-selected-background;
+        background: $surface;
+        color: $foreground;
+    }
+
+    .source-label {
+        color: $foreground;
+    }
+
+    #top-actions-preview {
+        background: $top-actions-background;
+        height: auto;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+
+    .top-action-sample {
+        background: $top-action-background;
+        color: $foreground;
+        padding: 0 1;
+        margin-right: 1;
+        border: round $top-action-hover-background;
     }
 
     #controls {
         margin-bottom: 1;
         height: auto;
+        background: $surface;
+        border: round $selection-selected-background;
+        padding: 1;
     }
 
     #save-name {
         width: 28;
         margin-right: 1;
+        background: $surface;
+        color: $foreground;
+        border: round $accent;
     }
 
     .profile-button {
         min-width: 12;
         margin-right: 1;
+        background: $action-button-background;
+        color: $action-button-foreground;
+        border: round $action-button-hover-background;
+    }
+
+    .profile-button.-active {
+        background: $action-button-hover-background;
+        color: $action-button-foreground;
+    }
+
+    .studio-button {
+        background: $action-button-background;
+        color: $action-button-foreground;
+        border: round $action-button-hover-background;
     }
 
     .preview-box {
@@ -106,6 +158,8 @@ class ThemeStudio(App):
         padding: 1;
         margin-top: 1;
         height: auto;
+        background: $surface;
+        color: $foreground;
     }
 
     #status {
@@ -134,6 +188,13 @@ class ThemeStudio(App):
     #swatch-values {
         margin-top: 1;
         color: $foreground;
+    }
+
+    #sample-query {
+        margin-top: 1;
+        background: $surface;
+        color: $foreground;
+        border: round $selection-selected-background;
     }
     """
 
@@ -173,6 +234,10 @@ class ThemeStudio(App):
                 self.source_list = ListView(id="source-list")
                 yield self.source_list
             with Vertical(id="preview"):
+                with Horizontal(id="top-actions-preview"):
+                    yield Static("Menu", classes="top-action-sample")
+                    yield Static("Quit", classes="top-action-sample")
+                    yield Static("Reset", classes="top-action-sample")
                 with Horizontal(id="controls"):
                     yield Button(
                         "Balanced",
@@ -190,14 +255,26 @@ class ThemeStudio(App):
                         classes="profile-button",
                     )
                     ansi_label = self._ansi_label()
-                    yield Button(ansi_label, id="toggle-ansi")
+                    yield Button(
+                        ansi_label,
+                        id="toggle-ansi",
+                        classes="studio-button",
+                    )
                     yield Input(
                         "",
                         id="save-name",
                         placeholder="Theme name",
                     )
-                    yield Button("Save", id="save-theme")
-                    yield Button("Quit", id="quit-studio")
+                    yield Button(
+                        "Save",
+                        id="save-theme",
+                        classes="studio-button",
+                    )
+                    yield Button(
+                        "Quit",
+                        id="quit-studio",
+                        classes="studio-button",
+                    )
 
                 yield Static("", id="status")
                 yield Static("", id="meta")
@@ -218,6 +295,11 @@ class ThemeStudio(App):
                         classes="sample-swatch",
                     )
                 yield Static("", id="swatch-values")
+                yield Input(
+                    "search term example",
+                    id="sample-query",
+                    placeholder="Search term",
+                )
                 yield Static("", id="syntax-preview", classes="preview-box")
         yield Footer()
 
@@ -320,8 +402,10 @@ class ThemeStudio(App):
             button = self.query_one(f"#profile-{profile}", Button)
             if profile == self.profile:
                 button.variant = "primary"
+                button.add_class("-active")
             else:
                 button.variant = "default"
+                button.remove_class("-active")
 
     def _load_sources(self) -> None:
         source_paths = self.source_paths
