@@ -235,3 +235,42 @@ def test_mapping_profiles_produce_distinct_themes() -> None:
         vivid.variables["selection-selected-background"]
         != soft.variables["selection-selected-background"]
     )
+
+
+def test_saved_theme_round_trip_preserves_visual_values(tmp_path: Path) -> None:
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#111111\n"
+        "foreground=#f3f3f3\n"
+        "color14=#00ffcc\n"
+        "color13=#ff66cc\n"
+        "color12=#55aaff\n",
+        encoding="utf-8",
+    )
+    imported, warnings = load_imported_themes(
+        [source],
+        profile="vivid",
+        quantize_ansi256=True,
+    )
+    assert warnings == []
+    theme = imported[0]
+    store_dir = tmp_path / "store"
+
+    save_converted_theme(
+        theme=theme,
+        store_dir=store_dir,
+        source_path=source,
+        mapping_profile="vivid",
+        quantize_ansi256=True,
+    )
+    loaded, load_warnings = load_saved_themes(store_dir=store_dir)
+    assert load_warnings == []
+    assert len(loaded) == 1
+    saved = loaded[0]
+
+    assert saved.name == theme.name
+    assert saved.primary == theme.primary
+    assert saved.accent == theme.accent
+    assert saved.background == theme.background
+    assert saved.panel == theme.panel
+    assert dict(saved.variables or {}) == dict(theme.variables or {})

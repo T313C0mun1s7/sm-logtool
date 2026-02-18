@@ -947,7 +947,7 @@ def load_saved_themes(
 ) -> tuple[list[Theme], list[str]]:
     """Load converted themes previously saved with ``save_converted_theme``."""
 
-    names = set(existing_names or ())
+    _ = existing_names
     files = _discover_saved_theme_files(store_dir.expanduser())
     themes: list[Theme] = []
     warnings: list[str] = []
@@ -958,23 +958,6 @@ def load_saved_themes(
         except ValueError as exc:
             warnings.append(f"{path}: {exc}")
             continue
-        unique_name = _unique_theme_name(theme.name, names)
-        if unique_name != theme.name:
-            theme = Theme(
-                name=unique_name,
-                primary=theme.primary,
-                secondary=theme.secondary,
-                warning=theme.warning,
-                error=theme.error,
-                success=theme.success,
-                accent=theme.accent,
-                foreground=theme.foreground,
-                background=theme.background,
-                surface=theme.surface,
-                panel=theme.panel,
-                dark=theme.dark,
-                variables=dict(theme.variables or {}),
-            )
         themes.append(theme)
     return themes, warnings
 
