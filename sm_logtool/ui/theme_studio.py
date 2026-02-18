@@ -10,7 +10,15 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Footer, ListItem, ListView, Static
+from textual.widgets import (
+    Button,
+    Footer,
+    Input,
+    ListItem,
+    ListView,
+    Static,
+)
+from textual.theme import Theme
 
 from ..syntax import spans_for_line
 from .theme_importer import (
@@ -81,6 +89,11 @@ class ThemeStudio(App):
         height: auto;
     }
 
+    #save-name {
+        width: 28;
+        margin-right: 1;
+    }
+
     .profile-button {
         min-width: 12;
         margin-right: 1;
@@ -139,6 +152,7 @@ class ThemeStudio(App):
         self.quantize_ansi256 = quantize_ansi256
         self.current_source: Path | None = None
         self.current_theme_name: str | None = None
+        self.current_source_theme_name: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("Theme Studio", id="title")
@@ -166,6 +180,11 @@ class ThemeStudio(App):
                     )
                     ansi_label = self._ansi_label()
                     yield Button(ansi_label, id="toggle-ansi")
+                    yield Input(
+                        "",
+                        id="save-name",
+                        placeholder="Theme name",
+                    )
                     yield Button("Save", id="save-theme")
                     yield Button("Quit", id="quit-studio")
 
@@ -190,7 +209,7 @@ class ThemeStudio(App):
         item = event.item
         if isinstance(item, SourceThemeItem):
             self.current_source = item.source_path
-            self._refresh_preview()
+            self._refresh_preview(reset_name=True)
 
     def on_list_view_selected(
         self,
@@ -199,12 +218,19 @@ class ThemeStudio(App):
         item = event.item
         if isinstance(item, SourceThemeItem):
             self.current_source = item.source_path
-            self._refresh_preview()
+            self._refresh_preview(reset_name=True)
+
+    def on_input_submitted(
+        self,
+        event: Input.Submitted,
+    ) -> None:
+        if event.input.id == "save-name":
+            self.action_save_theme()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
         if button_id == "quit-studio":
-            self.action_quit()
+            self.exit()
             return
         if button_id == "save-theme":
             self.action_save_theme()
@@ -229,8 +255,13 @@ class ThemeStudio(App):
         if theme_model is None:
             self._set_status("Preview theme is not available to save.")
             return
+        save_name = self._selected_theme_name()
+        if not save_name:
+            self._set_status("Theme name cannot be empty.")
+            return
+        theme_to_save = _theme_with_name(theme_model, save_name)
         path = save_converted_theme(
-            theme=theme_model,
+            theme=theme_to_save,
             store_dir=self.store_dir,
             source_path=self.current_source,
             mapping_profile=self.profile,
@@ -242,7 +273,7 @@ class ThemeStudio(App):
         self.quantize_ansi256 = not self.quantize_ansi256
         toggle = self.query_one("#toggle-ansi", Button)
         toggle.label = self._ansi_label()
-        self._refresh_preview()
+        self._refresh_preview(reset_name=False)
 
     def action_profile_balanced(self) -> None:
         self._set_profile("balanced")
@@ -258,7 +289,7 @@ class ThemeStudio(App):
             return
         self.profile = profile
         self._update_profile_button_states()
-        self._refresh_preview()
+        self._refresh_preview(reset_name=False)
 
     def _update_profile_button_states(self) -> None:
         for profile in SUPPORTED_THEME_MAPPING_PROFILES:
@@ -291,13 +322,14 @@ class ThemeStudio(App):
         self.source_list.index = 0
         first = items[0]
         self.current_source = first.source_path
-        self._refresh_preview()
+        self._refresh_preview(reset_name=True)
 
-    def _refresh_preview(self) -> None:
+    def _refresh_preview(self, *, reset_name: bool) -> None:
         if self.current_source is None:
             return
         try:
             palette = parse_terminal_palette(self.current_source)
+            self.current_source_theme_name = palette.name
             preview_name = "Theme Studio Preview"
             preview_theme = map_terminal_palette(
                 name=preview_name,
@@ -310,13 +342,18 @@ class ThemeStudio(App):
             self._set_status(str(exc))
             return
 
+        if reset_name:
+            name_input = self.query_one("#save-name", Input)
+            name_input.value = palette.name
+
         self.register_theme(preview_theme)
         self.theme = preview_theme.name
         self.current_theme_name = preview_theme.name
         self._set_status("Preview updated. Press 's' to save converted theme.")
         self._set_meta(
             f"Source: {self.current_source} | Profile: {self.profile} | "
-            f"{self._ansi_label()} | Save dir: {self.store_dir}"
+            f"{self._ansi_label()} | Save dir: {self.store_dir} | "
+            f"primary={preview_theme.primary} accent={preview_theme.accent}"
         )
         self._set_syntax_preview(preview_theme)
 
@@ -352,6 +389,33 @@ class ThemeStudio(App):
         if self.quantize_ansi256:
             return "ANSI-256: On"
         return "ANSI-256: Off"
+
+    def _selected_theme_name(self) -> str:
+        name_input = self.query_one("#save-name", Input)
+        value = name_input.value.strip()
+        if value:
+            return value
+        if self.current_source_theme_name:
+            return self.current_source_theme_name
+        return "Imported Theme"
+
+
+def _theme_with_name(theme: Theme, name: str) -> Theme:
+    return Theme(
+        name=name,
+        primary=theme.primary,
+        secondary=theme.secondary,
+        warning=theme.warning,
+        error=theme.error,
+        success=theme.success,
+        accent=theme.accent,
+        foreground=theme.foreground,
+        background=theme.background,
+        surface=theme.surface,
+        panel=theme.panel,
+        dark=theme.dark,
+        variables=dict(theme.variables or {}),
+    )
 
 
 def run(

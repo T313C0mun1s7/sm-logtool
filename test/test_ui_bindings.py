@@ -16,6 +16,7 @@ from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
 from sm_logtool.ui.theme_importer import load_imported_themes
 from sm_logtool.ui.theme_importer import save_converted_theme
+from sm_logtool.ui.theme_studio import ThemeStudio
 
 
 def write_sample_logs(root: Path) -> None:
@@ -57,6 +58,24 @@ def test_log_browser_loads_saved_converted_themes(tmp_path):
 
     app = LogBrowser(logs_dir=logs_dir, theme_store_dir=store_dir)
     assert imported[0].name in app.available_themes
+
+
+def test_theme_studio_quit_button_calls_exit(monkeypatch, tmp_path):
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    called = {"value": False}
+
+    def _fake_exit() -> None:
+        called["value"] = True
+
+    monkeypatch.setattr(app, "exit", _fake_exit)
+    button = Button("Quit", id="quit-studio")
+    app.on_button_pressed(Button.Pressed(button))
+    assert called["value"] is True
 
 
 @pytest.mark.asyncio

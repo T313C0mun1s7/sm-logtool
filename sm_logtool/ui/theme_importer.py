@@ -76,33 +76,61 @@ class TerminalPalette:
 @dataclass(frozen=True)
 class _ProfileSpec:
     primary_slots: tuple[int, ...]
+    secondary_slots: tuple[int, ...]
+    success_slots: tuple[int, ...]
+    warning_slots: tuple[int, ...]
+    error_slots: tuple[int, ...]
     accent_slots: tuple[int, ...]
     panel_mix: float
     surface_mix: float
     action_mix: float
+    selection_mix: float
+    active_mix: float
+    button_mix: float
 
 
 _PROFILE_SPECS = {
     "balanced": _ProfileSpec(
         primary_slots=(14, 12, 6, 4),
+        secondary_slots=(13, 5, 12, 4),
+        success_slots=(10, 2),
+        warning_slots=(11, 3),
+        error_slots=(9, 1),
         accent_slots=(13, 11, 10, 9, 15),
         panel_mix=0.08,
         surface_mix=0.04,
         action_mix=0.14,
+        selection_mix=0.30,
+        active_mix=0.35,
+        button_mix=0.20,
     ),
     "vivid": _ProfileSpec(
-        primary_slots=(12, 14, 4, 6),
+        primary_slots=(12, 14, 13, 9),
+        secondary_slots=(14, 12, 11, 10),
+        success_slots=(10, 14, 2),
+        warning_slots=(11, 13, 3),
+        error_slots=(9, 13, 1),
         accent_slots=(13, 11, 10, 9, 14),
-        panel_mix=0.11,
-        surface_mix=0.05,
-        action_mix=0.20,
+        panel_mix=0.16,
+        surface_mix=0.08,
+        action_mix=0.32,
+        selection_mix=0.48,
+        active_mix=0.58,
+        button_mix=0.34,
     ),
     "soft": _ProfileSpec(
         primary_slots=(6, 4, 14, 12),
-        accent_slots=(5, 3, 2, 4, 6),
-        panel_mix=0.06,
-        surface_mix=0.03,
-        action_mix=0.10,
+        secondary_slots=(7, 8, 6, 4),
+        success_slots=(2, 10, 6),
+        warning_slots=(3, 11, 5),
+        error_slots=(1, 9, 5),
+        accent_slots=(5, 6, 4, 3),
+        panel_mix=0.05,
+        surface_mix=0.02,
+        action_mix=0.08,
+        selection_mix=0.18,
+        active_mix=0.22,
+        button_mix=0.12,
     ),
 }
 
@@ -222,28 +250,28 @@ def map_terminal_palette(
     )
     secondary = _pick_slot_color(
         palette,
-        (13, 5, 12, 4),
+        spec.secondary_slots,
         background,
         minimum_ratio=3.0,
         prefer_light=dark,
     )
     warning = _pick_slot_color(
         palette,
-        (11, 3),
+        spec.warning_slots,
         background,
         minimum_ratio=3.0,
         prefer_light=dark,
     )
     error = _pick_slot_color(
         palette,
-        (9, 1),
+        spec.error_slots,
         background,
         minimum_ratio=3.0,
         prefer_light=dark,
     )
     success = _pick_slot_color(
         palette,
-        (10, 2),
+        spec.success_slots,
         background,
         minimum_ratio=3.0,
         prefer_light=dark,
@@ -285,6 +313,9 @@ def map_terminal_palette(
     variables = _derive_theme_variables(
         semantic,
         action_mix=spec.action_mix,
+        selection_mix=spec.selection_mix,
+        active_mix=spec.active_mix,
+        button_mix=spec.button_mix,
         dark=dark,
     )
     _apply_overrides(semantic, variables, overrides or {}, palette)
@@ -537,6 +568,9 @@ def _derive_theme_variables(
     semantic: Mapping[str, ColorTriplet],
     *,
     action_mix: float,
+    selection_mix: float,
+    active_mix: float,
+    button_mix: float,
     dark: bool,
 ) -> dict[str, str]:
     background = semantic["background"]
@@ -547,8 +581,8 @@ def _derive_theme_variables(
 
     top_action_background = _blend(panel, foreground, action_mix)
     hover_background = _blend(top_action_background, foreground, 0.16)
-    selection_background = _blend(background, accent, 0.30)
-    selection_active = _blend(background, primary, 0.35)
+    selection_background = _blend(background, accent, selection_mix)
+    selection_active = _blend(background, primary, active_mix)
 
     selected_foreground = _preferred_text_color(selection_background)
     active_foreground = _preferred_text_color(selection_active)
@@ -571,15 +605,17 @@ def _derive_theme_variables(
                 _blend(selection_background, selection_active, 0.5)
             )
         ),
-        "action-button-background": _as_hex(_blend(panel, accent, 0.20)),
+        "action-button-background": _as_hex(
+            _blend(panel, accent, button_mix)
+        ),
         "action-button-foreground": _as_hex(
-            _preferred_text_color(_blend(panel, accent, 0.20))
+            _preferred_text_color(_blend(panel, accent, button_mix))
         ),
         "action-button-hover-background": _as_hex(
-            _blend(panel, accent, 0.32)
+            _blend(panel, accent, min(1.0, button_mix + 0.12))
         ),
         "action-button-focus-background": _as_hex(
-            _blend(panel, accent, 0.40)
+            _blend(panel, accent, min(1.0, button_mix + 0.20))
         ),
         "context-menu-background": _as_hex(panel),
         "context-menu-border": _as_hex(
@@ -877,7 +913,7 @@ def save_converted_theme(
     normalized = normalize_mapping_profile(mapping_profile)
     directory = store_dir.expanduser()
     directory.mkdir(parents=True, exist_ok=True)
-    target = _unique_theme_path(directory, theme.name)
+    target = _theme_path_for_name(directory, theme.name)
     payload = {
         "name": theme.name,
         "dark": bool(theme.dark),
@@ -954,16 +990,11 @@ def _discover_saved_theme_files(store_dir: Path) -> list[Path]:
     return sorted(files)
 
 
-def _unique_theme_path(store_dir: Path, theme_name: str) -> Path:
+def _theme_path_for_name(store_dir: Path, theme_name: str) -> Path:
     slug = _slugify(theme_name)
     if not slug:
         slug = "theme"
-    candidate = store_dir / f"{slug}{THEME_FILE_SUFFIX}"
-    index = 2
-    while candidate.exists():
-        candidate = store_dir / f"{slug}-{index}{THEME_FILE_SUFFIX}"
-        index += 1
-    return candidate
+    return store_dir / f"{slug}{THEME_FILE_SUFFIX}"
 
 
 def _slugify(value: str) -> str:
