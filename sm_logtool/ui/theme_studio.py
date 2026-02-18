@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+from rich.color import Color
+from rich.color_triplet import ColorTriplet
 from rich.console import Group
 from rich.text import Text
 from textual.app import App, ComposeResult
@@ -122,9 +124,16 @@ class ThemeStudio(App):
 
     .sample-swatch {
         margin-right: 1;
-        min-width: 18;
+        width: 1fr;
+        min-width: 12;
         padding: 0 1;
-        border: round $panel;
+        border: round $foreground 20%;
+        content-align: center middle;
+    }
+
+    #swatch-values {
+        margin-top: 1;
+        color: $foreground;
     }
     """
 
@@ -208,6 +217,7 @@ class ThemeStudio(App):
                         id="swatch-accent",
                         classes="sample-swatch",
                     )
+                yield Static("", id="swatch-values")
                 yield Static("", id="syntax-preview", classes="preview-box")
         yield Footer()
 
@@ -414,14 +424,6 @@ class ThemeStudio(App):
             preview_theme.variables.get("top-action-mnemonic-foreground")
             or preview_theme.foreground
         )
-        primary_fg = (
-            preview_theme.variables.get("selection-active-foreground")
-            or preview_theme.foreground
-        )
-        accent_fg = (
-            preview_theme.variables.get("selection-selected-foreground")
-            or preview_theme.foreground
-        )
 
         top = self.query_one("#swatch-top-action", Static)
         top.styles.background = top_action
@@ -430,13 +432,24 @@ class ThemeStudio(App):
 
         primary = self.query_one("#swatch-primary", Static)
         primary.styles.background = preview_theme.primary
-        primary.styles.color = primary_fg
-        primary.update(f"Primary {preview_theme.primary}")
+        primary.styles.color = _best_text_color(preview_theme.primary)
+        primary.update("Primary")
 
         accent = self.query_one("#swatch-accent", Static)
         accent.styles.background = preview_theme.accent
-        accent.styles.color = accent_fg
-        accent.update(f"Accent {preview_theme.accent}")
+        accent.styles.color = _best_text_color(preview_theme.accent)
+        accent.update("Accent")
+
+        values = self.query_one("#swatch-values", Static)
+        values.update(
+            " | ".join(
+                (
+                    f"Top Action: {top_action}",
+                    f"Primary: {preview_theme.primary}",
+                    f"Accent: {preview_theme.accent}",
+                )
+            )
+        )
 
     def _selected_theme_name(self) -> str:
         name_input = self.query_one("#save-name", Input)
@@ -464,6 +477,31 @@ def _theme_with_name(theme: Theme, name: str) -> Theme:
         dark=theme.dark,
         variables=dict(theme.variables or {}),
     )
+
+
+def _best_text_color(background: str) -> str:
+    try:
+        triplet = Color.parse(background).get_truecolor()
+    except Exception:
+        return "#ffffff"
+    if _relative_luminance(triplet) > 0.5:
+        return "#000000"
+    return "#ffffff"
+
+
+def _relative_luminance(color: ColorTriplet) -> float:
+    return (
+        (0.2126 * _linear_channel(color.red))
+        + (0.7152 * _linear_channel(color.green))
+        + (0.0722 * _linear_channel(color.blue))
+    )
+
+
+def _linear_channel(channel: int) -> float:
+    scaled = channel / 255
+    if scaled <= 0.03928:
+        return scaled / 12.92
+    return ((scaled + 0.055) / 1.055) ** 2.4
 
 
 def run(
