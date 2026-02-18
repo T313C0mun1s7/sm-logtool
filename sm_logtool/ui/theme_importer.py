@@ -592,14 +592,15 @@ def _apply_overrides(
     palette: TerminalPalette,
 ) -> None:
     for key, raw_value in overrides.items():
+        normalized_key = key.strip().lower()
         color = _resolve_override_color(raw_value, semantic, palette)
         if color is None:
             continue
-        if key in _SEMANTIC_COLOR_KEYS:
-            semantic[key] = color
+        if normalized_key in _SEMANTIC_COLOR_KEYS:
+            semantic[normalized_key] = color
             continue
-        if key in variables:
-            variables[key] = _as_hex(color)
+        if normalized_key in variables:
+            variables[normalized_key] = _as_hex(color)
 
 
 def _resolve_override_color(
