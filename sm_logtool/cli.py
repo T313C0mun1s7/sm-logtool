@@ -249,6 +249,10 @@ def _run_browse(args: argparse.Namespace) -> int:
         default_kind=config.default_kind,
         config_path=config.path,
         theme=config.theme,
+        theme_import_paths=config.theme_import_paths,
+        theme_mapping_profile=config.theme_mapping_profile,
+        theme_quantize_ansi256=config.theme_quantize_ansi256,
+        theme_overrides=config.theme_overrides,
     )
 
 

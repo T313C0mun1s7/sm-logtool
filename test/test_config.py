@@ -18,6 +18,10 @@ def test_load_config_missing_file(tmp_path):
     assert app_config.logs_dir is None
     assert app_config.default_kind == "smtp"
     assert app_config.theme is None
+    assert app_config.theme_import_paths == ()
+    assert app_config.theme_mapping_profile == "balanced"
+    assert app_config.theme_quantize_ansi256 is True
+    assert app_config.theme_overrides == {}
 
 
 def test_load_config_creates_default_config_file(tmp_path, monkeypatch):
@@ -35,6 +39,10 @@ def test_load_config_creates_default_config_file(tmp_path, monkeypatch):
     assert app_config.staging_dir == Path("/var/tmp/sm-logtool/logs")
     assert app_config.default_kind == "smtp"
     assert app_config.theme == "Cyberdark"
+    assert app_config.theme_import_paths == ()
+    assert app_config.theme_mapping_profile == "balanced"
+    assert app_config.theme_quantize_ansi256 is True
+    assert app_config.theme_overrides == {}
 
 
 def test_load_config_creates_env_config_file(tmp_path, monkeypatch):
@@ -49,6 +57,10 @@ def test_load_config_creates_env_config_file(tmp_path, monkeypatch):
     assert app_config.staging_dir == Path("/var/tmp/sm-logtool/logs")
     assert app_config.default_kind == "smtp"
     assert app_config.theme == "Cyberdark"
+    assert app_config.theme_import_paths == ()
+    assert app_config.theme_mapping_profile == "balanced"
+    assert app_config.theme_quantize_ansi256 is True
+    assert app_config.theme_overrides == {}
 
 
 def test_load_config_reads_values(tmp_path):
@@ -69,6 +81,38 @@ def test_load_config_reads_values(tmp_path):
     assert app_config.staging_dir == staging_dir
     assert app_config.default_kind == "imap"
     assert app_config.theme == "textual-light"
+    assert app_config.theme_import_paths == ()
+    assert app_config.theme_mapping_profile == "balanced"
+    assert app_config.theme_quantize_ansi256 is True
+    assert app_config.theme_overrides == {}
+
+
+def test_load_config_reads_theme_import_options(tmp_path):
+    cfg_path = tmp_path / "config.yaml"
+    imports_dir = tmp_path / "themes"
+    cfg_path.write_text(
+        f"theme_import_paths:\n"
+        f"  - {imports_dir}\n"
+        "theme_mapping_profile: vivid\n"
+        "theme_quantize_ansi256: false\n"
+        "theme_overrides:\n"
+        "  Solarized Dark:\n"
+        "    primary: ansi14\n"
+        "    panel: \"#112233\"\n",
+        encoding="utf-8",
+    )
+
+    app_config = config.load_config(cfg_path)
+
+    assert app_config.theme_import_paths == (imports_dir,)
+    assert app_config.theme_mapping_profile == "vivid"
+    assert app_config.theme_quantize_ansi256 is False
+    assert app_config.theme_overrides == {
+        "Solarized Dark": {
+            "primary": "ansi14",
+            "panel": "#112233",
+        }
+    }
 
 
 def test_load_config_rejects_non_mapping(tmp_path):
@@ -117,3 +161,26 @@ def test_save_theme_rejects_non_mapping(tmp_path):
 
     with pytest.raises(config.ConfigError):
         config.save_theme(cfg_path, "textual-light")
+
+
+def test_load_config_rejects_bad_theme_profile(tmp_path):
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "theme_mapping_profile: neon\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(config.ConfigError, match="theme_mapping_profile"):
+        config.load_config(cfg_path)
+
+
+def test_load_config_rejects_bad_theme_overrides(tmp_path):
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(
+        "theme_overrides:\n"
+        "  Demo: 3\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(config.ConfigError, match="theme_overrides"):
+        config.load_config(cfg_path)

@@ -80,6 +80,8 @@ from .themes import build_results_theme
 from .themes import RESULTS_THEME_DEFAULT
 from .themes import RESULTS_THEME_DEFAULT_NAME
 from .themes import results_theme_name_for_app_theme
+from .theme_importer import load_imported_themes
+from .theme_importer import normalize_mapping_profile
 
 try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
@@ -1690,10 +1692,21 @@ class LogBrowser(App):
         default_kind: str | None = None,
         config_path: Path | None = None,
         theme: str | None = None,
+        theme_import_paths: tuple[Path, ...] = (),
+        theme_mapping_profile: str = "balanced",
+        theme_quantize_ansi256: bool = True,
+        theme_overrides: dict[str, dict[str, str]] | None = None,
     ) -> None:
         super().__init__()
         for theme_model in FIRST_PARTY_APP_THEMES:
             self.register_theme(theme_model)
+        self._theme_import_warnings: list[str] = []
+        self._register_imported_themes(
+            theme_import_paths=theme_import_paths,
+            theme_mapping_profile=theme_mapping_profile,
+            theme_quantize_ansi256=theme_quantize_ansi256,
+            theme_overrides=theme_overrides or {},
+        )
         self.logs_dir = logs_dir
         self.staging_dir = staging_dir
         self.default_kind = normalize_kind(default_kind or KIND_SMTP)
@@ -1767,6 +1780,11 @@ class LogBrowser(App):
         yield self.footer
 
     def on_mount(self) -> None:
+        if self._theme_import_warnings:
+            self._notify(
+                "Some imported theme files could not be loaded. "
+                "Check --config theme_import_paths values."
+            )
         self._refresh_logs()
         self._show_step_kind()
         self._apply_configured_theme()
@@ -1783,6 +1801,36 @@ class LogBrowser(App):
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return dict(CYBER_THEME_VARIABLE_DEFAULTS)
+
+    def _register_imported_themes(
+        self,
+        *,
+        theme_import_paths: tuple[Path, ...],
+        theme_mapping_profile: str,
+        theme_quantize_ansi256: bool,
+        theme_overrides: dict[str, dict[str, str]],
+    ) -> None:
+        if not theme_import_paths:
+            return
+        existing = set(self.available_themes)
+        try:
+            normalized_profile = normalize_mapping_profile(
+                theme_mapping_profile
+            )
+        except ValueError as exc:
+            self._theme_import_warnings.append(str(exc))
+            return
+
+        themes, warnings = load_imported_themes(
+            theme_import_paths,
+            profile=normalized_profile,
+            overrides=theme_overrides,
+            quantize_ansi256=theme_quantize_ansi256,
+            existing_names=existing,
+        )
+        for theme_model in themes:
+            self.register_theme(theme_model)
+        self._theme_import_warnings.extend(warnings)
 
     # Step rendering -----------------------------------------------------
     def _show_step_kind(self) -> None:
@@ -3368,6 +3416,10 @@ def run(
     default_kind: str | None = None,
     config_path: Path | None = None,
     theme: str | None = None,
+    theme_import_paths: tuple[Path, ...] = (),
+    theme_mapping_profile: str = "balanced",
+    theme_quantize_ansi256: bool = True,
+    theme_overrides: dict[str, dict[str, str]] | None = None,
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
@@ -3377,6 +3429,10 @@ def run(
         default_kind=default_kind,
         config_path=config_path,
         theme=theme,
+        theme_import_paths=theme_import_paths,
+        theme_mapping_profile=theme_mapping_profile,
+        theme_quantize_ansi256=theme_quantize_ansi256,
+        theme_overrides=theme_overrides,
     )
     app.run()
     return 0
