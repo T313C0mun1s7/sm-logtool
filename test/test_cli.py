@@ -20,6 +20,15 @@ def create_smtp_zip(path: Path, content: str) -> None:
         archive.writestr(path.name.replace('.zip', ''), content)
 
 
+def test_build_parser_supports_themes_subcommand():
+    parser = cli.build_parser()
+    args = parser.parse_args(["themes"])
+
+    assert args.command == "themes"
+    assert args.profile == "balanced"
+    assert args.no_ansi256 is False
+
+
 def test_scan_logs_handles_missing_directory(tmp_path):
     missing_dir = tmp_path / "missing"
 

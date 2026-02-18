@@ -86,13 +86,6 @@ Configuration is YAML with these keys:
   `Cybernotdark`, or `textual-dark`).
   Results syntax highlighting follows the selected UI theme palette and theme
   name.
-- `theme_import_paths`: optional file/directory paths to import terminal
-  themes (`.itermcolors`, `.colors`, `.colortheme`).
-- `theme_mapping_profile`: semantic mapping profile for imported themes
-  (`balanced`, `vivid`, or `soft`).
-- `theme_quantize_ansi256`: when `true`, imported semantic colors are reduced
-  to the xterm-256 palette for low-color terminals.
-- `theme_overrides`: optional per-theme semantic color overrides.
 
 Example:
 
@@ -101,14 +94,6 @@ logs_dir: /var/lib/smartermail/Logs
 staging_dir: /var/tmp/sm-logtool/logs
 default_kind: smtp
 theme: Cyberdark
-theme_import_paths:
-  - ~/.config/sm-logtool/themes
-theme_mapping_profile: balanced
-theme_quantize_ansi256: true
-theme_overrides:
-  Solarized Dark:
-    primary: ansi14
-    panel: "#002b36"
 ```
 
 If `staging_dir` does not exist yet, the app creates it automatically.
@@ -138,6 +123,24 @@ sm-logtool
 # or
 sm-logtool browse --logs-dir /var/lib/smartermail/Logs
 ```
+
+### Convert Terminal Themes (Visual Utility)
+
+Use the built-in visual converter:
+
+```bash
+sm-logtool themes --source ~/.config/sm-logtool/theme-sources
+```
+
+Notes:
+
+- Supported source files: `.itermcolors`, `.colors`, `.colortheme`.
+- Toggle mapping profiles (`balanced` / `vivid` / `soft`) in the UI and
+  preview both chrome and syntax colors live before saving.
+- Toggle ANSI-256 quantization in the UI for non-truecolor terminals.
+- Saved converted themes are written to:
+  `~/.config/sm-logtool/themes` (or alongside custom `--config` paths).
+- `sm-logtool browse` auto-loads saved converted themes from that directory.
 
 Wizard flow:
 

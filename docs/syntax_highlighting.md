@@ -9,8 +9,9 @@ Syntax highlighting now has separate but linked pieces:
 In the TUI, app theme changes (for example `Cyberdark` to `dracula`)
 automatically switch the Results pane syntax theme to the same name.
 This includes Textual's shipping themes and the project's first-party themes.
-Imported terminal themes (`.itermcolors`, `.colors`, `.colortheme`) also work
-the same way once loaded from `theme_import_paths` in config.
+Converted themes saved by `sm-logtool themes` also work the same way.
+`sm-logtool browse` auto-loads saved converted themes from the app theme store
+directory (`~/.config/sm-logtool/themes` by default).
 The Results syntax theme is built from the active Textual UI theme palette:
 - `sm_logtool/ui/app.py` (`_watch_theme` -> `_sync_results_theme`)
 - `sm_logtool/ui/themes.py` (`build_results_theme`,
@@ -58,6 +59,6 @@ TUI colors are split:
   in `sm_logtool/ui/themes.py`.
 - Results syntax token colors are generated from the active Textual theme
   palette in `sm_logtool/ui/themes.py`.
-- Imported terminal themes are mapped to Textual semantic colors in
-  `sm_logtool/ui/theme_importer.py` using profile-driven heuristics and
-  optional ANSI-256 quantization.
+- Source terminal themes are mapped to Textual semantic colors in
+  `sm_logtool/ui/theme_importer.py` (used by `sm_logtool/ui/theme_studio.py`)
+  with profile-driven heuristics and optional ANSI-256 quantization.

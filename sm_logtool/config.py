@@ -150,10 +150,6 @@ def _ensure_default_config_file(config_path: Path) -> None:
         "staging_dir": str(DEFAULT_STAGING_DIR),
         "default_kind": DEFAULT_KIND,
         "theme": DEFAULT_THEME,
-        "theme_import_paths": [],
-        "theme_mapping_profile": DEFAULT_THEME_MAPPING_PROFILE,
-        "theme_quantize_ansi256": DEFAULT_THEME_QUANTIZE_ANSI256,
-        "theme_overrides": {},
     }
     try:
         config_path.parent.mkdir(parents=True, exist_ok=True)

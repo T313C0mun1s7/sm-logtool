@@ -81,6 +81,8 @@ from .themes import RESULTS_THEME_DEFAULT
 from .themes import RESULTS_THEME_DEFAULT_NAME
 from .themes import results_theme_name_for_app_theme
 from .theme_importer import load_imported_themes
+from .theme_importer import load_saved_themes
+from .theme_importer import default_theme_store_dir
 from .theme_importer import normalize_mapping_profile
 
 try:  # Prefer selection-capable logs when available.
@@ -1692,6 +1694,7 @@ class LogBrowser(App):
         default_kind: str | None = None,
         config_path: Path | None = None,
         theme: str | None = None,
+        theme_store_dir: Path | None = None,
         theme_import_paths: tuple[Path, ...] = (),
         theme_mapping_profile: str = "balanced",
         theme_quantize_ansi256: bool = True,
@@ -1701,6 +1704,9 @@ class LogBrowser(App):
         for theme_model in FIRST_PARTY_APP_THEMES:
             self.register_theme(theme_model)
         self._theme_import_warnings: list[str] = []
+        self._theme_store_warnings: list[str] = []
+        store_dir = theme_store_dir or default_theme_store_dir(config_path)
+        self._register_saved_themes(store_dir)
         self._register_imported_themes(
             theme_import_paths=theme_import_paths,
             theme_mapping_profile=theme_mapping_profile,
@@ -1780,6 +1786,11 @@ class LogBrowser(App):
         yield self.footer
 
     def on_mount(self) -> None:
+        if self._theme_store_warnings:
+            self._notify(
+                "Some saved themes are invalid and were skipped. "
+                "Open sm-logtool themes to regenerate them."
+            )
         if self._theme_import_warnings:
             self._notify(
                 "Some imported theme files could not be loaded. "
@@ -1831,6 +1842,16 @@ class LogBrowser(App):
         for theme_model in themes:
             self.register_theme(theme_model)
         self._theme_import_warnings.extend(warnings)
+
+    def _register_saved_themes(self, store_dir: Path) -> None:
+        existing = set(self.available_themes)
+        themes, warnings = load_saved_themes(
+            store_dir=store_dir,
+            existing_names=existing,
+        )
+        for theme_model in themes:
+            self.register_theme(theme_model)
+        self._theme_store_warnings.extend(warnings)
 
     # Step rendering -----------------------------------------------------
     def _show_step_kind(self) -> None:
@@ -3416,6 +3437,7 @@ def run(
     default_kind: str | None = None,
     config_path: Path | None = None,
     theme: str | None = None,
+    theme_store_dir: Path | None = None,
     theme_import_paths: tuple[Path, ...] = (),
     theme_mapping_profile: str = "balanced",
     theme_quantize_ansi256: bool = True,
@@ -3429,6 +3451,7 @@ def run(
         default_kind=default_kind,
         config_path=config_path,
         theme=theme,
+        theme_store_dir=theme_store_dir,
         theme_import_paths=theme_import_paths,
         theme_mapping_profile=theme_mapping_profile,
         theme_quantize_ansi256=theme_quantize_ansi256,

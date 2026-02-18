@@ -14,6 +14,8 @@ from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
+from sm_logtool.ui.theme_importer import load_imported_themes
+from sm_logtool.ui.theme_importer import save_converted_theme
 
 
 def write_sample_logs(root: Path) -> None:
@@ -23,6 +25,38 @@ def write_sample_logs(root: Path) -> None:
         "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
         encoding="utf-8",
     )
+
+
+def test_log_browser_loads_saved_converted_themes(tmp_path):
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    imported, warnings = load_imported_themes(
+        [source],
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    assert warnings == []
+    assert len(imported) == 1
+
+    store_dir = tmp_path / "saved-themes"
+    save_converted_theme(
+        theme=imported[0],
+        store_dir=store_dir,
+        source_path=source,
+        mapping_profile="balanced",
+        quantize_ansi256=True,
+    )
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+
+    app = LogBrowser(logs_dir=logs_dir, theme_store_dir=store_dir)
+    assert imported[0].name in app.available_themes
 
 
 @pytest.mark.asyncio

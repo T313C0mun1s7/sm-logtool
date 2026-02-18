@@ -36,6 +36,9 @@ from .search_modes import (
 )
 from .search import get_search_function
 from .staging import stage_log
+from .ui.theme_importer import default_theme_source_dir
+from .ui.theme_importer import default_theme_store_dir
+from .ui.theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 
 
 CONFIG_ATTR = "_config"
@@ -52,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
             The `browse` subcommand launches the Textual UI.
             The `search` subcommand performs a console-based search across
             supported SmarterMail log kinds.
+            The `themes` subcommand launches the visual theme converter.
 
             Config-aware defaults:
               - logs_dir and staging_dir come from config.yaml when present.
@@ -91,6 +95,42 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     browse_parser.set_defaults(handler=_run_browse)
+
+    themes_parser = subparsers.add_parser(
+        "themes",
+        help="Open visual theme conversion utility",
+    )
+    themes_parser.add_argument(
+        "--source",
+        type=Path,
+        action="append",
+        default=None,
+        help=(
+            "Theme source file/directory. Repeatable. Supports "
+            ".itermcolors/.colors/.colortheme."
+        ),
+    )
+    themes_parser.add_argument(
+        "--store-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Directory for converted sm-logtool themes. Defaults to "
+            "~/.config/sm-logtool/themes."
+        ),
+    )
+    themes_parser.add_argument(
+        "--profile",
+        choices=SUPPORTED_THEME_MAPPING_PROFILES,
+        default="balanced",
+        help="Default mapping profile for preview/save.",
+    )
+    themes_parser.add_argument(
+        "--no-ansi256",
+        action="store_true",
+        help="Disable ANSI-256 quantization and keep truecolor output.",
+    )
+    themes_parser.set_defaults(handler=_run_themes)
 
     search_parser = subparsers.add_parser(
         "search",
@@ -249,10 +289,36 @@ def _run_browse(args: argparse.Namespace) -> int:
         default_kind=config.default_kind,
         config_path=config.path,
         theme=config.theme,
+        theme_store_dir=default_theme_store_dir(config.path),
         theme_import_paths=config.theme_import_paths,
         theme_mapping_profile=config.theme_mapping_profile,
         theme_quantize_ansi256=config.theme_quantize_ansi256,
         theme_overrides=config.theme_overrides,
+    )
+
+
+def _run_themes(args: argparse.Namespace) -> int:
+    config: AppConfig = getattr(args, CONFIG_ATTR)
+    source_paths = tuple(
+        args.source
+        or (default_theme_source_dir(config.path),)
+    )
+    store_dir = args.store_dir or default_theme_store_dir(config.path)
+
+    try:
+        from .ui.theme_studio import run as run_studio  # type: ignore
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        raise SystemExit(
+            "The theme studio UI could not be loaded. Ensure the 'textual' "
+            "package is installed.\n"
+            f"Details: {exc}"
+        ) from exc
+
+    return run_studio(
+        source_paths=source_paths,
+        store_dir=store_dir,
+        profile=args.profile,
+        quantize_ansi256=not args.no_ansi256,
     )
 
 

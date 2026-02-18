@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import plistlib
 import re
@@ -11,6 +12,7 @@ from typing import Iterable, Mapping
 from rich.color import Color
 from rich.color_triplet import ColorTriplet
 from textual.theme import Theme
+import yaml
 
 from .themes import CYBER_THEME_VARIABLE_DEFAULTS
 
@@ -24,6 +26,7 @@ SUPPORTED_THEME_MAPPING_PROFILES = (
     "vivid",
     "soft",
 )
+THEME_FILE_SUFFIX = ".smlogtheme.yaml"
 
 _SEMANTIC_COLOR_KEYS = {
     "primary",
@@ -845,3 +848,177 @@ _NAMED_SLOT_KEYS = {
     "lightcyan": 14,
     "lightwhite": 15,
 }
+
+
+def default_theme_store_dir(config_path: Path | None = None) -> Path:
+    """Return the directory used to store converted themes."""
+
+    if config_path is not None:
+        return config_path.expanduser().parent / "themes"
+    return Path.home() / ".config" / "sm-logtool" / "themes"
+
+
+def default_theme_source_dir(config_path: Path | None = None) -> Path:
+    """Return the default directory containing import source theme files."""
+
+    if config_path is not None:
+        return config_path.expanduser().parent / "theme-sources"
+    return Path.home() / ".config" / "sm-logtool" / "theme-sources"
+
+
+def save_converted_theme(
+    *,
+    theme: Theme,
+    store_dir: Path,
+    source_path: Path,
+    mapping_profile: str,
+    quantize_ansi256: bool,
+) -> Path:
+    """Persist a converted theme for future reuse by the TUI."""
+
+    normalized = normalize_mapping_profile(mapping_profile)
+    directory = store_dir.expanduser()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = _unique_theme_path(directory, theme.name)
+    payload = {
+        "name": theme.name,
+        "dark": bool(theme.dark),
+        "primary": theme.primary,
+        "secondary": theme.secondary,
+        "warning": theme.warning,
+        "error": theme.error,
+        "success": theme.success,
+        "accent": theme.accent,
+        "foreground": theme.foreground,
+        "background": theme.background,
+        "surface": theme.surface,
+        "panel": theme.panel,
+        "variables": dict(theme.variables or {}),
+        "meta": {
+            "source_path": str(source_path.expanduser()),
+            "mapping_profile": normalized,
+            "quantize_ansi256": bool(quantize_ansi256),
+            "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+        },
+    }
+    with target.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(payload, handle, sort_keys=False)
+    return target
+
+
+def load_saved_themes(
+    *,
+    store_dir: Path,
+    existing_names: set[str] | None = None,
+) -> tuple[list[Theme], list[str]]:
+    """Load converted themes previously saved with ``save_converted_theme``."""
+
+    names = set(existing_names or ())
+    files = _discover_saved_theme_files(store_dir.expanduser())
+    themes: list[Theme] = []
+    warnings: list[str] = []
+    for path in files:
+        try:
+            payload = _load_yaml_mapping(path)
+            theme = _theme_from_payload(payload)
+        except ValueError as exc:
+            warnings.append(f"{path}: {exc}")
+            continue
+        unique_name = _unique_theme_name(theme.name, names)
+        if unique_name != theme.name:
+            theme = Theme(
+                name=unique_name,
+                primary=theme.primary,
+                secondary=theme.secondary,
+                warning=theme.warning,
+                error=theme.error,
+                success=theme.success,
+                accent=theme.accent,
+                foreground=theme.foreground,
+                background=theme.background,
+                surface=theme.surface,
+                panel=theme.panel,
+                dark=theme.dark,
+                variables=dict(theme.variables or {}),
+            )
+        themes.append(theme)
+    return themes, warnings
+
+
+def _discover_saved_theme_files(store_dir: Path) -> list[Path]:
+    if not store_dir.exists() or not store_dir.is_dir():
+        return []
+    files = [
+        path
+        for path in store_dir.iterdir()
+        if path.is_file() and path.name.endswith(THEME_FILE_SUFFIX)
+    ]
+    return sorted(files)
+
+
+def _unique_theme_path(store_dir: Path, theme_name: str) -> Path:
+    slug = _slugify(theme_name)
+    if not slug:
+        slug = "theme"
+    candidate = store_dir / f"{slug}{THEME_FILE_SUFFIX}"
+    index = 2
+    while candidate.exists():
+        candidate = store_dir / f"{slug}-{index}{THEME_FILE_SUFFIX}"
+        index += 1
+    return candidate
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
+    return slug.strip("-")
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, object]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle) or {}
+    except OSError as exc:
+        raise ValueError(f"Failed to read YAML: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Failed to parse YAML: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise ValueError("Theme file must contain a mapping.")
+    return loaded
+
+
+def _theme_from_payload(payload: Mapping[str, object]) -> Theme:
+    name = _require_string(payload, "name")
+    dark = payload.get("dark")
+    if not isinstance(dark, bool):
+        raise ValueError("Theme key 'dark' must be a boolean.")
+    variables = payload.get("variables", {})
+    if not isinstance(variables, dict):
+        raise ValueError("Theme key 'variables' must be a mapping.")
+    variables_dict: dict[str, str] = {}
+    for key, value in variables.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("Theme variables must be string key/value pairs.")
+        variables_dict[key] = value
+
+    return Theme(
+        name=name,
+        primary=_require_string(payload, "primary"),
+        secondary=_require_string(payload, "secondary"),
+        warning=_require_string(payload, "warning"),
+        error=_require_string(payload, "error"),
+        success=_require_string(payload, "success"),
+        accent=_require_string(payload, "accent"),
+        foreground=_require_string(payload, "foreground"),
+        background=_require_string(payload, "background"),
+        surface=_require_string(payload, "surface"),
+        panel=_require_string(payload, "panel"),
+        dark=dark,
+        variables=variables_dict,
+    )
+
+
+def _require_string(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Theme key '{key}' must be a non-empty string.")
+    return value

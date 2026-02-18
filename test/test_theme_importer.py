@@ -3,9 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 import plistlib
 
+from sm_logtool.ui.theme_importer import default_theme_store_dir
+from sm_logtool.ui.theme_importer import load_saved_themes
 from sm_logtool.ui.theme_importer import discover_theme_files
 from sm_logtool.ui.theme_importer import load_imported_themes
 from sm_logtool.ui.theme_importer import normalize_mapping_profile
+from sm_logtool.ui.theme_importer import save_converted_theme
 
 
 def _iterm_color(red: float, green: float, blue: float) -> dict[str, float]:
@@ -96,3 +99,44 @@ def test_normalize_mapping_profile_rejects_unknown() -> None:
         assert "Unsupported theme_mapping_profile" in str(exc)
         return
     raise AssertionError("Expected ValueError for unknown mapping profile")
+
+
+def test_save_and_load_converted_theme(tmp_path: Path) -> None:
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    imported, warnings = load_imported_themes(
+        [source],
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    assert warnings == []
+    assert len(imported) == 1
+    theme = imported[0]
+
+    store_dir = tmp_path / "store"
+    saved = save_converted_theme(
+        theme=theme,
+        store_dir=store_dir,
+        source_path=source,
+        mapping_profile="balanced",
+        quantize_ansi256=True,
+    )
+
+    assert saved.exists()
+    loaded, load_warnings = load_saved_themes(store_dir=store_dir)
+    assert load_warnings == []
+    assert len(loaded) == 1
+    assert loaded[0].name == theme.name
+    assert loaded[0].background == theme.background
+
+
+def test_default_theme_store_dir_uses_config_parent(tmp_path: Path) -> None:
+    config_path = tmp_path / "config" / "custom.yaml"
+    expected = config_path.parent / "themes"
+    assert default_theme_store_dir(config_path) == expected
