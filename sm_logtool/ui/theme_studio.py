@@ -120,9 +120,11 @@ class ThemeStudio(App):
         height: auto;
     }
 
-    .ui-sample-button {
+    .sample-swatch {
         margin-right: 1;
-        min-width: 14;
+        min-width: 18;
+        padding: 0 1;
+        border: round $panel;
     }
     """
 
@@ -191,9 +193,21 @@ class ThemeStudio(App):
                 yield Static("", id="status")
                 yield Static("", id="meta")
                 with Horizontal(id="preview-buttons"):
-                    yield Button("Top Action", classes="ui-sample-button")
-                    yield Button("Primary", classes="ui-sample-button")
-                    yield Button("Accent", classes="ui-sample-button")
+                    yield Static(
+                        "",
+                        id="swatch-top-action",
+                        classes="sample-swatch",
+                    )
+                    yield Static(
+                        "",
+                        id="swatch-primary",
+                        classes="sample-swatch",
+                    )
+                    yield Static(
+                        "",
+                        id="swatch-accent",
+                        classes="sample-swatch",
+                    )
                 yield Static("", id="syntax-preview", classes="preview-box")
         yield Footer()
 
@@ -355,6 +369,7 @@ class ThemeStudio(App):
             f"{self._ansi_label()} | Save dir: {self.store_dir} | "
             f"primary={preview_theme.primary} accent={preview_theme.accent}"
         )
+        self._update_swatches(preview_theme)
         self._set_syntax_preview(preview_theme)
 
     def _set_syntax_preview(self, preview_theme) -> None:
@@ -389,6 +404,39 @@ class ThemeStudio(App):
         if self.quantize_ansi256:
             return "ANSI-256: On"
         return "ANSI-256: Off"
+
+    def _update_swatches(self, preview_theme: Theme) -> None:
+        top_action = (
+            preview_theme.variables.get("top-action-background")
+            or preview_theme.panel
+        )
+        top_action_fg = (
+            preview_theme.variables.get("top-action-mnemonic-foreground")
+            or preview_theme.foreground
+        )
+        primary_fg = (
+            preview_theme.variables.get("selection-active-foreground")
+            or preview_theme.foreground
+        )
+        accent_fg = (
+            preview_theme.variables.get("selection-selected-foreground")
+            or preview_theme.foreground
+        )
+
+        top = self.query_one("#swatch-top-action", Static)
+        top.styles.background = top_action
+        top.styles.color = top_action_fg
+        top.update(f"Top Action {top_action}")
+
+        primary = self.query_one("#swatch-primary", Static)
+        primary.styles.background = preview_theme.primary
+        primary.styles.color = primary_fg
+        primary.update(f"Primary {preview_theme.primary}")
+
+        accent = self.query_one("#swatch-accent", Static)
+        accent.styles.background = preview_theme.accent
+        accent.styles.color = accent_fg
+        accent.update(f"Accent {preview_theme.accent}")
 
     def _selected_theme_name(self) -> str:
         name_input = self.query_one("#save-name", Input)
