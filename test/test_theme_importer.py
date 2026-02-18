@@ -138,5 +138,5 @@ def test_save_and_load_converted_theme(tmp_path: Path) -> None:
 
 def test_default_theme_store_dir_uses_config_parent(tmp_path: Path) -> None:
     config_path = tmp_path / "config" / "custom.yaml"
-    expected = config_path.parent / "themes"
+    expected = Path.home() / ".config" / "sm-logtool" / "themes"
     assert default_theme_store_dir(config_path) == expected

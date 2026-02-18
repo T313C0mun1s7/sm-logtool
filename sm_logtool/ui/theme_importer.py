@@ -853,16 +853,14 @@ _NAMED_SLOT_KEYS = {
 def default_theme_store_dir(config_path: Path | None = None) -> Path:
     """Return the directory used to store converted themes."""
 
-    if config_path is not None:
-        return config_path.expanduser().parent / "themes"
+    _ = config_path
     return Path.home() / ".config" / "sm-logtool" / "themes"
 
 
 def default_theme_source_dir(config_path: Path | None = None) -> Path:
     """Return the default directory containing import source theme files."""
 
-    if config_path is not None:
-        return config_path.expanduser().parent / "theme-sources"
+    _ = config_path
     return Path.home() / ".config" / "sm-logtool" / "theme-sources"
 
 

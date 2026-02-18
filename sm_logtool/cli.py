@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from importlib import metadata
+import os
 import textwrap
 from pathlib import Path
 import sys
@@ -289,11 +290,12 @@ def _run_browse(args: argparse.Namespace) -> int:
         default_kind=config.default_kind,
         config_path=config.path,
         theme=config.theme,
-        theme_store_dir=default_theme_store_dir(config.path),
+        theme_store_dir=default_theme_store_dir(),
         theme_import_paths=config.theme_import_paths,
         theme_mapping_profile=config.theme_mapping_profile,
         theme_quantize_ansi256=config.theme_quantize_ansi256,
         theme_overrides=config.theme_overrides,
+        persist_theme_changes=_should_persist_theme_changes(args),
     )
 
 
@@ -301,9 +303,9 @@ def _run_themes(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
     source_paths = tuple(
         args.source
-        or (default_theme_source_dir(config.path),)
+        or (default_theme_source_dir(),)
     )
-    store_dir = args.store_dir or default_theme_store_dir(config.path)
+    store_dir = args.store_dir or default_theme_store_dir()
 
     try:
         from .ui.theme_studio import run as run_studio  # type: ignore
@@ -320,6 +322,14 @@ def _run_themes(args: argparse.Namespace) -> int:
         profile=args.profile,
         quantize_ansi256=not args.no_ansi256,
     )
+
+
+def _should_persist_theme_changes(args: argparse.Namespace) -> bool:
+    if args.config is not None:
+        return False
+    if os.environ.get("SM_LOGTOOL_CONFIG"):
+        return False
+    return True
 
 
 def _run_search(args: argparse.Namespace) -> int:

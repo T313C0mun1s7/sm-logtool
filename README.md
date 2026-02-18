@@ -139,8 +139,10 @@ Notes:
   preview both chrome and syntax colors live before saving.
 - Toggle ANSI-256 quantization in the UI for non-truecolor terminals.
 - Saved converted themes are written to:
-  `~/.config/sm-logtool/themes` (or alongside custom `--config` paths).
+  `~/.config/sm-logtool/themes`.
 - `sm-logtool browse` auto-loads saved converted themes from that directory.
+- Safety: when using `--config` or `SM_LOGTOOL_CONFIG`, in-app theme switching
+  does not auto-write the config file.
 
 Wizard flow:
 

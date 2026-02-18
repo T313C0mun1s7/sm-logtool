@@ -1699,6 +1699,7 @@ class LogBrowser(App):
         theme_mapping_profile: str = "balanced",
         theme_quantize_ansi256: bool = True,
         theme_overrides: dict[str, dict[str, str]] | None = None,
+        persist_theme_changes: bool = True,
     ) -> None:
         super().__init__()
         for theme_model in FIRST_PARTY_APP_THEMES:
@@ -1718,6 +1719,7 @@ class LogBrowser(App):
         self.default_kind = normalize_kind(default_kind or KIND_SMTP)
         self.config_path = config_path.expanduser() if config_path else None
         self.configured_theme = theme
+        self._persist_theme_changes_enabled = persist_theme_changes
         self._persist_theme_changes = False
         self._suppress_theme_persist = False
         self._logs_by_kind: Dict[str, List[LogFileInfo]] = {}
@@ -1799,7 +1801,7 @@ class LogBrowser(App):
         self._refresh_logs()
         self._show_step_kind()
         self._apply_configured_theme()
-        self._persist_theme_changes = True
+        self._persist_theme_changes = self._persist_theme_changes_enabled
 
     def _watch_theme(self, theme_name: str) -> None:
         super()._watch_theme(theme_name)
@@ -3442,6 +3444,7 @@ def run(
     theme_mapping_profile: str = "balanced",
     theme_quantize_ansi256: bool = True,
     theme_overrides: dict[str, dict[str, str]] | None = None,
+    persist_theme_changes: bool = True,
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
@@ -3456,6 +3459,7 @@ def run(
         theme_mapping_profile=theme_mapping_profile,
         theme_quantize_ansi256=theme_quantize_ansi256,
         theme_overrides=theme_overrides,
+        persist_theme_changes=persist_theme_changes,
     )
     app.run()
     return 0
