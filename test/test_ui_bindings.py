@@ -78,6 +78,18 @@ def test_theme_studio_quit_button_calls_exit(monkeypatch, tmp_path):
     assert called["value"] is True
 
 
+def test_theme_studio_preview_theme_name_changes_each_refresh(tmp_path):
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    first = app._next_preview_theme_name()
+    second = app._next_preview_theme_name()
+    assert first != second
+
+
 @pytest.mark.asyncio
 async def test_top_action_buttons_show_core_shortcuts(tmp_path):
     logs_dir = tmp_path / "logs"

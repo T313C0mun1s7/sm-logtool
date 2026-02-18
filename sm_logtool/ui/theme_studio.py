@@ -226,6 +226,7 @@ class ThemeStudio(App):
         self.current_source: Path | None = None
         self.current_theme_name: str | None = None
         self.current_source_theme_name: str | None = None
+        self._preview_revision = 0
 
     def compose(self) -> ComposeResult:
         yield Static("Theme Studio", id="title")
@@ -442,7 +443,7 @@ class ThemeStudio(App):
         try:
             palette = parse_terminal_palette(self.current_source)
             self.current_source_theme_name = palette.name
-            preview_name = "Theme Studio Preview"
+            preview_name = self._next_preview_theme_name()
             preview_theme = map_terminal_palette(
                 name=preview_name,
                 palette=palette,
@@ -469,6 +470,10 @@ class ThemeStudio(App):
         )
         self._update_swatches(preview_theme)
         self._set_syntax_preview(preview_theme)
+
+    def _next_preview_theme_name(self) -> str:
+        self._preview_revision += 1
+        return f"Theme Studio Preview {self._preview_revision}"
 
     def _set_syntax_preview(self, preview_theme) -> None:
         syntax_theme = build_results_theme(preview_theme)
