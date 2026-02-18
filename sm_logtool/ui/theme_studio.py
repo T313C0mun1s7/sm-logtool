@@ -33,6 +33,7 @@ from .theme_importer import (
 from .theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 from .themes import CYBERDARK_THEME
 from .themes import FIRST_PARTY_APP_THEMES
+from .themes import CYBER_THEME_VARIABLE_DEFAULTS
 from .themes import build_results_theme
 
 _SAMPLE_KIND = "smtp"
@@ -307,6 +308,9 @@ class ThemeStudio(App):
         self.theme = CYBERDARK_THEME.name
         self._update_profile_button_states()
         self._load_sources()
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        return dict(CYBER_THEME_VARIABLE_DEFAULTS)
 
     def on_list_view_highlighted(
         self,
