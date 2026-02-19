@@ -274,7 +274,7 @@ class ThemeStudio(App):
     .result-log {
         height: 1fr;
         width: 1fr;
-        background: $surface;
+        background: $panel;
     }
 
     .results-header {
@@ -283,7 +283,7 @@ class ThemeStudio(App):
 
     .search-term-input {
         margin-bottom: 1;
-        background: $surface;
+        background: $panel;
         color: $foreground;
         border: none;
         border-top: none;
@@ -291,7 +291,7 @@ class ThemeStudio(App):
     }
 
     .search-term-input:focus {
-        background: $surface;
+        background: $panel;
         border: none;
         border-top: none;
         border-bottom: none;
@@ -299,7 +299,7 @@ class ThemeStudio(App):
 
     .selection-list {
         margin-bottom: 1;
-        background: $surface;
+        background: $panel;
     }
 
     .selection-preview-row {

@@ -256,7 +256,7 @@ def build_results_theme(theme: Theme) -> TextAreaTheme:
     """Build a readable syntax theme from a Textual app theme palette."""
 
     background = _parse_triplet(
-        theme.surface or theme.panel or theme.background,
+        theme.panel or theme.surface or theme.background,
         _DEFAULT_DARK_BG if theme.dark else _DEFAULT_LIGHT_BG,
     )
     foreground = _parse_triplet(
