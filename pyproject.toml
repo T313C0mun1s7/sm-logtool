@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sm-logtool"
-version = "0.9.3"
+version = "0.9.4"
 description = "Interactive TUI and non-interactive CLI helper for exploring SmarterMail logs on Linux servers"
 readme = "README.md"
 requires-python = ">=3.10"
