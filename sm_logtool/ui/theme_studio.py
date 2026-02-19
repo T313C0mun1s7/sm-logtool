@@ -36,9 +36,23 @@ from .themes import CYBER_THEME_VARIABLE_DEFAULTS
 
 _SAMPLE_KIND = "smtp"
 _SAMPLE_LINES = (
-    "00:00:01 [1.1.1.1][123] SMTP cmd: EHLO mail.example.com",
-    "00:00:02 [1.1.1.1][123] SMTP rsp: 250 ok",
-    "00:00:03 [1.1.1.1][123] Authentication failed for user admin@example.com",
+    "[2026.02.18] 01:27:54.048 [198.51.100.23] IMAP Login successful: "
+    "With user john.smith@example.net",
+    "[2026.02.18] 01:27:54.052 [IpBruteForceDetector] [198.51.100.23] "
+    "Added to IDS block list for violating rule Type: Password Brute Force "
+    "by IP, Description: Brute Force by IP",
+    "[2026.02.18] 02:44:43.702 [48654132] Added to SpamCheckQueue "
+    "(1 queued; 0/50 processing)",
+    "[2026.02.18] 02:44:43.731 [48654132] Finished running spam checks. "
+    "Time (non-rbls): 1ms, Time (URIBL/RBLS): 0ms",
+    "[2026.02.18] 02:44:46.708 [48654132] [LocalDeliveryQueue] "
+    "Begin Processing.",
+    "[2026.02.18] 04:04:05.645 [172.27.27.1][62511028] cmd: "
+    "EHLO mailserver.example.net",
+    "[2026.02.18] 05:01:30.507 [198.51.100.23][30216663] "
+    "cmd: AUTH LOGIN",
+    "[2026.02.18] 05:01:30.507 [198.51.100.23][30216663] "
+    "rsp: 334 VXNlcm5hbWU6",
 )
 
 _SELECTION_SAMPLE_TARGETS = {
