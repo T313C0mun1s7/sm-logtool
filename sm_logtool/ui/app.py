@@ -54,6 +54,11 @@ from ..logfiles import (
     summarize_logs,
 )
 from ..result_rendering import render_search_results
+from ..result_modes import normalize_result_mode
+from ..result_modes import RESULT_MODE_DESCRIPTIONS
+from ..result_modes import RESULT_MODE_LABELS
+from ..result_modes import RESULT_MODE_MATCHING_ROWS
+from ..result_modes import RESULT_MODE_RELATED_TRAFFIC
 from ..search_modes import (
     DEFAULT_FUZZY_THRESHOLD,
     MAX_FUZZY_THRESHOLD,
@@ -819,6 +824,7 @@ class SearchRequest:
     kind: str
     term: str
     mode: str
+    result_mode: str
     fuzzy_threshold: float
     ignore_case: bool
     source_paths: list[Path]
@@ -832,6 +838,7 @@ class SearchOutput:
 
     kind: str
     term: str
+    result_mode: str
     targets: list[Path]
     results: list[SmtpSearchResult]
 
@@ -1680,6 +1687,10 @@ class LogBrowser(App):
         MODE_REGEX,
         MODE_FUZZY,
     )
+    _result_mode_cycle = (
+        RESULT_MODE_RELATED_TRAFFIC,
+        RESULT_MODE_MATCHING_ROWS,
+    )
 
     def __init__(
         self,
@@ -1724,9 +1735,12 @@ class LogBrowser(App):
         self.date_list: DateListView | None = None
         self.search_input: Input | None = None
         self.search_mode = MODE_LITERAL
+        self.result_mode = RESULT_MODE_RELATED_TRAFFIC
         self.fuzzy_threshold = DEFAULT_FUZZY_THRESHOLD
         self.search_mode_status: Static | None = None
+        self.result_mode_status: Static | None = None
         self.search_mode_button: Button | None = None
+        self.result_mode_button: Button | None = None
         self.search_back_button: Button | None = None
         self.search_submit_button: Button | None = None
         self.search_cancel_button: Button | None = None
@@ -1753,6 +1767,7 @@ class LogBrowser(App):
         ] = {}
         self._live_next_index = 0
         self._live_kind: str | None = None
+        self._live_result_mode = RESULT_MODE_RELATED_TRAFFIC
         self._live_target_label: str | None = None
         self._live_progress_label: str | None = None
         self._live_progress_percent = 0
@@ -1982,6 +1997,12 @@ class LogBrowser(App):
             id="search-mode-status",
         )
         self.wizard.mount(self.search_mode_status)
+        self.result_mode_status = Static(
+            self._result_mode_status_text(),
+            classes="mode-description",
+            id="result-mode-status",
+        )
+        self.wizard.mount(self.result_mode_status)
         back_label = "Back"
         back_id = "back-search"
         if self.subsearch_active:
@@ -2008,6 +2029,11 @@ class LogBrowser(App):
             id="cycle-search-mode",
             classes="action-button",
         )
+        self.result_mode_button = Button(
+            self._result_mode_button_text(),
+            id="cycle-result-mode",
+            classes="action-button",
+        )
         self._set_uniform_button_group_widths(
             [
                 self.search_back_button,
@@ -2015,7 +2041,12 @@ class LogBrowser(App):
                 self.search_cancel_button,
             ]
         )
-        self._set_uniform_button_group_widths([self.search_mode_button])
+        self._set_uniform_button_group_widths(
+            [
+                self.search_mode_button,
+                self.result_mode_button,
+            ]
+        )
         button_row = Horizontal(
             Horizontal(
                 self.search_back_button,
@@ -2026,6 +2057,7 @@ class LogBrowser(App):
             Static("", classes="button-spacer"),
             Horizontal(
                 self.search_mode_button,
+                self.result_mode_button,
                 classes="right-buttons",
             ),
             classes="button-row",
@@ -2189,6 +2221,8 @@ class LogBrowser(App):
                 self._show_last_results()
         elif button_id == "cycle-search-mode":
             self._cycle_search_mode()
+        elif button_id == "cycle-result-mode":
+            self._cycle_result_mode()
         elif button_id == "do-search":
             self._perform_search()
         elif button_id == "cancel-search":
@@ -2451,7 +2485,9 @@ class LogBrowser(App):
                 child.remove()
         self.search_input = None
         self.search_mode_status = None
+        self.result_mode_status = None
         self.search_mode_button = None
+        self.result_mode_button = None
         self.search_back_button = None
         self.search_submit_button = None
         self.search_cancel_button = None
@@ -2525,6 +2561,7 @@ class LogBrowser(App):
         self._live_pending_results = {}
         self._live_next_index = 0
         self._live_kind = request.kind
+        self._live_result_mode = request.result_mode
         self._live_target_label = None
         self._live_progress_label = "Search submitted. Preparing logs..."
         self._live_progress_percent = 0
@@ -2579,6 +2616,7 @@ class LogBrowser(App):
             kind=search_kind,
             term=term,
             mode=self.search_mode,
+            result_mode=normalize_result_mode(self.result_mode),
             fuzzy_threshold=self.fuzzy_threshold,
             ignore_case=True,
             source_paths=source_paths,
@@ -2606,6 +2644,7 @@ class LogBrowser(App):
         return SearchOutput(
             kind=request.kind,
             term=request.term,
+            result_mode=request.result_mode,
             targets=targets,
             results=results,
         )
@@ -3012,6 +3051,7 @@ class LogBrowser(App):
                 [next_result],
                 [next_target],
                 kind,
+                result_mode=self._live_result_mode,
             )
             self._live_rendered_lines.extend(lines)
             self._live_match_preview_lines = []
@@ -3070,6 +3110,7 @@ class LogBrowser(App):
             output.results,
             output.targets,
             output.kind,
+            output.result_mode,
         )
         self._live_rendered_lines = rendered_lines.copy()
         self._live_pending_results = {}
@@ -3080,6 +3121,7 @@ class LogBrowser(App):
             output.results,
             output.term,
             rendered_lines,
+            output.result_mode,
         )
         self.subsearch_kind = output.kind
         display_lines = self._prepend_execution_summary(rendered_lines)
@@ -3152,6 +3194,8 @@ class LogBrowser(App):
             self.search_input.disabled = running
         if self.search_mode_button is not None:
             self.search_mode_button.disabled = running
+        if self.result_mode_button is not None:
+            self.result_mode_button.disabled = running
         if self.search_back_button is not None:
             self.search_back_button.disabled = running
         if self.search_submit_button is not None:
@@ -3162,6 +3206,9 @@ class LogBrowser(App):
 
     def _cycle_search_mode(self) -> None:
         self._step_search_mode(1)
+
+    def _cycle_result_mode(self) -> None:
+        self._step_result_mode(1)
 
     def _step_search_mode(self, step: int) -> None:
         current = self.search_mode
@@ -3174,6 +3221,18 @@ class LogBrowser(App):
         self._refresh_search_mode_controls()
         label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
         self._notify(f"Search mode: {label}")
+
+    def _step_result_mode(self, step: int) -> None:
+        current = self.result_mode
+        modes = self._result_mode_cycle
+        try:
+            index = modes.index(current)
+        except ValueError:
+            index = 0
+        self.result_mode = modes[(index + step) % len(modes)]
+        self._refresh_search_mode_controls()
+        label = RESULT_MODE_LABELS.get(self.result_mode, self.result_mode)
+        self._notify(f"Result mode: {label}")
 
     def _adjust_fuzzy_threshold(self, delta: float) -> None:
         current = normalize_fuzzy_threshold(self.fuzzy_threshold)
@@ -3192,13 +3251,29 @@ class LogBrowser(App):
     def _refresh_search_mode_controls(self) -> None:
         if self.search_mode_status is not None:
             self.search_mode_status.update(self._search_mode_status_text())
+        if self.result_mode_status is not None:
+            self.result_mode_status.update(self._result_mode_status_text())
         if self.search_mode_button is not None:
             self.search_mode_button.label = self._search_mode_button_text()
-            self._set_uniform_button_group_widths([self.search_mode_button])
+        if self.result_mode_button is not None:
+            self.result_mode_button.label = self._result_mode_button_text()
+        buttons = [
+            button
+            for button in (
+                self.search_mode_button,
+                self.result_mode_button,
+            )
+            if button is not None
+        ]
+        self._set_uniform_button_group_widths(buttons)
 
     def _search_mode_button_text(self) -> str:
         label = SEARCH_MODE_LABELS.get(self.search_mode, self.search_mode)
         return f"Mode: {label}"
+
+    def _result_mode_button_text(self) -> str:
+        label = RESULT_MODE_LABELS.get(self.result_mode, self.result_mode)
+        return label
 
     def _search_mode_status_text(self) -> str:
         description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
@@ -3208,6 +3283,9 @@ class LogBrowser(App):
                 "Adjust with Ctrl+Up/Ctrl+Down."
             )
         return description
+
+    def _result_mode_status_text(self) -> str:
+        return RESULT_MODE_DESCRIPTIONS.get(self.result_mode, "")
 
     @staticmethod
     def _button_label_text(button: Button) -> str:
@@ -3344,8 +3422,14 @@ class LogBrowser(App):
         results: list,
         targets: list[Path],
         kind: str,
+        result_mode: str,
     ) -> list[str]:
-        return render_search_results(results, targets, kind)
+        return render_search_results(
+            results,
+            targets,
+            kind,
+            result_mode=result_mode,
+        )
 
     def _subsearch_output_path(self) -> Path:
         if self.staging_dir is None:
@@ -3365,16 +3449,22 @@ class LogBrowser(App):
         results: list,
         term: str,
         rendered_lines: list[str],
+        result_mode: str,
     ) -> None:
         if not self.subsearch_active:
             self._reset_subsearch()
         output_path = self._subsearch_output_path()
         lines: list[str] = []
-        for result in results:
-            for conversation in result.conversations:
-                lines.extend(conversation.lines)
-            for _line_number, line in result.orphan_matches:
-                lines.append(line)
+        if result_mode == RESULT_MODE_MATCHING_ROWS:
+            for result in results:
+                for _line_number, line in result.matching_rows:
+                    lines.append(line)
+        else:
+            for result in results:
+                for conversation in result.conversations:
+                    lines.extend(conversation.lines)
+                for _line_number, line in result.orphan_matches:
+                    lines.append(line)
         with output_path.open("w", encoding="utf-8") as handle:
             for line in lines:
                 handle.write(f"{line}\n")

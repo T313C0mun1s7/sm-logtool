@@ -70,6 +70,8 @@ Search handlers currently exist for:
 - Date selection supports keyboard and mouse toggling.
 - Search step includes explicit mode switching
   (`Literal`/`Wildcard`/`Regex`/`Fuzzy`).
+- Search step includes explicit result-mode switching
+  (`Show all related traffic`/`Only matching rows`).
 - Fuzzy mode threshold can be adjusted in TUI with `Ctrl+Up`/`Ctrl+Down`.
 - Sub-search chains are supported from results.
 - Results pane has syntax highlighting across supported log kinds.
@@ -94,6 +96,8 @@ Search handlers currently exist for:
 - `search` supports explicit `--mode` selection
   (`literal`/`wildcard`/`regex`/`fuzzy`).
 - `search` supports `--fuzzy-threshold` to tune fuzzy matching sensitivity.
+- `search` supports `--result-mode`
+  (`related`/`matching-only`).
 - CLI search output uses the same syntax tokenization model as the TUI.
 - CLI does not provide interactive TUI workflows like sub-search chaining.
 
