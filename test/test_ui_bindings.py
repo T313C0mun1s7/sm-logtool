@@ -604,7 +604,10 @@ async def test_stale_back_subsearch_button_event_is_ignored(tmp_path):
         app.selected_logs = infos[:1]
         app.subsearch_terms = ["john@prime42.net", "blocked"]
         app.subsearch_paths = [logs_dir / "one.log", logs_dir / "two.log"]
-        app.subsearch_rendered = [["prior-result-line"], ["current-result-line"]]
+        app.subsearch_rendered = [
+            ["prior-result-line"],
+            ["current-result-line"],
+        ]
         app.subsearch_depth = len(app.subsearch_paths)
         app.subsearch_path = app.subsearch_paths[-1]
         app.subsearch_kind = kind
@@ -620,6 +623,48 @@ async def test_stale_back_subsearch_button_event_is_ignored(tmp_path):
         assert app.step == WizardStep.RESULTS
         assert isinstance(app.output_log, ResultsArea)
         assert app.output_log.text == "current-result-line"
+
+
+@pytest.mark.asyncio
+async def test_back_subsearch_requires_arm_after_results_redraw(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.subsearch_terms = ["john@prime42.net", "blocked"]
+        app.subsearch_paths = [logs_dir / "one.log", logs_dir / "two.log"]
+        app.subsearch_rendered = [
+            ["prior-result-line"],
+            ["current-result-line"],
+        ]
+        app.subsearch_depth = len(app.subsearch_paths)
+        app.subsearch_path = app.subsearch_paths[-1]
+        app.subsearch_kind = kind
+        app.last_rendered_lines = ["current-result-line"]
+        app.last_rendered_kind = kind
+        app._display_results(["current-result-line"], kind)
+        await pilot.pause()
+
+        back_button = app.wizard.query_one("#back-subsearch", Button)
+        app._back_navigation_armed_at = time.perf_counter() + 60
+        app.on_button_pressed(Button.Pressed(back_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
+
+        app._back_navigation_armed_at = 0.0
+        app.on_button_pressed(Button.Pressed(back_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "prior-result-line"
 
 
 @pytest.mark.asyncio

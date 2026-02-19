@@ -840,6 +840,7 @@ MAX_SEARCH_WORKERS = 4
 _LIVE_MATCH_BATCH_SIZE = 64
 _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
+_BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
 
 
@@ -1761,6 +1762,7 @@ class LogBrowser(App):
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
         self._first_result_notified = False
+        self._back_navigation_armed_at = 0.0
         self.theme = CYBERDARK_THEME.name
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
@@ -1984,6 +1986,7 @@ class LogBrowser(App):
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
+            self._arm_back_navigation()
         self.search_back_button = Button(
             back_label,
             id=back_id,
@@ -2034,6 +2037,7 @@ class LogBrowser(App):
     def _show_step_results(self) -> None:
         self.step = WizardStep.RESULTS
         self._clear_wizard()
+        self._arm_back_navigation()
         title = self._results_title()
         help_text = (
             "Selection: arrows move, Shift+arrows select, "
@@ -2177,7 +2181,10 @@ class LogBrowser(App):
         elif button_id == "back-search":
             self._show_step_date()
         elif button_id == "back-results":
-            if self.step == WizardStep.SEARCH:
+            if (
+                self.step == WizardStep.SEARCH
+                and self._is_back_navigation_armed()
+            ):
                 self._show_last_results()
         elif button_id == "cycle-search-mode":
             self._cycle_search_mode()
@@ -2191,7 +2198,8 @@ class LogBrowser(App):
         elif button_id == "sub-search":
             self._start_subsearch()
         elif button_id == "back-subsearch":
-            self._step_back_subsearch()
+            if self._is_back_navigation_armed():
+                self._step_back_subsearch()
         elif button_id == "quit-results":
             self.exit()
         elif button_id == "copy-selection":
@@ -2410,6 +2418,14 @@ class LogBrowser(App):
             # Reset footer legend so shortcuts display on every step.
             self.footer._key_text = None  # type: ignore[attr-defined]
             self.footer.refresh()
+
+    def _arm_back_navigation(self) -> None:
+        self._back_navigation_armed_at = (
+            time.perf_counter() + _BACK_NAVIGATION_GUARD_SECONDS
+        )
+
+    def _is_back_navigation_armed(self) -> bool:
+        return time.perf_counter() >= self._back_navigation_armed_at
 
     def _apply_kind_selection(self, kind: str) -> None:
         if not self.kind_list:
