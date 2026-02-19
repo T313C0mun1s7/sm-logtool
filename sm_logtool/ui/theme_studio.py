@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
-from rich.color import Color
-from rich.color_triplet import ColorTriplet
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -150,29 +148,6 @@ class ThemeStudio(App):
         margin-top: 1;
     }
 
-    #meta {
-        margin-top: 1;
-    }
-
-    #preview-buttons {
-        margin-top: 1;
-        height: auto;
-    }
-
-    .sample-swatch {
-        margin-right: 1;
-        width: 1fr;
-        min-width: 12;
-        padding: 0 1;
-        border: round $foreground 20%;
-        content-align: center middle;
-    }
-
-    #swatch-values {
-        margin-top: 1;
-        color: $foreground;
-    }
-
     #top-actions {
         height: 1;
         padding: 0 1;
@@ -224,20 +199,24 @@ class ThemeStudio(App):
     .action-button.-style-default {
         background: $action-button-background;
         color: $action-button-foreground;
+        border: round $action-button-hover-background;
     }
 
     .action-button.-style-default:hover {
         background: $action-button-hover-background;
+        border: round $action-button-hover-background;
     }
 
     .action-button.-style-default:focus {
         background: $action-button-focus-background;
         color: $action-button-foreground;
+        border: round $action-button-focus-background;
         text-style: bold;
     }
 
     .action-button.-style-default.-active {
         background: $action-button-hover-background;
+        border: round $action-button-hover-background;
     }
 
     .selected .label {
@@ -458,24 +437,6 @@ class ThemeStudio(App):
                             classes="result-log",
                         )
                 yield Static("", id="status")
-                yield Static("", id="meta")
-                with Horizontal(id="preview-buttons"):
-                    yield Static(
-                        "",
-                        id="swatch-top-action",
-                        classes="sample-swatch",
-                    )
-                    yield Static(
-                        "",
-                        id="swatch-primary",
-                        classes="sample-swatch",
-                    )
-                    yield Static(
-                        "",
-                        id="swatch-accent",
-                        classes="sample-swatch",
-                    )
-                yield Static("", id="swatch-values")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -561,7 +522,6 @@ class ThemeStudio(App):
             self.register_theme(loaded_theme)
             self.theme = loaded_theme.name
             self.current_theme_name = loaded_theme.name
-            self._update_swatches(loaded_theme)
             self._set_syntax_preview(loaded_theme)
         details = f"profile={self.profile} {self._ansi_label()}"
         if warnings:
@@ -612,10 +572,6 @@ class ThemeStudio(App):
                 "No source themes found. Add files and relaunch with "
                 "--source /path/to/themes."
             )
-            self._set_meta(
-                f"Store dir: {self.store_dir} | Profile: {self.profile} | "
-                f"{self._ansi_label()}"
-            )
             return
 
         items = [SourceThemeItem(path) for path in files]
@@ -651,12 +607,6 @@ class ThemeStudio(App):
         self.theme = preview_theme.name
         self.current_theme_name = preview_theme.name
         self._set_status("Preview updated. Press 's' to save converted theme.")
-        self._set_meta(
-            f"Source: {self.current_source} | Profile: {self.profile} | "
-            f"{self._ansi_label()} | Save dir: {self.store_dir} | "
-            f"primary={preview_theme.primary} accent={preview_theme.accent}"
-        )
-        self._update_swatches(preview_theme)
         self._set_syntax_preview(preview_theme)
 
     def _next_preview_theme_name(self) -> str:
@@ -674,50 +624,10 @@ class ThemeStudio(App):
         status = self.query_one("#status", Static)
         status.update(message)
 
-    def _set_meta(self, message: str) -> None:
-        meta = self.query_one("#meta", Static)
-        meta.update(message)
-
     def _ansi_label(self) -> str:
         if self.quantize_ansi256:
             return "ANSI-256: On"
         return "ANSI-256: Off"
-
-    def _update_swatches(self, preview_theme: Theme) -> None:
-        top_action = (
-            preview_theme.variables.get("top-actions-background")
-            or preview_theme.panel
-        )
-        top_action_fg = (
-            preview_theme.variables.get("top-action-mnemonic-foreground")
-            or preview_theme.foreground
-        )
-
-        top = self.query_one("#swatch-top-action", Static)
-        top.styles.background = top_action
-        top.styles.color = top_action_fg
-        top.update(f"Top Bar {top_action}")
-
-        primary = self.query_one("#swatch-primary", Static)
-        primary.styles.background = preview_theme.primary
-        primary.styles.color = _best_text_color(preview_theme.primary)
-        primary.update("Primary")
-
-        accent = self.query_one("#swatch-accent", Static)
-        accent.styles.background = preview_theme.accent
-        accent.styles.color = _best_text_color(preview_theme.accent)
-        accent.update("Accent")
-
-        values = self.query_one("#swatch-values", Static)
-        values.update(
-            " | ".join(
-                (
-                    f"Top Bar: {top_action}",
-                    f"Primary: {preview_theme.primary}",
-                    f"Accent: {preview_theme.accent}",
-                )
-            )
-        )
 
     def _selected_theme_name(self) -> str:
         name_input = self.query_one("#save-name", Input)
@@ -751,31 +661,6 @@ def _theme_with_name(theme: Theme, name: str) -> Theme:
         dark=theme.dark,
         variables=dict(theme.variables or {}),
     )
-
-
-def _best_text_color(background: str) -> str:
-    try:
-        triplet = Color.parse(background).get_truecolor()
-    except Exception:
-        return "#ffffff"
-    if _relative_luminance(triplet) > 0.5:
-        return "#000000"
-    return "#ffffff"
-
-
-def _relative_luminance(color: ColorTriplet) -> float:
-    return (
-        (0.2126 * _linear_channel(color.red))
-        + (0.7152 * _linear_channel(color.green))
-        + (0.0722 * _linear_channel(color.blue))
-    )
-
-
-def _linear_channel(channel: int) -> float:
-    scaled = channel / 255
-    if scaled <= 0.03928:
-        return scaled / 12.92
-    return ((scaled + 0.055) / 1.055) ** 2.4
 
 
 def run(

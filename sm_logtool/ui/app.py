@@ -1537,20 +1537,24 @@ class LogBrowser(App):
     .action-button.-style-default {
         background: $action-button-background;
         color: $action-button-foreground;
+        border: round $action-button-hover-background;
     }
 
     .action-button.-style-default:hover {
         background: $action-button-hover-background;
+        border: round $action-button-hover-background;
     }
 
     .action-button.-style-default:focus {
         background: $action-button-focus-background;
         color: $action-button-foreground;
+        border: round $action-button-focus-background;
         text-style: bold;
     }
 
     .action-button.-style-default.-active {
         background: $action-button-hover-background;
+        border: round $action-button-hover-background;
     }
 
     .selected .label {

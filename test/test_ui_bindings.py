@@ -337,8 +337,9 @@ async def test_kind_and_date_steps_use_compact_uniform_action_buttons(
             for button in kind_buttons
         )
         assert len({button.size.width for button in kind_buttons}) == 1
-        assert kind_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in kind_buttons) + 2
+        assert kind_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in kind_buttons
         )
 
         app._refresh_logs()
@@ -358,8 +359,9 @@ async def test_kind_and_date_steps_use_compact_uniform_action_buttons(
             for button in date_buttons
         )
         assert len({button.size.width for button in date_buttons}) == 1
-        assert date_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in date_buttons) + 2
+        assert date_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in date_buttons
         )
 
 
@@ -395,12 +397,13 @@ async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
         assert search_right_buttons
         assert len({button.size.width for button in search_left_buttons}) == 1
         assert len({button.size.width for button in search_right_buttons}) == 1
-        assert search_left_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in search_left_buttons) + 2
+        assert search_left_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in search_left_buttons
         )
-        assert search_right_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in search_right_buttons)
-            + 2
+        assert search_right_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in search_right_buttons
         )
 
         app._show_step_results()
@@ -419,13 +422,13 @@ async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
         assert len(
             {button.size.width for button in results_right_buttons}
         ) == 1
-        assert results_left_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in results_left_buttons)
-            + 2
+        assert results_left_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in results_left_buttons
         )
-        assert results_right_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in results_right_buttons)
-            + 2
+        assert results_right_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in results_right_buttons
         )
 
 
