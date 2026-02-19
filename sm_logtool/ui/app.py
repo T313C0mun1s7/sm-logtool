@@ -1510,19 +1510,19 @@ class LogBrowser(App):
     }
 
     #wizard-body {
-        margin: 1 2;
+        margin: 0 1;
         height: 1fr;
     }
 
     .instruction {
-        padding: 1 0;
+        padding: 0;
         color: $primary;
     }
 
     .button-row {
         width: 1fr;
         height: auto;
-        margin-top: 1;
+        margin-top: 0;
     }
 
     .button-row Button {
@@ -1530,7 +1530,6 @@ class LogBrowser(App):
     }
 
     .action-button {
-        min-width: 0;
         text-style: bold;
     }
 
@@ -1650,7 +1649,7 @@ class LogBrowser(App):
     }
 
     .search-term-input {
-        margin-bottom: 1;
+        margin-bottom: 0;
         background: $panel;
         color: $foreground;
         border: none;
@@ -1666,7 +1665,7 @@ class LogBrowser(App):
     }
 
     .selection-list {
-        margin-bottom: 1;
+        margin-bottom: 0;
         background: $panel;
     }
     """
@@ -3187,9 +3186,9 @@ class LogBrowser(App):
             len(self._button_label_text(button))
             for button in button_list
         )
-        width = longest_label + 2
+        width = longest_label + 4
         for button in button_list:
-            button.styles.width = width
+            button.styles.width = "auto"
             button.styles.min_width = width
 
     def _notify(self, message: str) -> None:

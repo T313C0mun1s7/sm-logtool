@@ -143,14 +143,17 @@ async def test_theme_studio_override_controls_cycle_source(tmp_path):
     )
     async with app.run_test() as pilot:
         await pilot.pause()
-        target = app.query_one("#override-target", Static)
-        source_label = app.query_one("#override-source", Static)
-        assert "Edit:" in str(target.render())
-        assert "Source: auto" in str(source_label.render())
-
-        app._cycle_override_source(1)
+        assert app._active_override_target == "selection-selected-background"
+        app.action_override_source_next()
         await pilot.pause()
-        assert "Source: accent" in str(source_label.render())
+        assert (
+            app._manual_overrides.get("selection-selected-background")
+            == "accent"
+        )
+
+        app.action_override_target_next()
+        await pilot.pause()
+        assert app._active_override_target != "selection-selected-background"
 
 
 @pytest.mark.asyncio

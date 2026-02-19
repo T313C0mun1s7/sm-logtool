@@ -47,10 +47,52 @@ _SELECTION_SAMPLE_TARGETS = {
     "sample-row-selected-active": "selection-selected-active-background",
 }
 
-_SELECTION_TARGET_LABELS = {
+_OVERRIDE_TARGET_LABELS = {
+    "background": "App background",
+    "foreground": "App foreground",
+    "panel": "Panel background",
+    "surface": "Surface background",
+    "primary": "Primary color",
+    "secondary": "Secondary color",
+    "accent": "Accent color",
+    "success": "Success color",
+    "warning": "Warning color",
+    "error": "Error color",
+    "top-actions-background": "Top bar background",
+    "top-action-background": "Top action background",
+    "top-action-hover-background": "Top action hover",
+    "top-action-mnemonic-foreground": "Top action mnemonic",
     "selection-selected-background": "Selected row",
     "selection-active-background": "Active row",
     "selection-selected-active-background": "Selected + active row",
+    "selection-selected-foreground": "Selected row text",
+    "selection-active-foreground": "Active row text",
+    "selection-selected-active-foreground": "Selected+active row text",
+    "action-button-background": "Action button background",
+    "action-button-foreground": "Action button text",
+    "action-button-hover-background": "Action button hover",
+    "action-button-focus-background": "Action button focus",
+    "context-menu-background": "Context menu background",
+    "context-menu-border": "Context menu border",
+}
+
+_OVERRIDE_TARGETS = tuple(_OVERRIDE_TARGET_LABELS.keys())
+
+_CLICK_TARGETS = {
+    **_SELECTION_SAMPLE_TARGETS,
+    "browse-preview-shell": "background",
+    "top-actions": "top-actions-background",
+    "preview-top-menu": "top-action-background",
+    "preview-top-quit": "top-action-background",
+    "preview-top-reset": "top-action-background",
+    "sample-instruction": "primary",
+    "sample-query": "panel",
+    "sample-mode": "accent",
+    "preview-back": "action-button-background",
+    "preview-search": "action-button-background",
+    "preview-cancel": "action-button-background",
+    "sample-results-header": "primary",
+    "syntax-preview": "panel",
 }
 
 _OVERRIDE_CHOICES = (
@@ -152,26 +194,6 @@ class ThemeStudio(App):
         padding: 1;
     }
 
-    #override-controls {
-        margin-bottom: 1;
-        height: auto;
-        background: $surface;
-        border: round $selection-selected-background;
-        padding: 0 1;
-    }
-
-    #override-target {
-        width: 25;
-        color: $accent;
-    }
-
-    #override-source {
-        width: 1fr;
-        color: $foreground;
-        border: round $selection-selected-background;
-        padding: 0 1;
-    }
-
     #save-name {
         width: 28;
         margin-right: 1;
@@ -201,7 +223,7 @@ class ThemeStudio(App):
 
     #browse-preview-shell {
         height: 1fr;
-        margin-top: 1;
+        margin-top: 0;
         border: round $selection-selected-background;
         background: $background;
     }
@@ -235,19 +257,19 @@ class ThemeStudio(App):
     }
 
     #wizard-body {
-        margin: 1 1;
+        margin: 0 1;
         height: 1fr;
     }
 
     .instruction {
-        padding: 1 0;
+        padding: 0;
         color: $primary;
     }
 
     .button-row {
         width: 1fr;
         height: auto;
-        margin-top: 1;
+        margin-top: 0;
     }
 
     .button-row Button {
@@ -255,7 +277,6 @@ class ThemeStudio(App):
     }
 
     .action-button {
-        min-width: 0;
         text-style: bold;
     }
 
@@ -314,7 +335,7 @@ class ThemeStudio(App):
     }
 
     .search-term-input {
-        margin-bottom: 1;
+        margin-bottom: 0;
         background: $panel;
         color: $foreground;
         border: none;
@@ -330,7 +351,7 @@ class ThemeStudio(App):
     }
 
     .selection-list {
-        margin-bottom: 1;
+        margin-bottom: 0;
         background: $panel;
     }
 
@@ -347,6 +368,11 @@ class ThemeStudio(App):
         Binding("2", "profile_vivid", "Vivid"),
         Binding("3", "profile_soft", "Soft"),
         Binding("a", "toggle_ansi", "Toggle ANSI-256"),
+        Binding("[", "override_source_prev", "Source Prev"),
+        Binding("]", "override_source_next", "Source Next"),
+        Binding("-", "override_target_prev", "Target Prev"),
+        Binding("=", "override_target_next", "Target Next"),
+        Binding("c", "override_clear", "Clear Override"),
     ]
 
     def __init__(
@@ -417,24 +443,6 @@ class ThemeStudio(App):
                         id="quit-studio",
                         classes="studio-button",
                     )
-                with Horizontal(id="override-controls"):
-                    yield Static("", id="override-target")
-                    yield Button(
-                        "<",
-                        id="override-prev",
-                        classes="studio-button",
-                    )
-                    yield Static("", id="override-source")
-                    yield Button(
-                        ">",
-                        id="override-next",
-                        classes="studio-button",
-                    )
-                    yield Button(
-                        "Clear",
-                        id="override-clear",
-                        classes="studio-button",
-                    )
                 with Vertical(id="browse-preview-shell"):
                     with Horizontal(id="top-actions"):
                         yield TopAction(
@@ -458,6 +466,7 @@ class ThemeStudio(App):
                     with Vertical(id="wizard-body"):
                         yield Static(
                             "Step Preview: Browse UI parity",
+                            id="sample-instruction",
                             classes="instruction",
                         )
                         with Vertical(
@@ -497,6 +506,7 @@ class ThemeStudio(App):
                         yield Static(
                             "Search mode: Literal "
                             "(Ctrl+Right/Ctrl+Left to cycle)",
+                            id="sample-mode",
                             classes="mode-description",
                         )
                         with Horizontal(classes="button-row"):
@@ -517,6 +527,7 @@ class ThemeStudio(App):
                             )
                         yield Static(
                             "Results Preview",
+                            id="sample-results-header",
                             classes="results-header",
                         )
                         yield ResultsArea(
@@ -530,7 +541,6 @@ class ThemeStudio(App):
     def on_mount(self) -> None:
         self.theme = CYBERDARK_THEME.name
         self._update_profile_button_states()
-        self._refresh_override_controls()
         self._load_sources()
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
@@ -581,14 +591,6 @@ class ThemeStudio(App):
         if button_id == "profile-soft":
             self.action_profile_soft()
             return
-        if button_id == "override-prev":
-            self._cycle_override_source(-1)
-            return
-        if button_id == "override-next":
-            self._cycle_override_source(1)
-            return
-        if button_id == "override-clear":
-            self._set_current_override("auto")
 
     def on_click(
         self,
@@ -597,13 +599,34 @@ class ThemeStudio(App):
         widget = event.widget
         while widget is not None:
             widget_id = getattr(widget, "id", None)
-            target = _SELECTION_SAMPLE_TARGETS.get(widget_id or "")
+            target = _CLICK_TARGETS.get(widget_id or "")
             if target is not None:
                 self._active_override_target = target
-                self._refresh_override_controls()
+                label = self._override_target_label(
+                    self._active_override_target
+                )
+                self._set_status(
+                    "Editing "
+                    f"{label}."
+                )
                 event.stop()
                 return
             widget = getattr(widget, "parent", None)
+
+    def action_override_source_prev(self) -> None:
+        self._cycle_override_source(-1)
+
+    def action_override_source_next(self) -> None:
+        self._cycle_override_source(1)
+
+    def action_override_target_prev(self) -> None:
+        self._cycle_override_target(-1)
+
+    def action_override_target_next(self) -> None:
+        self._cycle_override_target(1)
+
+    def action_override_clear(self) -> None:
+        self._set_current_override("auto")
 
     def action_save_theme(self) -> None:
         if self.current_source is None or self.current_theme_name is None:
@@ -701,7 +724,6 @@ class ThemeStudio(App):
             self._manual_overrides.clear()
             self._active_override_target = "selection-selected-background"
             self._override_source_path = self.current_source
-            self._refresh_override_controls()
         try:
             palette = parse_terminal_palette(self.current_source)
             self.current_source_theme_name = palette.name
@@ -780,23 +802,32 @@ class ThemeStudio(App):
             self._manual_overrides.pop(target, None)
         else:
             self._manual_overrides[target] = source
-        self._refresh_override_controls()
+        self._set_status(
+            "Override "
+            f"{self._override_target_label(target)} -> {source}."
+        )
         self._refresh_preview(reset_name=False)
 
-    def _refresh_override_controls(self) -> None:
-        target_label = _SELECTION_TARGET_LABELS.get(
-            self._active_override_target,
-            self._active_override_target,
-        )
-        target = self.query_one("#override-target", Static)
-        target.update(f"Edit: {target_label}")
-
-        source_value = self._manual_overrides.get(
+    def _cycle_override_target(self, delta: int) -> None:
+        current = self._active_override_target
+        try:
+            index = _OVERRIDE_TARGETS.index(current)
+        except ValueError:
+            index = 0
+        next_index = (index + delta) % len(_OVERRIDE_TARGETS)
+        self._active_override_target = _OVERRIDE_TARGETS[next_index]
+        source = self._manual_overrides.get(
             self._active_override_target,
             "auto",
         )
-        source = self.query_one("#override-source", Static)
-        source.update(f"Source: {source_value}")
+        self._set_status(
+            "Editing "
+            f"{self._override_target_label(self._active_override_target)} "
+            f"(source {source})."
+        )
+
+    def _override_target_label(self, target: str) -> str:
+        return _OVERRIDE_TARGET_LABELS.get(target, target)
 
     def _resolved_overrides(self) -> dict[str, str] | None:
         if not self._manual_overrides:
