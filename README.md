@@ -169,6 +169,8 @@ sm-logtool --config /tmp/sm-logtool-test.yaml themes
 sm-logtool --config /tmp/sm-logtool-test.yaml browse
 ```
 
+### Browse Mode Workflow
+
 Wizard flow:
 
 1. Choose log kind.
