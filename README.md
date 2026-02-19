@@ -98,6 +98,10 @@ theme: Cyberdark
 
 If `staging_dir` does not exist yet, the app creates it automatically.
 
+Default config location is per-user:
+
+- `~/.config/sm-logtool/config.yaml`
+
 Config resolution order:
 
 1. `--config /path/to/config.yaml`
@@ -132,17 +136,38 @@ Use the built-in visual converter:
 sm-logtool themes --source ~/.config/sm-logtool/theme-sources
 ```
 
-Notes:
+Theme file locations (per-user):
+
+- Source theme files to import:
+  `~/.config/sm-logtool/theme-sources`
+- Converted themes saved by Theme Studio:
+  `~/.config/sm-logtool/themes`
+
+These locations are user-home paths, so imported/converted themes are local
+user settings, not repository files.
+
+Theme Studio workflow:
 
 - Supported source files: `.itermcolors`, `.colors`, `.colortheme`.
 - Toggle mapping profiles (`balanced` / `vivid` / `soft`) in the UI and
   preview both chrome and syntax colors live before saving.
 - Toggle ANSI-256 quantization in the UI for non-truecolor terminals.
-- Saved converted themes are written to:
-  `~/.config/sm-logtool/themes`.
+- Click preview elements to select a mapping target, then:
+  - `[` / `]` cycle mapping source (`auto`, semantic colors, `ansi0..ansi15`)
+  - `-` / `=` cycle mapping target
+  - `c` clear current override
+- Selection-row states are auto-corrected before save so
+  `Selected`, `Active`, and `Selected+Active` remain distinct.
 - `sm-logtool browse` auto-loads saved converted themes from that directory.
 - Safety: when using `--config` or `SM_LOGTOOL_CONFIG`, in-app theme switching
   does not auto-write the config file.
+
+Testing with a temporary config (recommended for development):
+
+```bash
+sm-logtool --config /tmp/sm-logtool-test.yaml themes
+sm-logtool --config /tmp/sm-logtool-test.yaml browse
+```
 
 Wizard flow:
 
@@ -207,10 +232,11 @@ Target resolution:
 Search options:
 
 - `--logs-dir`: source logs directory. Optional when `logs_dir` is set in
-  `config.yaml`.
+  the active config file.
 - `--staging-dir`: staging directory. Optional when `staging_dir` is set in
-  `config.yaml`.
-- `--kind`: log kind. Optional when `default_kind` is set in `config.yaml`.
+  the active config file.
+- `--kind`: log kind. Optional when `default_kind` is set in the active
+  config file.
 - `--date`: `YYYY.MM.DD` date to search. Repeat to search multiple dates.
 - `--log-file`: explicit file to search. Repeat to search multiple files.
 - `--list`: list available logs for the selected kind and exit.

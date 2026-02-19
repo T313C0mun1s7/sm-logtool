@@ -31,6 +31,11 @@ default results syntax theme (`smlog-default`).
 - status words (success/failure)
 - protocol keywords at the start of a log message
 
+SMTP response-code guard:
+- Response codes are highlighted only when they appear in an `rsp:` payload.
+- Numeric values in timestamp/prefix columns are not treated as response
+  codes.
+
 Protocol keywords are matched against a single list:
 `SMTP`, `IMAP`, `POP`, `USER`, `WEBMAIL`, `ACTIVESYNC`, `EAS`,
 `CALDAV`, `CARDDAV`, `XMPP`, `API`.
@@ -62,3 +67,5 @@ TUI colors are split:
 - Source terminal themes are mapped to Textual semantic colors in
   `sm_logtool/ui/theme_importer.py` (used by `sm_logtool/ui/theme_studio.py`)
   with profile-driven heuristics and optional ANSI-256 quantization.
+- Selection-state theme variables are normalized before save so selected,
+  active, and selected+active rows remain visually distinct.

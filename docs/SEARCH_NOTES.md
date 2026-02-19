@@ -75,6 +75,17 @@ Search handlers currently exist for:
 - Results pane has syntax highlighting across supported log kinds.
 - Copy selection and copy-all actions are available from results.
 
+### Theme behavior
+
+- `sm-logtool browse` auto-loads saved converted themes from
+  `~/.config/sm-logtool/themes` (per-user).
+- Theme Studio imports source files from
+  `~/.config/sm-logtool/theme-sources` by default (per-user).
+- Theme Studio supports live semantic remapping against preview elements.
+- Saved themes preserve both app chrome and syntax palette behavior.
+- Selection-state colors are forced distinct before save so date-selection
+  rows remain functional in ANSI-256 terminals.
+
 ### CLI behavior
 
 - `search` and `browse` subcommands exist.
