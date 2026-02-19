@@ -3,6 +3,7 @@ from sm_logtool.syntax import (
     TOKEN_IP,
     TOKEN_LINE_NUMBER,
     TOKEN_PROTO_IMAP,
+    TOKEN_RESPONSE,
     TOKEN_STATUS_BAD,
     TOKEN_TIMESTAMP,
     spans_for_line,
@@ -62,3 +63,19 @@ def test_highlight_admin_protocol_and_status():
     status_start = line.index("failed")
     status_end = status_start + len("failed")
     assert _has_span(spans, TOKEN_STATUS_BAD, status_start, status_end)
+
+
+def test_response_code_not_highlighted_in_timestamp_columns():
+    line = (
+        "[2026.02.18] 05:01:30.507 [198.51.100.23][30216663] "
+        "rsp: 334 VXNlcm5hbWU6"
+    )
+    spans = spans_for_line("smtp", line)
+
+    ts_code_start = line.index("507")
+    ts_code_end = ts_code_start + len("507")
+    assert not _has_span(spans, TOKEN_RESPONSE, ts_code_start, ts_code_end)
+
+    rsp_code_start = line.index("334")
+    rsp_code_end = rsp_code_start + len("334")
+    assert _has_span(spans, TOKEN_RESPONSE, rsp_code_start, rsp_code_end)

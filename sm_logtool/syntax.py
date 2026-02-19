@@ -49,7 +49,7 @@ _SMTP_VERB = re.compile(
     r"VRFY|EXPN)\b|MAIL FROM|RCPT TO",
     re.IGNORECASE,
 )
-_STATUS_CODE = re.compile(r"(?<!\d)([245]\d{2})(?=[ -])")
+_RSP_STATUS_CODE = re.compile(r"^\s*([1-5]\d{2})(?=[ -]|$)")
 _BRACKET_TAG = re.compile(r"\[[A-Za-z][^\]]*\]")
 _MESSAGE_WORD = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 _STATUS_BAD = re.compile(
@@ -259,10 +259,10 @@ def _field_token(value: str) -> str:
 
 def _message_spans(line: str, offset: int) -> list[HighlightSpan]:
     spans: list[HighlightSpan] = []
+    spans.extend(_response_code_spans(line, offset))
     for pattern, token in (
         (_CMD_RSP, TOKEN_COMMAND),
         (_SMTP_VERB, TOKEN_COMMAND),
-        (_STATUS_CODE, TOKEN_RESPONSE),
         (_STATUS_BAD, TOKEN_STATUS_BAD),
         (_STATUS_GOOD, TOKEN_STATUS_GOOD),
         (_EMAIL, TOKEN_EMAIL),
@@ -271,6 +271,19 @@ def _message_spans(line: str, offset: int) -> list[HighlightSpan]:
         (_BRACKET_TAG, TOKEN_TAG),
     ):
         spans.extend(_regex_spans(pattern, line, token, offset))
+    return spans
+
+
+def _response_code_spans(line: str, offset: int) -> list[HighlightSpan]:
+    spans: list[HighlightSpan] = []
+    for rsp_match in re.finditer(r"\brsp:\s*", line, re.IGNORECASE):
+        payload_start = rsp_match.end()
+        code_match = _RSP_STATUS_CODE.search(line[payload_start:])
+        if code_match is None:
+            continue
+        start = payload_start + code_match.start(1)
+        end = payload_start + code_match.end(1)
+        spans.append(HighlightSpan(offset + start, offset + end, TOKEN_RESPONSE))
     return spans
 
 
