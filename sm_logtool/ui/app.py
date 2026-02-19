@@ -3273,7 +3273,7 @@ class LogBrowser(App):
 
     def _result_mode_button_text(self) -> str:
         label = RESULT_MODE_LABELS.get(self.result_mode, self.result_mode)
-        return f"Results: {label}"
+        return label
 
     def _search_mode_status_text(self) -> str:
         description = SEARCH_MODE_DESCRIPTIONS.get(self.search_mode, "")
