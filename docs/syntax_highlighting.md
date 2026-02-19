@@ -35,6 +35,9 @@ SMTP response-code guard:
 - Response codes are highlighted only when they appear in an `rsp:` payload.
 - Numeric values in timestamp/prefix columns are not treated as response
   codes.
+- `Failed: True/False` status fields are not treated as failure events.
+- Neutral check lines such as `Blocked Sender Checks started/completed` are
+  not treated as block outcomes.
 
 Protocol keywords are matched against a single list:
 `SMTP`, `IMAP`, `POP`, `USER`, `WEBMAIL`, `ACTIVESYNC`, `EAS`,
