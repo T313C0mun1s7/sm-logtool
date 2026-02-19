@@ -1097,6 +1097,18 @@ def default_theme_source_dir(config_path: Path | None = None) -> Path:
     return Path.home() / ".config" / "sm-logtool" / "theme-sources"
 
 
+def ensure_default_theme_dirs(
+    config_path: Path | None = None,
+) -> tuple[Path, Path]:
+    """Ensure default per-user theme directories exist and return them."""
+
+    store_dir = default_theme_store_dir(config_path).expanduser()
+    source_dir = default_theme_source_dir(config_path).expanduser()
+    for directory in (store_dir, source_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+    return store_dir, source_dir
+
+
 def save_converted_theme(
     *,
     theme: Theme,

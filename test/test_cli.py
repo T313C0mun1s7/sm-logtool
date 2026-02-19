@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
+import types
 from zipfile import ZipFile
 
 import pytest
@@ -51,6 +52,103 @@ def test_should_persist_theme_changes_disabled_for_env(monkeypatch):
     monkeypatch.setenv("SM_LOGTOOL_CONFIG", "/tmp/custom.yaml")
 
     assert cli._should_persist_theme_changes(args) is False
+
+
+def test_run_browse_ensures_default_theme_dirs(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir()
+    staging_dir.mkdir()
+    store_dir = tmp_path / "themes"
+    source_dir = tmp_path / "theme-sources"
+
+    captured: dict[str, object] = {}
+
+    def fake_ensure(config_path: Path | None) -> tuple[Path, Path]:
+        captured["config_path"] = config_path
+        return store_dir, source_dir
+
+    def fake_run_tui(
+        logs_path: Path,
+        **kwargs: object,
+    ) -> int:
+        captured["logs_path"] = logs_path
+        captured["theme_store_dir"] = kwargs["theme_store_dir"]
+        return 0
+
+    fake_module = types.ModuleType("sm_logtool.ui.app")
+    fake_module.run = fake_run_tui  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "sm_logtool.ui.app", fake_module)
+    monkeypatch.setattr(cli, "ensure_default_theme_dirs", fake_ensure)
+
+    args = argparse.Namespace(logs_dir=None, staging_dir=None, config=None)
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_browse(args)
+
+    assert exit_code == 0
+    assert captured["config_path"] == Path("config.yaml")
+    assert captured["logs_path"] == logs_dir
+    assert captured["theme_store_dir"] == store_dir
+
+
+def test_run_themes_ensures_default_theme_dirs(tmp_path, monkeypatch):
+    store_dir = tmp_path / "themes"
+    source_dir = tmp_path / "theme-sources"
+    captured: dict[str, object] = {}
+
+    def fake_ensure(config_path: Path | None) -> tuple[Path, Path]:
+        captured["config_path"] = config_path
+        return store_dir, source_dir
+
+    def fake_run_studio(
+        *,
+        source_paths: tuple[Path, ...],
+        store_dir: Path,
+        profile: str,
+        quantize_ansi256: bool,
+    ) -> int:
+        captured["source_paths"] = source_paths
+        captured["store_dir"] = store_dir
+        captured["profile"] = profile
+        captured["quantize_ansi256"] = quantize_ansi256
+        return 0
+
+    fake_module = types.ModuleType("sm_logtool.ui.theme_studio")
+    fake_module.run = fake_run_studio  # type: ignore[attr-defined]
+    monkeypatch.setitem(
+        sys.modules,
+        "sm_logtool.ui.theme_studio",
+        fake_module,
+    )
+    monkeypatch.setattr(cli, "ensure_default_theme_dirs", fake_ensure)
+
+    args = argparse.Namespace(
+        source=None,
+        store_dir=None,
+        profile="balanced",
+        no_ansi256=False,
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=None,
+        staging_dir=None,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_themes(args)
+
+    assert exit_code == 0
+    assert captured["config_path"] == Path("config.yaml")
+    assert captured["source_paths"] == (source_dir,)
+    assert captured["store_dir"] == store_dir
+    assert captured["profile"] == "balanced"
+    assert captured["quantize_ansi256"] is True
 
 
 def test_scan_logs_handles_missing_directory(tmp_path):

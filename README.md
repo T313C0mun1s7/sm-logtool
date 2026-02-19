@@ -234,6 +234,8 @@ Theme file locations (per-user):
   `~/.config/sm-logtool/theme-sources`
 - Converted themes saved by Theme Studio:
   `~/.config/sm-logtool/themes`
+- Both directories are created automatically on first run of
+  `sm-logtool browse` or `sm-logtool themes`.
 
 These locations are user-home paths, so imported/converted themes are local
 user settings, not repository files.

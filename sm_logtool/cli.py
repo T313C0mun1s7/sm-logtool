@@ -37,8 +37,7 @@ from .search_modes import (
 )
 from .search import get_search_function
 from .staging import stage_log
-from .ui.theme_importer import default_theme_source_dir
-from .ui.theme_importer import default_theme_store_dir
+from .ui.theme_importer import ensure_default_theme_dirs
 from .ui.theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 
 
@@ -283,6 +282,7 @@ def _run_browse(args: argparse.Namespace) -> int:
             "is installed.\n"
             f"Details: {exc}"
         ) from exc
+    theme_store_dir, _ = ensure_default_theme_dirs(config.path)
 
     return run_tui(
         logs_dir,
@@ -290,7 +290,7 @@ def _run_browse(args: argparse.Namespace) -> int:
         default_kind=config.default_kind,
         config_path=config.path,
         theme=config.theme,
-        theme_store_dir=default_theme_store_dir(),
+        theme_store_dir=theme_store_dir,
         theme_import_paths=config.theme_import_paths,
         theme_mapping_profile=config.theme_mapping_profile,
         theme_quantize_ansi256=config.theme_quantize_ansi256,
@@ -301,11 +301,14 @@ def _run_browse(args: argparse.Namespace) -> int:
 
 def _run_themes(args: argparse.Namespace) -> int:
     config: AppConfig = getattr(args, CONFIG_ATTR)
+    default_store_dir, default_source_dir = ensure_default_theme_dirs(
+        config.path
+    )
     source_paths = tuple(
         args.source
-        or (default_theme_source_dir(),)
+        or (default_source_dir,)
     )
-    store_dir = args.store_dir or default_theme_store_dir()
+    store_dir = args.store_dir or default_store_dir
 
     try:
         from .ui.theme_studio import run as run_studio  # type: ignore
