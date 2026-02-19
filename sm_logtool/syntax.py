@@ -53,8 +53,15 @@ _RSP_STATUS_CODE = re.compile(r"^\s*([1-5]\d{2})(?=[ -]|$)")
 _BRACKET_TAG = re.compile(r"\[[A-Za-z][^\]]*\]")
 _MESSAGE_WORD = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 _STATUS_BAD = re.compile(
-    r"\b(failed|failure|error|exception|denied|blocked|invalid|"
-    r"warning|warn)\b",
+    r"\b(failure|error|exception|denied|invalid|warning|warn)\b"
+    r"|\bfailed(?!\s*:\s*(?:true|false)\b)\b",
+    re.IGNORECASE,
+)
+_STATUS_BLOCKED_OUTCOME = re.compile(
+    r"\baction:\s*movetojunk\b"
+    r"|\bon their blocked list\b"
+    r"|\bon the blocked country list\b"
+    r"|\bmessage blocked\b",
     re.IGNORECASE,
 )
 _STATUS_GOOD = re.compile(
@@ -264,6 +271,7 @@ def _message_spans(line: str, offset: int) -> list[HighlightSpan]:
         (_CMD_RSP, TOKEN_COMMAND),
         (_SMTP_VERB, TOKEN_COMMAND),
         (_STATUS_BAD, TOKEN_STATUS_BAD),
+        (_STATUS_BLOCKED_OUTCOME, TOKEN_STATUS_BAD),
         (_STATUS_GOOD, TOKEN_STATUS_GOOD),
         (_EMAIL, TOKEN_EMAIL),
         (_IP, TOKEN_IP),
