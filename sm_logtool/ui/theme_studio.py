@@ -146,7 +146,7 @@ class ThemeStudio(App):
     }
 
     #status {
-        color: $warning;
+        color: $accent;
         margin-top: 1;
     }
 
@@ -203,6 +203,7 @@ class ThemeStudio(App):
 
     .instruction {
         padding: 1 0;
+        color: $primary;
     }
 
     .button-row {
@@ -217,42 +218,26 @@ class ThemeStudio(App):
 
     .action-button {
         min-width: 0;
-        height: 1;
-        min-height: 1;
-        padding: 0;
         text-style: bold;
     }
 
     .action-button.-style-default {
-        border: none;
-        border-top: none;
-        border-bottom: none;
         background: $action-button-background;
         color: $action-button-foreground;
-        tint: transparent;
     }
 
     .action-button.-style-default:hover {
         background: $action-button-hover-background;
-        border-top: none;
-        border-bottom: none;
     }
 
     .action-button.-style-default:focus {
         background: $action-button-focus-background;
         color: $action-button-foreground;
-        background-tint: transparent;
-        border-top: none;
-        border-bottom: none;
         text-style: bold;
     }
 
     .action-button.-style-default.-active {
         background: $action-button-hover-background;
-        border: none;
-        border-top: none;
-        border-bottom: none;
-        tint: transparent;
     }
 
     .selected .label {
@@ -279,6 +264,11 @@ class ThemeStudio(App):
 
     .results-header {
         height: auto;
+    }
+
+    .mode-description {
+        width: 1fr;
+        color: $accent;
     }
 
     .search-term-input {
@@ -436,6 +426,11 @@ class ThemeStudio(App):
                             id="sample-query",
                             classes="search-term-input",
                             placeholder="Search term",
+                        )
+                        yield Static(
+                            "Search mode: Literal "
+                            "(Ctrl+Right/Ctrl+Left to cycle)",
+                            classes="mode-description",
                         )
                         with Horizontal(classes="button-row"):
                             yield Button(
@@ -690,7 +685,7 @@ class ThemeStudio(App):
 
     def _update_swatches(self, preview_theme: Theme) -> None:
         top_action = (
-            preview_theme.variables.get("top-action-background")
+            preview_theme.variables.get("top-actions-background")
             or preview_theme.panel
         )
         top_action_fg = (
@@ -701,7 +696,7 @@ class ThemeStudio(App):
         top = self.query_one("#swatch-top-action", Static)
         top.styles.background = top_action
         top.styles.color = top_action_fg
-        top.update(f"Top Action {top_action}")
+        top.update(f"Top Bar {top_action}")
 
         primary = self.query_one("#swatch-primary", Static)
         primary.styles.background = preview_theme.primary
@@ -717,7 +712,7 @@ class ThemeStudio(App):
         values.update(
             " | ".join(
                 (
-                    f"Top Action: {top_action}",
+                    f"Top Bar: {top_action}",
                     f"Primary: {preview_theme.primary}",
                     f"Accent: {preview_theme.accent}",
                 )
@@ -730,16 +725,14 @@ class ThemeStudio(App):
         if value:
             return value
         if self.current_source_theme_name:
-            return self._default_save_name(self.current_source_theme_name)
-        return "Converted Theme"
+            return self.current_source_theme_name
+        return "Imported Theme"
 
     def _default_save_name(self, source_theme_name: str) -> str:
         normalized = source_theme_name.strip()
         if not normalized:
-            return "Converted Theme"
-        if normalized.lower().startswith("converted "):
-            return normalized
-        return f"Converted {normalized}"
+            return "Imported Theme"
+        return normalized
 
 
 def _theme_with_name(theme: Theme, name: str) -> Theme:

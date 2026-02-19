@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import plistlib
 
+from rich.color import Color
 from sm_logtool.ui.theme_importer import default_theme_store_dir
 from sm_logtool.ui.theme_importer import map_terminal_palette
 from sm_logtool.ui.theme_importer import TerminalPalette
@@ -274,3 +275,69 @@ def test_saved_theme_round_trip_preserves_visual_values(tmp_path: Path) -> None:
     assert saved.background == theme.background
     assert saved.panel == theme.panel
     assert dict(saved.variables or {}) == dict(theme.variables or {})
+
+
+def test_mnemonic_foreground_keeps_contrast() -> None:
+    palette = TerminalPalette(
+        name="LowContrastAccent",
+        source=Path("/tmp/low-contrast.colortheme"),
+        background=ColorTriplet(16, 16, 16),
+        foreground=ColorTriplet(240, 240, 240),
+        cursor=ColorTriplet(240, 240, 240),
+        ansi=(
+            ColorTriplet(0, 0, 0),
+            ColorTriplet(128, 0, 0),
+            ColorTriplet(0, 128, 0),
+            ColorTriplet(128, 128, 0),
+            ColorTriplet(0, 0, 128),
+            ColorTriplet(36, 36, 36),
+            ColorTriplet(0, 128, 128),
+            ColorTriplet(180, 180, 180),
+            ColorTriplet(80, 80, 80),
+            ColorTriplet(255, 0, 0),
+            ColorTriplet(0, 255, 0),
+            ColorTriplet(255, 255, 0),
+            ColorTriplet(64, 160, 255),
+            ColorTriplet(52, 52, 52),
+            ColorTriplet(0, 255, 255),
+            ColorTriplet(255, 255, 255),
+        ),
+    )
+    theme = map_terminal_palette(
+        name="demo",
+        palette=palette,
+        profile="balanced",
+        overrides=None,
+        quantize_ansi256=False,
+    )
+    top_bg = Color.parse(
+        theme.variables["top-action-background"]
+    ).get_truecolor()
+    mnemonic = Color.parse(
+        theme.variables["top-action-mnemonic-foreground"]
+    ).get_truecolor()
+    ratio = _contrast_ratio(mnemonic, top_bg)
+    assert ratio >= 4.5
+
+
+def _contrast_ratio(left: ColorTriplet, right: ColorTriplet) -> float:
+    left_luma = _luminance(left)
+    right_luma = _luminance(right)
+    light = max(left_luma, right_luma)
+    dark = min(left_luma, right_luma)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def _luminance(color: ColorTriplet) -> float:
+    return (
+        (0.2126 * _linear_channel(color.red))
+        + (0.7152 * _linear_channel(color.green))
+        + (0.0722 * _linear_channel(color.blue))
+    )
+
+
+def _linear_channel(channel: int) -> float:
+    scaled = channel / 255
+    if scaled <= 0.03928:
+        return scaled / 12.92
+    return ((scaled + 0.055) / 1.055) ** 2.4

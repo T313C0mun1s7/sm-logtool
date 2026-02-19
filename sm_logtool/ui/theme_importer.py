@@ -581,6 +581,12 @@ def _derive_theme_variables(
 
     top_action_background = _blend(panel, foreground, action_mix)
     hover_background = _blend(top_action_background, foreground, 0.16)
+    mnemonic_foreground = _ensure_contrast(
+        accent,
+        top_action_background,
+        minimum_ratio=4.5,
+        prefer_light=dark,
+    )
     selection_background = _blend(background, accent, selection_mix)
     selection_active = _blend(background, primary, active_mix)
 
@@ -592,7 +598,7 @@ def _derive_theme_variables(
         "top-actions-background": _as_hex(panel),
         "top-action-background": _as_hex(top_action_background),
         "top-action-hover-background": _as_hex(hover_background),
-        "top-action-mnemonic-foreground": _as_hex(accent),
+        "top-action-mnemonic-foreground": _as_hex(mnemonic_foreground),
         "selection-selected-background": _as_hex(selection_background),
         "selection-selected-foreground": _as_hex(selected_foreground),
         "selection-active-background": _as_hex(selection_active),
