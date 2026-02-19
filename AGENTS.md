@@ -60,6 +60,9 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
 
 ## Security & Configuration Tips
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
+The default runtime config path is per-user: `~/.config/sm-logtool/config.yaml`.
+Theme import sources and converted themes are also per-user:
+`~/.config/sm-logtool/theme-sources` and `~/.config/sm-logtool/themes`.
 
 ## Upcoming Work
 - [x] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
@@ -95,6 +98,12 @@ Treat SmarterMail logs as sensitive—redact personal data before sharing. Alway
 - [x] Core actions (`Menu`, `Quit`, `Reset`) stay visible in the top action
   strip, while step-specific search shortcuts remain in the footer.
 - [x] Search results display one log line per row after formatting updates.
+- [x] `sm-logtool themes` provides a visual Theme Studio with live Browse-style
+  preview and ANSI-256-aware mapping profiles.
+- [x] Converted themes load automatically from the per-user theme store and
+  apply to both chrome and syntax results.
+- [x] Theme Studio supports manual element remapping and enforces distinct
+  selection states for usable date-list highlighting.
 
 ## Issue #21 Implementation Notes (Completed)
 - Baseline measurements were captured against real staged logs before tuning.

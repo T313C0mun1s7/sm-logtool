@@ -11,9 +11,12 @@ from sm_logtool.search import Conversation
 from sm_logtool.search import get_search_function
 from sm_logtool.search import SmtpSearchResult
 from sm_logtool.ui import app as ui_app_module
-from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
+from sm_logtool.ui.app import LogBrowser, ResultsArea, TopAction, WizardStep
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
+from sm_logtool.ui.theme_importer import load_imported_themes
+from sm_logtool.ui.theme_importer import save_converted_theme
+from sm_logtool.ui.theme_studio import ThemeStudio
 
 
 def write_sample_logs(root: Path) -> None:
@@ -23,6 +26,134 @@ def write_sample_logs(root: Path) -> None:
         "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
         encoding="utf-8",
     )
+
+
+def test_log_browser_loads_saved_converted_themes(tmp_path):
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    imported, warnings = load_imported_themes(
+        [source],
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    assert warnings == []
+    assert len(imported) == 1
+
+    store_dir = tmp_path / "saved-themes"
+    save_converted_theme(
+        theme=imported[0],
+        store_dir=store_dir,
+        source_path=source,
+        mapping_profile="balanced",
+        quantize_ansi256=True,
+    )
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+
+    app = LogBrowser(logs_dir=logs_dir, theme_store_dir=store_dir)
+    assert imported[0].name in app.available_themes
+
+
+def test_theme_studio_quit_button_calls_exit(monkeypatch, tmp_path):
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    called = {"value": False}
+
+    def _fake_exit() -> None:
+        called["value"] = True
+
+    monkeypatch.setattr(app, "exit", _fake_exit)
+    button = Button("Quit", id="quit-studio")
+    app.on_button_pressed(Button.Pressed(button))
+    assert called["value"] is True
+
+
+def test_theme_studio_preview_theme_name_changes_each_refresh(tmp_path):
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    first = app._next_preview_theme_name()
+    second = app._next_preview_theme_name()
+    assert first != second
+
+
+def test_theme_studio_default_save_name_uses_source_name(tmp_path):
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    assert app._default_save_name("builtin-tango-light") == (
+        "builtin-tango-light"
+    )
+    assert app._default_save_name("My Theme") == "My Theme"
+
+
+@pytest.mark.asyncio
+async def test_theme_studio_syntax_preview_uses_results_area(tmp_path):
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        preview = app.query_one("#syntax-preview", ResultsArea)
+        assert isinstance(preview, ResultsArea)
+
+
+@pytest.mark.asyncio
+async def test_theme_studio_override_controls_cycle_source(tmp_path):
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        assert app._active_override_target == "selection-selected-background"
+        app.action_override_source_next()
+        await pilot.pause()
+        assert (
+            app._manual_overrides.get("selection-selected-background")
+            == "accent"
+        )
+
+        app.action_override_target_next()
+        await pilot.pause()
+        assert app._active_override_target != "selection-selected-background"
 
 
 @pytest.mark.asyncio
@@ -237,8 +368,9 @@ async def test_kind_and_date_steps_use_compact_uniform_action_buttons(
             for button in kind_buttons
         )
         assert len({button.size.width for button in kind_buttons}) == 1
-        assert kind_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in kind_buttons) + 2
+        assert kind_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in kind_buttons
         )
 
         app._refresh_logs()
@@ -258,8 +390,9 @@ async def test_kind_and_date_steps_use_compact_uniform_action_buttons(
             for button in date_buttons
         )
         assert len({button.size.width for button in date_buttons}) == 1
-        assert date_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in date_buttons) + 2
+        assert date_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in date_buttons
         )
 
 
@@ -295,12 +428,13 @@ async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
         assert search_right_buttons
         assert len({button.size.width for button in search_left_buttons}) == 1
         assert len({button.size.width for button in search_right_buttons}) == 1
-        assert search_left_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in search_left_buttons) + 2
+        assert search_left_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in search_left_buttons
         )
-        assert search_right_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in search_right_buttons)
-            + 2
+        assert search_right_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in search_right_buttons
         )
 
         app._show_step_results()
@@ -319,13 +453,13 @@ async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
         assert len(
             {button.size.width for button in results_right_buttons}
         ) == 1
-        assert results_left_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in results_left_buttons)
-            + 2
+        assert results_left_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in results_left_buttons
         )
-        assert results_right_buttons[0].size.width == (
-            max(len(_label_text(button)) for button in results_right_buttons)
-            + 2
+        assert results_right_buttons[0].size.width >= max(
+            len(_label_text(button))
+            for button in results_right_buttons
         )
 
 

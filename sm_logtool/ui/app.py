@@ -80,6 +80,10 @@ from .themes import build_results_theme
 from .themes import RESULTS_THEME_DEFAULT
 from .themes import RESULTS_THEME_DEFAULT_NAME
 from .themes import results_theme_name_for_app_theme
+from .theme_importer import load_imported_themes
+from .theme_importer import load_saved_themes
+from .theme_importer import default_theme_store_dir
+from .theme_importer import normalize_mapping_profile
 
 try:  # Prefer selection-capable logs when available.
     from textual.widgets import TextLog as _BaseLog
@@ -1512,6 +1516,7 @@ class LogBrowser(App):
 
     .instruction {
         padding: 1 0;
+        color: $primary;
     }
 
     .button-row {
@@ -1525,43 +1530,30 @@ class LogBrowser(App):
     }
 
     .action-button {
-        min-width: 0;
-        height: 1;
-        min-height: 1;
-        padding: 0;
         text-style: bold;
     }
 
     .action-button.-style-default {
-        border: none;
-        border-top: none;
-        border-bottom: none;
         background: $action-button-background;
         color: $action-button-foreground;
-        tint: transparent;
+        border: round $action-button-hover-background;
     }
 
     .action-button.-style-default:hover {
         background: $action-button-hover-background;
-        border-top: none;
-        border-bottom: none;
+        border: round $action-button-hover-background;
     }
 
     .action-button.-style-default:focus {
         background: $action-button-focus-background;
         color: $action-button-foreground;
-        background-tint: transparent;
-        border-top: none;
-        border-bottom: none;
+        border: round $action-button-focus-background;
         text-style: bold;
     }
 
     .action-button.-style-default.-active {
         background: $action-button-hover-background;
-        border: none;
-        border-top: none;
-        border-bottom: none;
-        tint: transparent;
+        border: round $action-button-hover-background;
     }
 
     .selected .label {
@@ -1649,6 +1641,11 @@ class LogBrowser(App):
 
     .mode-description {
         width: 1fr;
+        color: $accent;
+    }
+
+    #status {
+        color: $accent;
     }
 
     .search-term-input {
@@ -1690,15 +1687,32 @@ class LogBrowser(App):
         default_kind: str | None = None,
         config_path: Path | None = None,
         theme: str | None = None,
+        theme_store_dir: Path | None = None,
+        theme_import_paths: tuple[Path, ...] = (),
+        theme_mapping_profile: str = "balanced",
+        theme_quantize_ansi256: bool = True,
+        theme_overrides: dict[str, dict[str, str]] | None = None,
+        persist_theme_changes: bool = True,
     ) -> None:
         super().__init__()
         for theme_model in FIRST_PARTY_APP_THEMES:
             self.register_theme(theme_model)
+        self._theme_import_warnings: list[str] = []
+        self._theme_store_warnings: list[str] = []
+        store_dir = theme_store_dir or default_theme_store_dir(config_path)
+        self._register_saved_themes(store_dir)
+        self._register_imported_themes(
+            theme_import_paths=theme_import_paths,
+            theme_mapping_profile=theme_mapping_profile,
+            theme_quantize_ansi256=theme_quantize_ansi256,
+            theme_overrides=theme_overrides or {},
+        )
         self.logs_dir = logs_dir
         self.staging_dir = staging_dir
         self.default_kind = normalize_kind(default_kind or KIND_SMTP)
         self.config_path = config_path.expanduser() if config_path else None
         self.configured_theme = theme
+        self._persist_theme_changes_enabled = persist_theme_changes
         self._persist_theme_changes = False
         self._suppress_theme_persist = False
         self._logs_by_kind: Dict[str, List[LogFileInfo]] = {}
@@ -1767,10 +1781,20 @@ class LogBrowser(App):
         yield self.footer
 
     def on_mount(self) -> None:
+        if self._theme_store_warnings:
+            self._notify(
+                "Some saved themes are invalid and were skipped. "
+                "Open sm-logtool themes to regenerate them."
+            )
+        if self._theme_import_warnings:
+            self._notify(
+                "Some imported theme files could not be loaded. "
+                "Check --config theme_import_paths values."
+            )
         self._refresh_logs()
         self._show_step_kind()
         self._apply_configured_theme()
-        self._persist_theme_changes = True
+        self._persist_theme_changes = self._persist_theme_changes_enabled
 
     def _watch_theme(self, theme_name: str) -> None:
         super()._watch_theme(theme_name)
@@ -1783,6 +1807,46 @@ class LogBrowser(App):
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
         return dict(CYBER_THEME_VARIABLE_DEFAULTS)
+
+    def _register_imported_themes(
+        self,
+        *,
+        theme_import_paths: tuple[Path, ...],
+        theme_mapping_profile: str,
+        theme_quantize_ansi256: bool,
+        theme_overrides: dict[str, dict[str, str]],
+    ) -> None:
+        if not theme_import_paths:
+            return
+        existing = set(self.available_themes)
+        try:
+            normalized_profile = normalize_mapping_profile(
+                theme_mapping_profile
+            )
+        except ValueError as exc:
+            self._theme_import_warnings.append(str(exc))
+            return
+
+        themes, warnings = load_imported_themes(
+            theme_import_paths,
+            profile=normalized_profile,
+            overrides=theme_overrides,
+            quantize_ansi256=theme_quantize_ansi256,
+            existing_names=existing,
+        )
+        for theme_model in themes:
+            self.register_theme(theme_model)
+        self._theme_import_warnings.extend(warnings)
+
+    def _register_saved_themes(self, store_dir: Path) -> None:
+        existing = set(self.available_themes)
+        themes, warnings = load_saved_themes(
+            store_dir=store_dir,
+            existing_names=existing,
+        )
+        for theme_model in themes:
+            self.register_theme(theme_model)
+        self._theme_store_warnings.extend(warnings)
 
     # Step rendering -----------------------------------------------------
     def _show_step_kind(self) -> None:
@@ -3122,9 +3186,9 @@ class LogBrowser(App):
             len(self._button_label_text(button))
             for button in button_list
         )
-        width = longest_label + 2
+        width = longest_label + 4
         for button in button_list:
-            button.styles.width = width
+            button.styles.width = "auto"
             button.styles.min_width = width
 
     def _notify(self, message: str) -> None:
@@ -3368,6 +3432,12 @@ def run(
     default_kind: str | None = None,
     config_path: Path | None = None,
     theme: str | None = None,
+    theme_store_dir: Path | None = None,
+    theme_import_paths: tuple[Path, ...] = (),
+    theme_mapping_profile: str = "balanced",
+    theme_quantize_ansi256: bool = True,
+    theme_overrides: dict[str, dict[str, str]] | None = None,
+    persist_theme_changes: bool = True,
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
@@ -3377,6 +3447,12 @@ def run(
         default_kind=default_kind,
         config_path=config_path,
         theme=theme,
+        theme_store_dir=theme_store_dir,
+        theme_import_paths=theme_import_paths,
+        theme_mapping_profile=theme_mapping_profile,
+        theme_quantize_ansi256=theme_quantize_ansi256,
+        theme_overrides=theme_overrides,
+        persist_theme_changes=persist_theme_changes,
     )
     app.run()
     return 0

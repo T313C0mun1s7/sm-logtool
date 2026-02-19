@@ -20,6 +20,39 @@ def create_smtp_zip(path: Path, content: str) -> None:
         archive.writestr(path.name.replace('.zip', ''), content)
 
 
+def test_build_parser_supports_themes_subcommand():
+    parser = cli.build_parser()
+    args = parser.parse_args(["themes"])
+
+    assert args.command == "themes"
+    assert args.profile == "balanced"
+    assert args.no_ansi256 is False
+
+
+def test_should_persist_theme_changes_default(monkeypatch):
+    parser = cli.build_parser()
+    args = parser.parse_args(["browse"])
+    monkeypatch.delenv("SM_LOGTOOL_CONFIG", raising=False)
+
+    assert cli._should_persist_theme_changes(args) is True
+
+
+def test_should_persist_theme_changes_disabled_for_custom_config(monkeypatch):
+    parser = cli.build_parser()
+    args = parser.parse_args(["--config", "config.yaml", "browse"])
+    monkeypatch.delenv("SM_LOGTOOL_CONFIG", raising=False)
+
+    assert cli._should_persist_theme_changes(args) is False
+
+
+def test_should_persist_theme_changes_disabled_for_env(monkeypatch):
+    parser = cli.build_parser()
+    args = parser.parse_args(["browse"])
+    monkeypatch.setenv("SM_LOGTOOL_CONFIG", "/tmp/custom.yaml")
+
+    assert cli._should_persist_theme_changes(args) is False
+
+
 def test_scan_logs_handles_missing_directory(tmp_path):
     missing_dir = tmp_path / "missing"
 
