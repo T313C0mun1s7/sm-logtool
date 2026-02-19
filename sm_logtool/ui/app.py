@@ -1510,19 +1510,19 @@ class LogBrowser(App):
     }
 
     #wizard-body {
-        margin: 0 1;
+        margin: 1 2;
         height: 1fr;
     }
 
     .instruction {
-        padding: 0;
+        padding: 1 0;
         color: $primary;
     }
 
     .button-row {
         width: 1fr;
         height: auto;
-        margin-top: 0;
+        margin-top: 1;
     }
 
     .button-row Button {
@@ -1649,7 +1649,7 @@ class LogBrowser(App):
     }
 
     .search-term-input {
-        margin-bottom: 0;
+        margin-bottom: 1;
         background: $panel;
         color: $foreground;
         border: none;
@@ -1665,7 +1665,7 @@ class LogBrowser(App):
     }
 
     .selection-list {
-        margin-bottom: 0;
+        margin-bottom: 1;
         background: $panel;
     }
     """
