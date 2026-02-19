@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from array import array
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
 import re
@@ -105,6 +105,7 @@ class SmtpSearchResult:
     conversations: List[Conversation]
     total_lines: int
     orphan_matches: List[Tuple[int, str]]
+    matching_rows: List[Tuple[int, str]] = field(default_factory=list)
 
     @property
     def total_conversations(self) -> int:
@@ -219,6 +220,31 @@ def _report_match(
     callback(line_number, line)
 
 
+def _capture_matching_rows(
+    callback: SearchMatchCallback | None,
+) -> tuple[list[tuple[int, str]], SearchMatchCallback]:
+    rows: list[tuple[int, str]] = []
+
+    def _collector(line_number: int, line: str) -> None:
+        rows.append((line_number, line))
+        _report_match(callback, line_number, line)
+
+    return rows, _collector
+
+
+def _dedupe_matching_rows(
+    rows: list[tuple[int, str]],
+) -> list[tuple[int, str]]:
+    seen: set[tuple[int, str]] = set()
+    deduped: list[tuple[int, str]] = []
+    for entry in rows:
+        if entry in seen:
+            continue
+        seen.add(entry)
+        deduped.append(entry)
+    return deduped
+
+
 def search_smtp_conversations(
     log_path: Path,
     term: str,
@@ -238,7 +264,8 @@ def search_smtp_conversations(
     treats ``term`` as a Python regular expression.
     """
 
-    return _search_grouped_entries(
+    matching_rows, collector = _capture_matching_rows(match_callback)
+    result = _search_grouped_entries(
         log_path,
         term,
         _smtp_owner_id,
@@ -248,9 +275,11 @@ def search_smtp_conversations(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
-        match_callback=match_callback,
+        match_callback=collector,
         owner_key="smtp",
     )
+    result.matching_rows = _dedupe_matching_rows(matching_rows)
+    return result
 
 
 def search_delivery_conversations(
@@ -267,7 +296,8 @@ def search_delivery_conversations(
 ) -> SmtpSearchResult:
     """Return delivery conversations containing ``term``."""
 
-    return _search_grouped_entries(
+    matching_rows, collector = _capture_matching_rows(match_callback)
+    result = _search_grouped_entries(
         log_path,
         term,
         _delivery_owner_id,
@@ -277,9 +307,11 @@ def search_delivery_conversations(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
-        match_callback=match_callback,
+        match_callback=collector,
         owner_key="delivery",
     )
+    result.matching_rows = _dedupe_matching_rows(matching_rows)
+    return result
 
 
 def search_admin_entries(
@@ -296,7 +328,8 @@ def search_admin_entries(
 ) -> SmtpSearchResult:
     """Return administrative log entries containing ``term``."""
 
-    return _search_grouped_entries(
+    matching_rows, collector = _capture_matching_rows(match_callback)
+    result = _search_grouped_entries(
         log_path,
         term,
         _admin_owner_id,
@@ -306,9 +339,11 @@ def search_admin_entries(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
-        match_callback=match_callback,
+        match_callback=collector,
         owner_key="admin",
     )
+    result.matching_rows = _dedupe_matching_rows(matching_rows)
+    return result
 
 
 def search_imap_retrieval_entries(
@@ -325,7 +360,8 @@ def search_imap_retrieval_entries(
 ) -> SmtpSearchResult:
     """Return IMAP retrieval entries containing ``term``."""
 
-    return _search_grouped_entries(
+    matching_rows, collector = _capture_matching_rows(match_callback)
+    result = _search_grouped_entries(
         log_path,
         term,
         _imap_retrieval_owner_id,
@@ -335,9 +371,11 @@ def search_imap_retrieval_entries(
         materialization=materialization,
         use_index_cache=use_index_cache,
         progress_callback=progress_callback,
-        match_callback=match_callback,
+        match_callback=collector,
         owner_key="imap-retrieval",
     )
+    result.matching_rows = _dedupe_matching_rows(matching_rows)
+    return result
 
 
 def search_ungrouped_entries(
@@ -354,6 +392,7 @@ def search_ungrouped_entries(
 ) -> SmtpSearchResult:
     """Return ungrouped log entries containing ``term``."""
 
+    matching_rows, collector = _capture_matching_rows(match_callback)
     matcher = _compile_line_matcher(
         term,
         mode,
@@ -374,30 +413,36 @@ def search_ungrouped_entries(
     )
     try:
         if use_index_cache:
-            return _search_ungrouped_with_index(
+            result = _search_ungrouped_with_index(
                 log_path,
                 term,
                 matcher,
                 progress=progress,
-                match_callback=match_callback,
+                match_callback=collector,
             )
+            result.matching_rows = _dedupe_matching_rows(matching_rows)
+            return result
         if resolved_materialization == MATERIALIZATION_TWO_PASS:
-            return _search_ungrouped_two_pass(
+            result = _search_ungrouped_two_pass(
                 log_path,
                 term,
                 matcher,
                 progress=progress,
-                match_callback=match_callback,
+                match_callback=collector,
             )
+            result.matching_rows = _dedupe_matching_rows(matching_rows)
+            return result
 
-        return _search_ungrouped_single_pass(
+        result = _search_ungrouped_single_pass(
             log_path,
             term,
             matcher,
             auto_fallback=resolved_materialization == MATERIALIZATION_AUTO,
             progress=progress,
-            match_callback=match_callback,
+            match_callback=collector,
         )
+        result.matching_rows = _dedupe_matching_rows(matching_rows)
+        return result
     finally:
         _finish_search_progress(progress)
 

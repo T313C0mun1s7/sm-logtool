@@ -10,6 +10,7 @@ from sm_logtool import config as config_module
 from sm_logtool.search import Conversation
 from sm_logtool.search import get_search_function
 from sm_logtool.search import SmtpSearchResult
+from sm_logtool.result_modes import RESULT_MODE_MATCHING_ROWS
 from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import LogBrowser, ResultsArea, TopAction, WizardStep
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
@@ -424,6 +425,7 @@ async def test_search_and_results_steps_use_explicit_button_groups(tmp_path):
         search_right_buttons = list(search_right.query(Button))
         assert search_left.query_one("#cancel-search", Button)
         assert search_right.query_one("#cycle-search-mode", Button)
+        assert search_right.query_one("#cycle-result-mode", Button)
         assert search_left_buttons
         assert search_right_buttons
         assert len({button.size.width for button in search_left_buttons}) == 1
@@ -488,6 +490,32 @@ async def test_fuzzy_threshold_shortcuts_adjust_value(tmp_path):
         await pilot.press("ctrl+down")
         await pilot.pause()
         assert app.fuzzy_threshold == pytest.approx(0.75)
+
+
+@pytest.mark.asyncio
+async def test_search_step_cycles_result_mode_and_builds_request(tmp_path):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=staging_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app._show_step_search()
+        await pilot.pause()
+
+        cycle_button = app.wizard.query_one("#cycle-result-mode", Button)
+        app.on_button_pressed(Button.Pressed(cycle_button))
+        await pilot.pause()
+
+        assert app.result_mode == RESULT_MODE_MATCHING_ROWS
+        assert app.search_input is not None
+        app.search_input.value = "Connection"
+        request = app._build_search_request()
+        assert request is not None
+        assert request.result_mode == RESULT_MODE_MATCHING_ROWS
 
 
 @pytest.mark.asyncio

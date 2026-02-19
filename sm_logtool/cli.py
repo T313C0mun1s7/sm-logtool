@@ -27,6 +27,10 @@ from .logfiles import (
     summarize_logs,
 )
 from .result_rendering import render_search_results
+from .result_modes import normalize_result_mode
+from .result_modes import RESULT_MODE_DESCRIPTIONS
+from .result_modes import RESULT_MODE_RELATED_TRAFFIC
+from .result_modes import SUPPORTED_RESULT_MODES
 from .search_modes import (
     DEFAULT_FUZZY_THRESHOLD,
     MODE_LITERAL,
@@ -168,6 +172,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Similarity threshold for --mode fuzzy "
             f"({0.0:.2f} to {1.0:.2f}, default {DEFAULT_FUZZY_THRESHOLD:.2f})."
+        ),
+    )
+    search_parser.add_argument(
+        "--result-mode",
+        choices=SUPPORTED_RESULT_MODES,
+        default=RESULT_MODE_RELATED_TRAFFIC,
+        help=(
+            "Result rendering mode. "
+            "related=show full grouped conversations, "
+            "matching-only=show only directly matching lines."
         ),
     )
     search_parser.add_argument(
@@ -354,6 +368,13 @@ def _run_search(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    try:
+        result_mode = normalize_result_mode(
+            getattr(args, "result_mode", RESULT_MODE_RELATED_TRAFFIC),
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     try:
         logs_dir = _resolve_logs_dir(args, config)
@@ -417,7 +438,12 @@ def _run_search(args: argparse.Namespace) -> int:
             return 2
         results.append(result)
 
-    _print_search_summary(results, targets, log_kind)
+    _print_search_summary(
+        results,
+        targets,
+        log_kind,
+        result_mode=result_mode,
+    )
     return 0
 
 
@@ -425,9 +451,16 @@ def _print_search_summary(
     results,
     source_paths: list[Path],
     log_kind: str,
+    *,
+    result_mode: str = RESULT_MODE_RELATED_TRAFFIC,
 ) -> None:
     console = _build_stdout_console()
-    lines = render_search_results(results, source_paths, log_kind)
+    lines = render_search_results(
+        results,
+        source_paths,
+        log_kind,
+        result_mode=result_mode,
+    )
     for line in lines:
         _write_highlighted(console, log_kind, line)
 
@@ -580,6 +613,10 @@ def _search_help_epilog() -> str:
         f"  - {mode}: {SEARCH_MODE_DESCRIPTIONS[mode]}"
         for mode in SUPPORTED_SEARCH_MODES
     )
+    result_mode_lines = "\n".join(
+        f"  - {mode}: {RESULT_MODE_DESCRIPTIONS[mode]}"
+        for mode in SUPPORTED_RESULT_MODES
+    )
     return textwrap.dedent(
         f"""
         Target resolution:
@@ -589,6 +626,9 @@ def _search_help_epilog() -> str:
 
         Search modes:
 {mode_lines}
+
+        Result modes:
+{result_mode_lines}
 
         Available kinds:
           {kinds}

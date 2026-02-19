@@ -30,6 +30,16 @@ def test_build_parser_supports_themes_subcommand():
     assert args.no_ansi256 is False
 
 
+def test_build_parser_supports_search_result_mode_flag():
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        ["search", "--result-mode", "matching-only", "needle"],
+    )
+
+    assert args.command == "search"
+    assert args.result_mode == "matching-only"
+
+
 def test_should_persist_theme_changes_default(monkeypatch):
     parser = cli.build_parser()
     args = parser.parse_args(["browse"])
@@ -320,6 +330,88 @@ def test_run_search_supports_fuzzy_mode(tmp_path, capsys):
 
     captured = capsys.readouterr()
     assert "-> 1 entry(s)" in captured.out
+
+
+def test_run_search_result_mode_matching_only_for_smtp(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-smtpLog.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        (
+            "00:00:00 [1.1.1.1][MSG1] Connection initiated\n"
+            "00:00:01 [1.1.1.1][MSG1] User blocked@example.com rejected\n"
+        ),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        mode="literal",
+        result_mode="matching-only",
+        term="blocked@example.com",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "matching row(s)" in captured.out
+    assert "blocked@example.com" in captured.out
+    assert "Connection initiated" not in captured.out
+
+
+def test_run_search_result_mode_matching_only_for_delivery(tmp_path, capsys):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    log_path = logs_dir / "2024.01.01-delivery.log"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        (
+            "00:00:00.100 [84012345] Queued for domain example.net\n"
+            "00:00:00.200 [84012345] Delivery blocked by policy\n"
+        ),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+        log_file=None,
+        date="2024.01.01",
+        list=False,
+        case_sensitive=False,
+        mode="literal",
+        result_mode="matching-only",
+        term="blocked",
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="delivery",
+    )
+
+    exit_code = cli._run_search(args)
+    assert exit_code == 0
+
+    captured = capsys.readouterr()
+    assert "matching row(s)" in captured.out
+    assert "Delivery blocked by policy" in captured.out
+    assert "Queued for domain example.net" not in captured.out
 
 
 def test_run_search_rejects_invalid_regex(tmp_path, capsys):
@@ -763,9 +855,11 @@ def test_search_help_mentions_latest_and_supported_kinds(capsys):
     captured = capsys.readouterr()
     assert "newest available log for --kind is searched." in captured.out
     assert "Search modes:" in captured.out
+    assert "Result modes:" in captured.out
     assert "wildcard" in captured.out
     assert "regex" in captured.out
     assert "fuzzy" in captured.out
+    assert "matching-only" in captured.out
     assert "--fuzzy-threshold" in captured.out
     assert "--mode" in captured.out
     assert "Available kinds:" in captured.out

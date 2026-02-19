@@ -21,6 +21,9 @@ from .log_kinds import (
     KIND_WEBDAV,
     normalize_kind,
 )
+from .result_modes import normalize_result_mode
+from .result_modes import RESULT_MODE_MATCHING_ROWS
+from .result_modes import RESULT_MODE_RELATED_TRAFFIC
 from .result_formatting import collect_widths, format_conversation_lines
 from .search import SmtpSearchResult
 
@@ -45,11 +48,13 @@ def render_search_results(
     results: Sequence[SmtpSearchResult],
     targets: Sequence[Path],
     kind: str,
+    result_mode: str = RESULT_MODE_RELATED_TRAFFIC,
 ) -> list[str]:
     """Render search results as output lines."""
 
     if len(results) != len(targets):
         raise ValueError("results and targets must have matching lengths")
+    resolved_result_mode = normalize_result_mode(result_mode)
 
     rendered_lines: list[str] = []
     kind_key = normalize_kind(kind)
@@ -58,6 +63,24 @@ def render_search_results(
 
     for result, target in zip(results, targets):
         rendered_lines.append(f"=== {target.name} ===")
+        if resolved_result_mode == RESULT_MODE_MATCHING_ROWS:
+            matching_rows = result.matching_rows
+            rendered_lines.append(
+                f"Search term '{result.term}' -> "
+                f"{len(matching_rows)} matching row(s)"
+            )
+            if not matching_rows:
+                rendered_lines.append("No matches found.")
+                continue
+            lines = [line for _line_number, line in matching_rows]
+            formatted = format_conversation_lines(
+                kind,
+                lines,
+                None,
+            )
+            rendered_lines.extend(formatted)
+            continue
+
         rendered_lines.append(
             f"Search term '{result.term}' -> "
             f"{result.total_conversations} {label}(s)"

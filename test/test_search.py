@@ -92,6 +92,11 @@ def test_search_smtp_conversations_groups_lines(tmp_path):
     assert result.orphan_matches == [
         (5, "00:00:04 No identifier here but hello anyway")
     ]
+    assert result.matching_rows == [
+        (2, "00:00:01 [1.1.1.1][ABC123] User HELLO logged in"),
+        (4, "00:00:03 [2.2.2.2][XYZ789] hello world"),
+        (5, "00:00:04 No identifier here but hello anyway"),
+    ]
 
 
 def test_search_smtp_conversations_continuations(tmp_path):
@@ -183,6 +188,7 @@ def test_search_delivery_conversations_continuations(tmp_path):
     assert result.total_conversations == 1
     assert result.orphan_matches == []
     assert result.conversations[0].message_id == "84012345"
+    assert result.matching_rows == [(2, "  stack trace needle")]
 
 
 def test_search_admin_entries_continuations(tmp_path):
