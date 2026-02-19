@@ -90,6 +90,21 @@ def test_theme_studio_preview_theme_name_changes_each_refresh(tmp_path):
     assert first != second
 
 
+def test_theme_studio_default_save_name_is_prefixed(tmp_path):
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    assert app._default_save_name("builtin-tango-light") == (
+        "Converted builtin-tango-light"
+    )
+    assert app._default_save_name("Converted My Theme") == (
+        "Converted My Theme"
+    )
+
+
 @pytest.mark.asyncio
 async def test_top_action_buttons_show_core_shortcuts(tmp_path):
     logs_dir = tmp_path / "logs"

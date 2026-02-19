@@ -26,6 +26,7 @@ from ..syntax import spans_for_line
 from .theme_importer import (
     default_theme_source_dir,
     discover_theme_files,
+    load_saved_themes,
     map_terminal_palette,
     parse_terminal_palette,
     save_converted_theme,
@@ -378,7 +379,22 @@ class ThemeStudio(App):
             mapping_profile=self.profile,
             quantize_ansi256=self.quantize_ansi256,
         )
-        self._set_status(f"Saved converted theme: {path}")
+        loaded_themes, warnings = load_saved_themes(store_dir=self.store_dir)
+        loaded_by_name = {
+            loaded_theme.name: loaded_theme
+            for loaded_theme in loaded_themes
+        }
+        loaded_theme = loaded_by_name.get(save_name)
+        if loaded_theme is not None:
+            self.register_theme(loaded_theme)
+            self.theme = loaded_theme.name
+            self.current_theme_name = loaded_theme.name
+            self._update_swatches(loaded_theme)
+            self._set_syntax_preview(loaded_theme)
+        details = f"profile={self.profile} {self._ansi_label()}"
+        if warnings:
+            details = f"{details} | warnings={len(warnings)}"
+        self._set_status(f"Saved converted theme: {path} ({details})")
 
     def action_toggle_ansi(self) -> None:
         self.quantize_ansi256 = not self.quantize_ansi256
@@ -457,7 +473,7 @@ class ThemeStudio(App):
 
         if reset_name:
             name_input = self.query_one("#save-name", Input)
-            name_input.value = palette.name
+            name_input.value = self._default_save_name(palette.name)
 
         self.register_theme(preview_theme)
         self.theme = preview_theme.name
@@ -550,8 +566,16 @@ class ThemeStudio(App):
         if value:
             return value
         if self.current_source_theme_name:
-            return self.current_source_theme_name
-        return "Imported Theme"
+            return self._default_save_name(self.current_source_theme_name)
+        return "Converted Theme"
+
+    def _default_save_name(self, source_theme_name: str) -> str:
+        normalized = source_theme_name.strip()
+        if not normalized:
+            return "Converted Theme"
+        if normalized.lower().startswith("converted "):
+            return normalized
+        return f"Converted {normalized}"
 
 
 def _theme_with_name(theme: Theme, name: str) -> Theme:
