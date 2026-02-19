@@ -569,6 +569,105 @@ async def test_perform_search_notifies_submit_immediately(
 
 
 @pytest.mark.asyncio
+async def test_stale_back_results_button_event_is_ignored(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.last_rendered_lines = ["prior-result-line"]
+        app.last_rendered_kind = kind
+        app._display_results(["current-result-line"], kind)
+        await pilot.pause()
+
+        stale_button = Button("Back to Results", id="back-results")
+        app.on_button_pressed(Button.Pressed(stale_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
+
+
+@pytest.mark.asyncio
+async def test_stale_back_subsearch_button_event_is_ignored(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.subsearch_terms = ["john@prime42.net", "blocked"]
+        app.subsearch_paths = [logs_dir / "one.log", logs_dir / "two.log"]
+        app.subsearch_rendered = [
+            ["prior-result-line"],
+            ["current-result-line"],
+        ]
+        app.subsearch_depth = len(app.subsearch_paths)
+        app.subsearch_path = app.subsearch_paths[-1]
+        app.subsearch_kind = kind
+        app.last_rendered_lines = ["current-result-line"]
+        app.last_rendered_kind = kind
+        app._display_results(["current-result-line"], kind)
+        await pilot.pause()
+
+        stale_button = Button("Back", id="back-subsearch")
+        app.on_button_pressed(Button.Pressed(stale_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
+
+
+@pytest.mark.asyncio
+async def test_back_subsearch_requires_arm_after_results_redraw(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.subsearch_terms = ["john@prime42.net", "blocked"]
+        app.subsearch_paths = [logs_dir / "one.log", logs_dir / "two.log"]
+        app.subsearch_rendered = [
+            ["prior-result-line"],
+            ["current-result-line"],
+        ]
+        app.subsearch_depth = len(app.subsearch_paths)
+        app.subsearch_path = app.subsearch_paths[-1]
+        app.subsearch_kind = kind
+        app.last_rendered_lines = ["current-result-line"]
+        app.last_rendered_kind = kind
+        app._display_results(["current-result-line"], kind)
+        await pilot.pause()
+
+        back_button = app.wizard.query_one("#back-subsearch", Button)
+        app._back_navigation_armed_at = time.perf_counter() + 60
+        app.on_button_pressed(Button.Pressed(back_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
+
+        app._back_navigation_armed_at = 0.0
+        app.on_button_pressed(Button.Pressed(back_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "prior-result-line"
+
+
+@pytest.mark.asyncio
 async def test_target_progress_status_is_determinate(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
@@ -789,6 +888,39 @@ async def test_live_result_stream_keeps_target_order(tmp_path):
             "=== 2024.01.01-smtpLog.log ===",
             "=== 2024.01.02-smtpLog.log ===",
         ]
+
+
+@pytest.mark.asyncio
+async def test_stale_live_result_callback_is_ignored_by_session(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    target = logs_dir / "2024.01.01-smtpLog.log"
+    stale_result = SmtpSearchResult(
+        term="stale",
+        log_path=target,
+        conversations=[
+            Conversation(
+                message_id="STALE",
+                lines=["00:00:00 [1.1.1.1][STALE] stale line"],
+                first_line_number=1,
+            )
+        ],
+        total_lines=1,
+        orphan_matches=[],
+    )
+    async with app.run_test() as pilot:
+        app._search_session_id = 2
+        app._live_kind = "smtp"
+        app._show_step_results()
+        app._write_output_lines(["current-result-line"])
+        await pilot.pause()
+
+        app._on_live_search_result_for_session(1, 0, target, stale_result)
+        await pilot.pause()
+
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
 
 
 @pytest.mark.asyncio

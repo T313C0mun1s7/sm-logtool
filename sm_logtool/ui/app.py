@@ -840,6 +840,7 @@ MAX_SEARCH_WORKERS = 4
 _LIVE_MATCH_BATCH_SIZE = 64
 _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
+_BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
 
 
@@ -1761,6 +1762,8 @@ class LogBrowser(App):
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
         self._first_result_notified = False
+        self._search_session_id = 0
+        self._back_navigation_armed_at = 0.0
         self.theme = CYBERDARK_THEME.name
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
@@ -1984,6 +1987,7 @@ class LogBrowser(App):
         if self.subsearch_active:
             back_label = "Back to Results"
             back_id = "back-results"
+            self._arm_back_navigation()
         self.search_back_button = Button(
             back_label,
             id=back_id,
@@ -2034,6 +2038,7 @@ class LogBrowser(App):
     def _show_step_results(self) -> None:
         self.step = WizardStep.RESULTS
         self._clear_wizard()
+        self._arm_back_navigation()
         title = self._results_title()
         help_text = (
             "Selection: arrows move, Shift+arrows select, "
@@ -2153,7 +2158,11 @@ class LogBrowser(App):
         self,
         event: Button.Pressed,
     ) -> None:  # type: ignore[override]
+        if not event.button.is_attached or not event.button.is_mounted:
+            return
         button_id = event.button.id
+        if button_id is None:
+            return
         if self._search_in_progress and button_id not in {
             "cancel-search",
             "quit-results",
@@ -2173,7 +2182,11 @@ class LogBrowser(App):
         elif button_id == "back-search":
             self._show_step_date()
         elif button_id == "back-results":
-            self._show_last_results()
+            if (
+                self.step == WizardStep.SEARCH
+                and self._is_back_navigation_armed()
+            ):
+                self._show_last_results()
         elif button_id == "cycle-search-mode":
             self._cycle_search_mode()
         elif button_id == "do-search":
@@ -2186,7 +2199,8 @@ class LogBrowser(App):
         elif button_id == "sub-search":
             self._start_subsearch()
         elif button_id == "back-subsearch":
-            self._step_back_subsearch()
+            if self._is_back_navigation_armed():
+                self._step_back_subsearch()
         elif button_id == "quit-results":
             self.exit()
         elif button_id == "copy-selection":
@@ -2406,6 +2420,14 @@ class LogBrowser(App):
             self.footer._key_text = None  # type: ignore[attr-defined]
             self.footer.refresh()
 
+    def _arm_back_navigation(self) -> None:
+        self._back_navigation_armed_at = (
+            time.perf_counter() + _BACK_NAVIGATION_GUARD_SECONDS
+        )
+
+    def _is_back_navigation_armed(self) -> bool:
+        return time.perf_counter() >= self._back_navigation_armed_at
+
     def _apply_kind_selection(self, kind: str) -> None:
         if not self.kind_list:
             return
@@ -2484,11 +2506,13 @@ class LogBrowser(App):
         request = self._build_search_request()
         if request is None:
             return
+        self._search_session_id += 1
+        session_id = self._search_session_id
         self._set_search_running(True)
         self._start_live_results(request)
         self._notify("Search submitted. Preparing logs...")
         self._search_worker = self.run_worker(
-            partial(self._run_search_job, request),
+            partial(self._run_search_job, request, session_id),
             name="search-worker",
             group="search",
             thread=True,
@@ -2562,7 +2586,11 @@ class LogBrowser(App):
             use_index_cache=needs_staging,
         )
 
-    def _run_search_job(self, request: SearchRequest) -> SearchOutput:
+    def _run_search_job(
+        self,
+        request: SearchRequest,
+        session_id: int,
+    ) -> SearchOutput:
         worker = get_current_worker()
         search_fn = get_search_function(request.kind)
         if search_fn is None:
@@ -2573,7 +2601,7 @@ class LogBrowser(App):
             targets,
             search_fn,
             worker,
-            on_result=self._post_live_search_result,
+            on_result=partial(self._post_live_search_result, session_id),
         )
         return SearchOutput(
             kind=request.kind,
@@ -2584,16 +2612,29 @@ class LogBrowser(App):
 
     def _post_live_search_result(
         self,
+        session_id: int,
         index: int,
         target: Path,
         result: SmtpSearchResult,
     ) -> None:
         self.call_from_thread(
-            self._on_live_search_result,
+            self._on_live_search_result_for_session,
+            session_id,
             index,
             target,
             result,
         )
+
+    def _on_live_search_result_for_session(
+        self,
+        session_id: int,
+        index: int,
+        target: Path,
+        result: SmtpSearchResult,
+    ) -> None:
+        if session_id != self._search_session_id:
+            return
+        self._on_live_search_result(index, target, result)
 
     def _stage_targets(
         self,
