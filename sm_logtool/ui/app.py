@@ -2173,7 +2173,8 @@ class LogBrowser(App):
         elif button_id == "back-search":
             self._show_step_date()
         elif button_id == "back-results":
-            self._show_last_results()
+            if self.step == WizardStep.SEARCH:
+                self._show_last_results()
         elif button_id == "cycle-search-mode":
             self._cycle_search_mode()
         elif button_id == "do-search":

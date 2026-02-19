@@ -569,6 +569,30 @@ async def test_perform_search_notifies_submit_immediately(
 
 
 @pytest.mark.asyncio
+async def test_stale_back_results_button_event_is_ignored(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.last_rendered_lines = ["prior-result-line"]
+        app.last_rendered_kind = kind
+        app._display_results(["current-result-line"], kind)
+        await pilot.pause()
+
+        stale_button = Button("Back to Results", id="back-results")
+        app.on_button_pressed(Button.Pressed(stale_button))
+        await pilot.pause()
+
+        assert app.step == WizardStep.RESULTS
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
+
+
+@pytest.mark.asyncio
 async def test_target_progress_status_is_determinate(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
