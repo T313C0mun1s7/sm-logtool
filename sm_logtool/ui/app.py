@@ -1597,7 +1597,7 @@ class LogBrowser(App):
     .result-log {
         height: 1fr;
         width: 1fr;
-        background: $panel;
+        background: $surface;
     }
 
     .results-header {
@@ -1657,7 +1657,7 @@ class LogBrowser(App):
 
     .search-term-input {
         margin-bottom: 1;
-        background: $panel;
+        background: $surface;
         color: $foreground;
         border: none;
         border-top: none;
@@ -1665,7 +1665,7 @@ class LogBrowser(App):
     }
 
     .search-term-input:focus {
-        background: $panel;
+        background: $surface;
         border: none;
         border-top: none;
         border-bottom: none;
@@ -1673,7 +1673,7 @@ class LogBrowser(App):
 
     .selection-list {
         margin-bottom: 1;
-        background: $panel;
+        background: $surface;
     }
     """
 

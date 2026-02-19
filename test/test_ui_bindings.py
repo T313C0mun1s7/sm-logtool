@@ -11,7 +11,7 @@ from sm_logtool.search import Conversation
 from sm_logtool.search import get_search_function
 from sm_logtool.search import SmtpSearchResult
 from sm_logtool.ui import app as ui_app_module
-from sm_logtool.ui.app import LogBrowser, TopAction, WizardStep
+from sm_logtool.ui.app import LogBrowser, ResultsArea, TopAction, WizardStep
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
 from sm_logtool.ui.theme_importer import load_imported_themes
@@ -103,6 +103,28 @@ def test_theme_studio_default_save_name_is_prefixed(tmp_path):
     assert app._default_save_name("Converted My Theme") == (
         "Converted My Theme"
     )
+
+
+@pytest.mark.asyncio
+async def test_theme_studio_syntax_preview_uses_results_area(tmp_path):
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        preview = app.query_one("#syntax-preview", ResultsArea)
+        assert isinstance(preview, ResultsArea)
 
 
 @pytest.mark.asyncio

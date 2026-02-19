@@ -7,8 +7,6 @@ from typing import Iterable
 
 from rich.color import Color
 from rich.color_triplet import ColorTriplet
-from rich.console import Group
-from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -22,7 +20,8 @@ from textual.widgets import (
 )
 from textual.theme import Theme
 
-from ..syntax import spans_for_line
+from .app import ResultsArea
+from .app import TopAction
 from .theme_importer import (
     default_theme_source_dir,
     discover_theme_files,
@@ -35,7 +34,6 @@ from .theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 from .themes import CYBERDARK_THEME
 from .themes import FIRST_PARTY_APP_THEMES
 from .themes import CYBER_THEME_VARIABLE_DEFAULTS
-from .themes import build_results_theme
 
 _SAMPLE_KIND = "smtp"
 _SAMPLE_LINES = (
@@ -105,21 +103,6 @@ class ThemeStudio(App):
         color: $foreground;
     }
 
-    #top-actions-preview {
-        background: $top-actions-background;
-        height: auto;
-        padding: 0 1;
-        margin-bottom: 1;
-    }
-
-    .top-action-sample {
-        background: $top-action-background;
-        color: $foreground;
-        padding: 0 1;
-        margin-right: 1;
-        border: round $top-action-hover-background;
-    }
-
     #controls {
         margin-bottom: 1;
         height: auto;
@@ -155,13 +138,11 @@ class ThemeStudio(App):
         border: round $action-button-hover-background;
     }
 
-    .preview-box {
-        border: round $primary;
-        padding: 1;
+    #browse-preview-shell {
+        height: 1fr;
         margin-top: 1;
-        height: auto;
-        background: $surface;
-        color: $foreground;
+        border: round $selection-selected-background;
+        background: $background;
     }
 
     #status {
@@ -192,11 +173,137 @@ class ThemeStudio(App):
         color: $foreground;
     }
 
-    #sample-query {
+    #top-actions {
+        height: 1;
+        padding: 0 1;
+        background: $top-actions-background;
+    }
+
+    .top-action {
+        width: auto;
+        height: 1;
+        min-height: 1;
+        padding: 0 1;
+        margin-right: 1;
+        background: $top-action-background;
+    }
+
+    .top-action:hover {
+        background: $top-action-hover-background;
+    }
+
+    .top-action:focus {
+        text-style: bold;
+    }
+
+    #wizard-body {
+        margin: 1 1;
+        height: 1fr;
+    }
+
+    .instruction {
+        padding: 1 0;
+    }
+
+    .button-row {
+        width: 1fr;
+        height: auto;
         margin-top: 1;
+    }
+
+    .button-row Button {
+        margin-right: 1;
+    }
+
+    .action-button {
+        min-width: 0;
+        height: 1;
+        min-height: 1;
+        padding: 0;
+        text-style: bold;
+    }
+
+    .action-button.-style-default {
+        border: none;
+        border-top: none;
+        border-bottom: none;
+        background: $action-button-background;
+        color: $action-button-foreground;
+        tint: transparent;
+    }
+
+    .action-button.-style-default:hover {
+        background: $action-button-hover-background;
+        border-top: none;
+        border-bottom: none;
+    }
+
+    .action-button.-style-default:focus {
+        background: $action-button-focus-background;
+        color: $action-button-foreground;
+        background-tint: transparent;
+        border-top: none;
+        border-bottom: none;
+        text-style: bold;
+    }
+
+    .action-button.-style-default.-active {
+        background: $action-button-hover-background;
+        border: none;
+        border-top: none;
+        border-bottom: none;
+        tint: transparent;
+    }
+
+    .selected .label {
+        text-style: bold;
+        background: $selection-selected-background;
+        color: $selection-selected-foreground;
+    }
+
+    .active .label {
+        background: $selection-active-background;
+        color: $selection-active-foreground;
+    }
+
+    .selected.active .label {
+        background: $selection-selected-active-background;
+        color: $selection-selected-active-foreground;
+    }
+
+    .result-log {
+        height: 1fr;
+        width: 1fr;
+        background: $surface;
+    }
+
+    .results-header {
+        height: auto;
+    }
+
+    .search-term-input {
+        margin-bottom: 1;
         background: $surface;
         color: $foreground;
-        border: round $selection-selected-background;
+        border: none;
+        border-top: none;
+        border-bottom: none;
+    }
+
+    .search-term-input:focus {
+        background: $surface;
+        border: none;
+        border-top: none;
+        border-bottom: none;
+    }
+
+    .selection-list {
+        margin-bottom: 1;
+        background: $surface;
+    }
+
+    .selection-preview-row {
+        height: auto;
     }
     """
 
@@ -237,10 +344,6 @@ class ThemeStudio(App):
                 self.source_list = ListView(id="source-list")
                 yield self.source_list
             with Vertical(id="preview"):
-                with Horizontal(id="top-actions-preview"):
-                    yield Static("Menu", classes="top-action-sample")
-                    yield Static("Quit", classes="top-action-sample")
-                    yield Static("Reset", classes="top-action-sample")
                 with Horizontal(id="controls"):
                     yield Button(
                         "Balanced",
@@ -278,7 +381,87 @@ class ThemeStudio(App):
                         id="quit-studio",
                         classes="studio-button",
                     )
-
+                with Vertical(id="browse-preview-shell"):
+                    with Horizontal(id="top-actions"):
+                        yield TopAction(
+                            "Menu",
+                            "menu",
+                            "u",
+                            id="preview-top-menu",
+                        )
+                        yield TopAction(
+                            "Quit",
+                            "quit",
+                            "q",
+                            id="preview-top-quit",
+                        )
+                        yield TopAction(
+                            "Reset",
+                            "reset",
+                            "r",
+                            id="preview-top-reset",
+                        )
+                    with Vertical(id="wizard-body"):
+                        yield Static(
+                            "Step Preview: Browse UI parity",
+                            classes="instruction",
+                        )
+                        with Vertical(
+                            id="preview-selection-list",
+                            classes="selection-list",
+                        ):
+                            with Horizontal(
+                                classes="selection-preview-row selected"
+                            ):
+                                yield Static(
+                                    "Selected date row",
+                                    classes="label",
+                                )
+                            with Horizontal(
+                                classes="selection-preview-row active"
+                            ):
+                                yield Static(
+                                    "Active date row",
+                                    classes="label",
+                                )
+                            with Horizontal(
+                                classes="selection-preview-row selected active"
+                            ):
+                                yield Static(
+                                    "Selected + active row",
+                                    classes="label",
+                                )
+                        yield Input(
+                            "search term example",
+                            id="sample-query",
+                            classes="search-term-input",
+                            placeholder="Search term",
+                        )
+                        with Horizontal(classes="button-row"):
+                            yield Button(
+                                "Back",
+                                id="preview-back",
+                                classes="action-button",
+                            )
+                            yield Button(
+                                "Search",
+                                id="preview-search",
+                                classes="action-button",
+                            )
+                            yield Button(
+                                "Cancel",
+                                id="preview-cancel",
+                                classes="action-button",
+                            )
+                        yield Static(
+                            "Results Preview",
+                            classes="results-header",
+                        )
+                        yield ResultsArea(
+                            log_kind=_SAMPLE_KIND,
+                            id="syntax-preview",
+                            classes="result-log",
+                        )
                 yield Static("", id="status")
                 yield Static("", id="meta")
                 with Horizontal(id="preview-buttons"):
@@ -298,12 +481,6 @@ class ThemeStudio(App):
                         classes="sample-swatch",
                     )
                 yield Static("", id="swatch-values")
-                yield Input(
-                    "search term example",
-                    id="sample-query",
-                    placeholder="Search term",
-                )
-                yield Static("", id="syntax-preview", classes="preview-box")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -491,25 +668,12 @@ class ThemeStudio(App):
         self._preview_revision += 1
         return f"Theme Studio Preview {self._preview_revision}"
 
-    def _set_syntax_preview(self, preview_theme) -> None:
-        syntax_theme = build_results_theme(preview_theme)
-        styles = syntax_theme.syntax_styles
-        lines: list[Text] = []
-        for line in _SAMPLE_LINES:
-            rendered = Text(line)
-            limit = len(line)
-            for span in spans_for_line(_SAMPLE_KIND, line):
-                style = styles.get(span.token)
-                if style is None:
-                    continue
-                start = max(0, min(limit, span.start))
-                end = max(0, min(limit, span.end))
-                if start >= end:
-                    continue
-                rendered.stylize(style, start, end)
-            lines.append(rendered)
-        preview = self.query_one("#syntax-preview", Static)
-        preview.update(Group(*lines))
+    def _set_syntax_preview(self, preview_theme: Theme) -> None:
+        _ = preview_theme
+        preview = self.query_one("#syntax-preview", ResultsArea)
+        preview.set_log_kind(_SAMPLE_KIND)
+        preview.set_visual_theme()
+        preview.text = "\n".join(_SAMPLE_LINES)
 
     def _set_status(self, message: str) -> None:
         status = self.query_one("#status", Static)
