@@ -2153,7 +2153,11 @@ class LogBrowser(App):
         self,
         event: Button.Pressed,
     ) -> None:  # type: ignore[override]
+        if not event.button.is_attached or not event.button.is_mounted:
+            return
         button_id = event.button.id
+        if button_id is None:
+            return
         if self._search_in_progress and button_id not in {
             "cancel-search",
             "quit-results",
