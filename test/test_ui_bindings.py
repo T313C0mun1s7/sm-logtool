@@ -891,6 +891,39 @@ async def test_live_result_stream_keeps_target_order(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stale_live_result_callback_is_ignored_by_session(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    target = logs_dir / "2024.01.01-smtpLog.log"
+    stale_result = SmtpSearchResult(
+        term="stale",
+        log_path=target,
+        conversations=[
+            Conversation(
+                message_id="STALE",
+                lines=["00:00:00 [1.1.1.1][STALE] stale line"],
+                first_line_number=1,
+            )
+        ],
+        total_lines=1,
+        orphan_matches=[],
+    )
+    async with app.run_test() as pilot:
+        app._search_session_id = 2
+        app._live_kind = "smtp"
+        app._show_step_results()
+        app._write_output_lines(["current-result-line"])
+        await pilot.pause()
+
+        app._on_live_search_result_for_session(1, 0, target, stale_result)
+        await pilot.pause()
+
+        assert isinstance(app.output_log, ResultsArea)
+        assert app.output_log.text == "current-result-line"
+
+
+@pytest.mark.asyncio
 async def test_plain_question_mark_remains_input_text(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)

@@ -1762,6 +1762,7 @@ class LogBrowser(App):
         self._live_match_preview_lines: list[str] = []
         self._search_started_at = 0.0
         self._first_result_notified = False
+        self._search_session_id = 0
         self._back_navigation_armed_at = 0.0
         self.theme = CYBERDARK_THEME.name
 
@@ -2505,11 +2506,13 @@ class LogBrowser(App):
         request = self._build_search_request()
         if request is None:
             return
+        self._search_session_id += 1
+        session_id = self._search_session_id
         self._set_search_running(True)
         self._start_live_results(request)
         self._notify("Search submitted. Preparing logs...")
         self._search_worker = self.run_worker(
-            partial(self._run_search_job, request),
+            partial(self._run_search_job, request, session_id),
             name="search-worker",
             group="search",
             thread=True,
@@ -2583,7 +2586,11 @@ class LogBrowser(App):
             use_index_cache=needs_staging,
         )
 
-    def _run_search_job(self, request: SearchRequest) -> SearchOutput:
+    def _run_search_job(
+        self,
+        request: SearchRequest,
+        session_id: int,
+    ) -> SearchOutput:
         worker = get_current_worker()
         search_fn = get_search_function(request.kind)
         if search_fn is None:
@@ -2594,7 +2601,7 @@ class LogBrowser(App):
             targets,
             search_fn,
             worker,
-            on_result=self._post_live_search_result,
+            on_result=partial(self._post_live_search_result, session_id),
         )
         return SearchOutput(
             kind=request.kind,
@@ -2605,16 +2612,29 @@ class LogBrowser(App):
 
     def _post_live_search_result(
         self,
+        session_id: int,
         index: int,
         target: Path,
         result: SmtpSearchResult,
     ) -> None:
         self.call_from_thread(
-            self._on_live_search_result,
+            self._on_live_search_result_for_session,
+            session_id,
             index,
             target,
             result,
         )
+
+    def _on_live_search_result_for_session(
+        self,
+        session_id: int,
+        index: int,
+        target: Path,
+        result: SmtpSearchResult,
+    ) -> None:
+        if session_id != self._search_session_id:
+            return
+        self._on_live_search_result(index, target, result)
 
     def _stage_targets(
         self,
