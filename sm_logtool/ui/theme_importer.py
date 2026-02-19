@@ -330,9 +330,16 @@ def map_terminal_palette(
                 _nearest_xterm_256(
                     Color.parse(value).get_truecolor()
                 )
-            )
+                )
             for key, value in variables.items()
         }
+
+    _ensure_distinct_selection_states(
+        variables=variables,
+        semantic=semantic,
+        dark=dark,
+        quantize_ansi256=quantize_ansi256,
+    )
 
     return Theme(
         name=name,
@@ -349,6 +356,190 @@ def map_terminal_palette(
         dark=dark,
         variables=variables,
     )
+
+
+def _ensure_distinct_selection_states(
+    *,
+    variables: dict[str, str],
+    semantic: Mapping[str, ColorTriplet],
+    dark: bool,
+    quantize_ansi256: bool,
+) -> None:
+    keys = (
+        "selection-selected-background",
+        "selection-active-background",
+        "selection-selected-active-background",
+    )
+    defaults = (
+        _blend(semantic["background"], semantic["accent"], 0.30),
+        _blend(semantic["background"], semantic["primary"], 0.35),
+        _blend(semantic["background"], semantic["warning"], 0.35),
+    )
+    values = [
+        _parse_variable_color(variables.get(key), fallback)
+        for key, fallback in zip(keys, defaults)
+    ]
+    if _selection_states_are_distinct(values):
+        return
+
+    candidates = _selection_candidates(
+        semantic=semantic,
+        dark=dark,
+        quantize_ansi256=quantize_ansi256,
+    )
+    resolved: list[ColorTriplet] = []
+    for index, current in enumerate(values):
+        preferred = (
+            current
+            if _is_color_distinct_from(
+                current,
+                resolved,
+                minimum_distance=900,
+            )
+            else None
+        )
+        if preferred is None:
+            preferred = _pick_distinct_candidate(
+                candidates=candidates,
+                selected=resolved,
+                background=semantic["background"],
+            )
+        if preferred is None:
+            preferred = _fallback_distinct_color(
+                index=index,
+                semantic=semantic,
+                quantize_ansi256=quantize_ansi256,
+            )
+        resolved.append(preferred)
+
+    variables["selection-selected-background"] = _as_hex(resolved[0])
+    variables["selection-active-background"] = _as_hex(resolved[1])
+    variables["selection-selected-active-background"] = _as_hex(resolved[2])
+    variables["selection-selected-foreground"] = _as_hex(
+        _preferred_text_color(resolved[0])
+    )
+    variables["selection-active-foreground"] = _as_hex(
+        _preferred_text_color(resolved[1])
+    )
+    variables["selection-selected-active-foreground"] = _as_hex(
+        _preferred_text_color(resolved[2])
+    )
+
+
+def _parse_variable_color(
+    value: str | None,
+    fallback: ColorTriplet,
+) -> ColorTriplet:
+    if not value:
+        return fallback
+    try:
+        return Color.parse(value).get_truecolor()
+    except Exception:
+        return fallback
+
+
+def _selection_states_are_distinct(values: list[ColorTriplet]) -> bool:
+    return all(
+        _distance_sq(values[left], values[right]) >= 900
+        for left in range(len(values))
+        for right in range(left + 1, len(values))
+    )
+
+
+def _selection_candidates(
+    *,
+    semantic: Mapping[str, ColorTriplet],
+    dark: bool,
+    quantize_ansi256: bool,
+) -> list[ColorTriplet]:
+    seeds = (
+        semantic["accent"],
+        semantic["primary"],
+        semantic["secondary"],
+        semantic["warning"],
+        semantic["error"],
+        semantic["success"],
+        semantic["foreground"],
+    )
+    background = semantic["background"]
+    mixes = (0.20, 0.30, 0.40, 0.52, 0.64)
+    raw: list[ColorTriplet] = []
+    for seed in seeds:
+        for mix in mixes:
+            color = _blend(background, seed, mix)
+            color = _ensure_contrast(
+                color,
+                background,
+                minimum_ratio=1.35,
+                prefer_light=not dark,
+            )
+            if quantize_ansi256:
+                color = _nearest_xterm_256(color)
+            raw.append(color)
+    unique: dict[str, ColorTriplet] = {}
+    for color in raw:
+        unique[_as_hex(color)] = color
+    return list(unique.values())
+
+
+def _is_color_distinct_from(
+    color: ColorTriplet,
+    others: list[ColorTriplet],
+    *,
+    minimum_distance: int,
+) -> bool:
+    return all(
+        _distance_sq(color, other) >= minimum_distance
+        for other in others
+    )
+
+
+def _pick_distinct_candidate(
+    *,
+    candidates: list[ColorTriplet],
+    selected: list[ColorTriplet],
+    background: ColorTriplet,
+) -> ColorTriplet | None:
+    best: ColorTriplet | None = None
+    best_score = -1.0
+    for candidate in candidates:
+        if not _is_color_distinct_from(
+            candidate,
+            selected,
+            minimum_distance=900,
+        ):
+            continue
+        if not selected:
+            distance_score = 1500.0
+        else:
+            distance_score = min(
+                _distance_sq(candidate, existing)
+                for existing in selected
+            )
+        contrast_score = _contrast_ratio(candidate, background) * 100.0
+        score = distance_score + contrast_score
+        if score > best_score:
+            best = candidate
+            best_score = score
+    return best
+
+
+def _fallback_distinct_color(
+    *,
+    index: int,
+    semantic: Mapping[str, ColorTriplet],
+    quantize_ansi256: bool,
+) -> ColorTriplet:
+    background = semantic["background"]
+    seed_order = (
+        semantic["accent"],
+        semantic["primary"],
+        semantic["warning"],
+    )
+    color = _blend(background, seed_order[index % len(seed_order)], 0.55)
+    if quantize_ansi256:
+        color = _nearest_xterm_256(color)
+    return color
 
 
 def _parse_itermcolors(path: Path) -> TerminalPalette:

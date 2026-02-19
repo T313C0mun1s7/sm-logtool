@@ -320,6 +320,45 @@ def test_mnemonic_foreground_keeps_contrast() -> None:
     assert ratio >= 4.5
 
 
+def test_selection_states_remain_distinct_in_ansi256() -> None:
+    palette = TerminalPalette(
+        name="CollapsedSelection",
+        source=Path("/tmp/collapsed-selection.colortheme"),
+        background=ColorTriplet(22, 22, 22),
+        foreground=ColorTriplet(235, 235, 235),
+        cursor=ColorTriplet(235, 235, 235),
+        ansi=(
+            ColorTriplet(0, 0, 0),
+            ColorTriplet(120, 120, 120),
+            ColorTriplet(122, 122, 122),
+            ColorTriplet(124, 124, 124),
+            ColorTriplet(126, 126, 126),
+            ColorTriplet(128, 128, 128),
+            ColorTriplet(130, 130, 130),
+            ColorTriplet(180, 180, 180),
+            ColorTriplet(96, 96, 96),
+            ColorTriplet(132, 132, 132),
+            ColorTriplet(134, 134, 134),
+            ColorTriplet(136, 136, 136),
+            ColorTriplet(138, 138, 138),
+            ColorTriplet(140, 140, 140),
+            ColorTriplet(142, 142, 142),
+            ColorTriplet(244, 244, 244),
+        ),
+    )
+    theme = map_terminal_palette(
+        name="demo",
+        palette=palette,
+        profile="balanced",
+        overrides=None,
+        quantize_ansi256=True,
+    )
+    selected = theme.variables["selection-selected-background"]
+    active = theme.variables["selection-active-background"]
+    selected_active = theme.variables["selection-selected-active-background"]
+    assert len({selected, active, selected_active}) == 3
+
+
 def _contrast_ratio(left: ColorTriplet, right: ColorTriplet) -> float:
     left_luma = _luminance(left)
     right_luma = _luminance(right)

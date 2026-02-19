@@ -126,6 +126,34 @@ async def test_theme_studio_syntax_preview_uses_results_area(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_theme_studio_override_controls_cycle_source(tmp_path):
+    source = tmp_path / "demo.colortheme"
+    source.write_text(
+        "background=#101010\n"
+        "foreground=#f0f0f0\n"
+        "color14=#00ffcc\n"
+        "color9=#dd3333\n",
+        encoding="utf-8",
+    )
+    app = ThemeStudio(
+        source_paths=(tmp_path,),
+        store_dir=tmp_path / "themes",
+        profile="balanced",
+        quantize_ansi256=True,
+    )
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        target = app.query_one("#override-target", Static)
+        source_label = app.query_one("#override-source", Static)
+        assert "Edit:" in str(target.render())
+        assert "Source: auto" in str(source_label.render())
+
+        app._cycle_override_source(1)
+        await pilot.pause()
+        assert "Source: accent" in str(source_label.render())
+
+
+@pytest.mark.asyncio
 async def test_top_action_buttons_show_core_shortcuts(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)

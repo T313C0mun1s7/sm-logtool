@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -38,6 +39,48 @@ _SAMPLE_LINES = (
     "00:00:01 [1.1.1.1][123] SMTP cmd: EHLO mail.example.com",
     "00:00:02 [1.1.1.1][123] SMTP rsp: 250 ok",
     "00:00:03 [1.1.1.1][123] Authentication failed for user admin@example.com",
+)
+
+_SELECTION_SAMPLE_TARGETS = {
+    "sample-row-selected": "selection-selected-background",
+    "sample-row-active": "selection-active-background",
+    "sample-row-selected-active": "selection-selected-active-background",
+}
+
+_SELECTION_TARGET_LABELS = {
+    "selection-selected-background": "Selected row",
+    "selection-active-background": "Active row",
+    "selection-selected-active-background": "Selected + active row",
+}
+
+_OVERRIDE_CHOICES = (
+    "auto",
+    "accent",
+    "primary",
+    "secondary",
+    "warning",
+    "error",
+    "success",
+    "foreground",
+    "background",
+    "panel",
+    "surface",
+    "ansi0",
+    "ansi1",
+    "ansi2",
+    "ansi3",
+    "ansi4",
+    "ansi5",
+    "ansi6",
+    "ansi7",
+    "ansi8",
+    "ansi9",
+    "ansi10",
+    "ansi11",
+    "ansi12",
+    "ansi13",
+    "ansi14",
+    "ansi15",
 )
 
 
@@ -107,6 +150,26 @@ class ThemeStudio(App):
         background: $surface;
         border: round $selection-selected-background;
         padding: 1;
+    }
+
+    #override-controls {
+        margin-bottom: 1;
+        height: auto;
+        background: $surface;
+        border: round $selection-selected-background;
+        padding: 0 1;
+    }
+
+    #override-target {
+        width: 25;
+        color: $accent;
+    }
+
+    #override-source {
+        width: 1fr;
+        color: $foreground;
+        border: round $selection-selected-background;
+        padding: 0 1;
     }
 
     #save-name {
@@ -274,6 +337,7 @@ class ThemeStudio(App):
     .selection-preview-row {
         height: auto;
     }
+
     """
 
     BINDINGS = [
@@ -304,6 +368,9 @@ class ThemeStudio(App):
         self.current_theme_name: str | None = None
         self.current_source_theme_name: str | None = None
         self._preview_revision = 0
+        self._manual_overrides: dict[str, str] = {}
+        self._active_override_target = "selection-selected-background"
+        self._override_source_path: Path | None = None
 
     def compose(self) -> ComposeResult:
         yield Static("Theme Studio", id="title")
@@ -350,6 +417,24 @@ class ThemeStudio(App):
                         id="quit-studio",
                         classes="studio-button",
                     )
+                with Horizontal(id="override-controls"):
+                    yield Static("", id="override-target")
+                    yield Button(
+                        "<",
+                        id="override-prev",
+                        classes="studio-button",
+                    )
+                    yield Static("", id="override-source")
+                    yield Button(
+                        ">",
+                        id="override-next",
+                        classes="studio-button",
+                    )
+                    yield Button(
+                        "Clear",
+                        id="override-clear",
+                        classes="studio-button",
+                    )
                 with Vertical(id="browse-preview-shell"):
                     with Horizontal(id="top-actions"):
                         yield TopAction(
@@ -384,6 +469,7 @@ class ThemeStudio(App):
                             ):
                                 yield Static(
                                     "Selected date row",
+                                    id="sample-row-selected",
                                     classes="label",
                                 )
                             with Horizontal(
@@ -391,6 +477,7 @@ class ThemeStudio(App):
                             ):
                                 yield Static(
                                     "Active date row",
+                                    id="sample-row-active",
                                     classes="label",
                                 )
                             with Horizontal(
@@ -398,6 +485,7 @@ class ThemeStudio(App):
                             ):
                                 yield Static(
                                     "Selected + active row",
+                                    id="sample-row-selected-active",
                                     classes="label",
                                 )
                         yield Input(
@@ -442,6 +530,7 @@ class ThemeStudio(App):
     def on_mount(self) -> None:
         self.theme = CYBERDARK_THEME.name
         self._update_profile_button_states()
+        self._refresh_override_controls()
         self._load_sources()
 
     def get_theme_variable_defaults(self) -> dict[str, str]:
@@ -491,6 +580,30 @@ class ThemeStudio(App):
             return
         if button_id == "profile-soft":
             self.action_profile_soft()
+            return
+        if button_id == "override-prev":
+            self._cycle_override_source(-1)
+            return
+        if button_id == "override-next":
+            self._cycle_override_source(1)
+            return
+        if button_id == "override-clear":
+            self._set_current_override("auto")
+
+    def on_click(
+        self,
+        event: events.Click,
+    ) -> None:  # pragma: no cover - UI behavior
+        widget = event.widget
+        while widget is not None:
+            widget_id = getattr(widget, "id", None)
+            target = _SELECTION_SAMPLE_TARGETS.get(widget_id or "")
+            if target is not None:
+                self._active_override_target = target
+                self._refresh_override_controls()
+                event.stop()
+                return
+            widget = getattr(widget, "parent", None)
 
     def action_save_theme(self) -> None:
         if self.current_source is None or self.current_theme_name is None:
@@ -584,6 +697,11 @@ class ThemeStudio(App):
     def _refresh_preview(self, *, reset_name: bool) -> None:
         if self.current_source is None:
             return
+        if reset_name and self.current_source != self._override_source_path:
+            self._manual_overrides.clear()
+            self._active_override_target = "selection-selected-background"
+            self._override_source_path = self.current_source
+            self._refresh_override_controls()
         try:
             palette = parse_terminal_palette(self.current_source)
             self.current_source_theme_name = palette.name
@@ -592,7 +710,7 @@ class ThemeStudio(App):
                 name=preview_name,
                 palette=palette,
                 profile=self.profile,
-                overrides=None,
+                overrides=self._resolved_overrides(),
                 quantize_ansi256=self.quantize_ansi256,
             )
         except ValueError as exc:
@@ -643,6 +761,47 @@ class ThemeStudio(App):
         if not normalized:
             return "Imported Theme"
         return normalized
+
+    def _cycle_override_source(self, delta: int) -> None:
+        current = self._manual_overrides.get(
+            self._active_override_target,
+            "auto",
+        )
+        try:
+            index = _OVERRIDE_CHOICES.index(current)
+        except ValueError:
+            index = 0
+        next_index = (index + delta) % len(_OVERRIDE_CHOICES)
+        self._set_current_override(_OVERRIDE_CHOICES[next_index])
+
+    def _set_current_override(self, source: str) -> None:
+        target = self._active_override_target
+        if source == "auto":
+            self._manual_overrides.pop(target, None)
+        else:
+            self._manual_overrides[target] = source
+        self._refresh_override_controls()
+        self._refresh_preview(reset_name=False)
+
+    def _refresh_override_controls(self) -> None:
+        target_label = _SELECTION_TARGET_LABELS.get(
+            self._active_override_target,
+            self._active_override_target,
+        )
+        target = self.query_one("#override-target", Static)
+        target.update(f"Edit: {target_label}")
+
+        source_value = self._manual_overrides.get(
+            self._active_override_target,
+            "auto",
+        )
+        source = self.query_one("#override-source", Static)
+        source.update(f"Source: {source_value}")
+
+    def _resolved_overrides(self) -> dict[str, str] | None:
+        if not self._manual_overrides:
+            return None
+        return dict(self._manual_overrides)
 
 
 def _theme_with_name(theme: Theme, name: str) -> Theme:
