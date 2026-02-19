@@ -81,6 +81,8 @@ Search handlers currently exist for:
   `~/.config/sm-logtool/themes` (per-user).
 - Theme Studio imports source files from
   `~/.config/sm-logtool/theme-sources` by default (per-user).
+- These directories are created automatically on first run of
+  `sm-logtool browse` or `sm-logtool themes`.
 - Theme Studio supports live semantic remapping against preview elements.
 - Saved themes preserve both app chrome and syntax palette behavior.
 - Selection-state colors are forced distinct before save so date-selection

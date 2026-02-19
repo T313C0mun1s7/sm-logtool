@@ -5,6 +5,7 @@ import plistlib
 
 from rich.color import Color
 from sm_logtool.ui.theme_importer import default_theme_store_dir
+from sm_logtool.ui.theme_importer import ensure_default_theme_dirs
 from sm_logtool.ui.theme_importer import map_terminal_palette
 from sm_logtool.ui.theme_importer import TerminalPalette
 from sm_logtool.ui.theme_importer import load_saved_themes
@@ -144,6 +145,33 @@ def test_default_theme_store_dir_uses_config_parent(tmp_path: Path) -> None:
     config_path = tmp_path / "config" / "custom.yaml"
     expected = Path.home() / ".config" / "sm-logtool" / "themes"
     assert default_theme_store_dir(config_path) == expected
+
+
+def test_ensure_default_theme_dirs_creates_missing_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "sm_logtool.ui.theme_importer.Path.home",
+        lambda: tmp_path,
+    )
+
+    expected_store = (
+        tmp_path / ".config" / "sm-logtool" / "themes"
+    )
+    expected_source = (
+        tmp_path / ".config" / "sm-logtool" / "theme-sources"
+    )
+
+    store_dir, source_dir = ensure_default_theme_dirs()
+    assert store_dir == expected_store
+    assert source_dir == expected_source
+    assert store_dir.is_dir()
+    assert source_dir.is_dir()
+
+    second_store, second_source = ensure_default_theme_dirs()
+    assert second_store == store_dir
+    assert second_source == source_dir
 
 
 def test_save_converted_theme_overwrites_by_name(tmp_path: Path) -> None:
