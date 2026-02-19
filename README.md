@@ -305,6 +305,7 @@ python -m unittest discover test
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Search Design Notes](docs/SEARCH_NOTES.md)
 - [Syntax Highlighting Notes](docs/syntax_highlighting.md)
+- [Release 0.9.5 Notes](docs/release_0.9.5.md)
 
 ## License
 
