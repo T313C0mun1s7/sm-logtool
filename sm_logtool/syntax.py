@@ -60,6 +60,7 @@ _STATUS_BAD = re.compile(
 _STATUS_BLOCKED_OUTCOME = re.compile(
     r"\baction:\s*movetojunk\b"
     r"|\bon their blocked list\b"
+    r"|\bon the blocked country list\b"
     r"|\bmessage blocked\b",
     re.IGNORECASE,
 )

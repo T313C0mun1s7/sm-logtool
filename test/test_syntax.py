@@ -141,3 +141,17 @@ def test_block_outcome_markers_are_highlighted_as_bad_status():
         reason_start,
         reason_end,
     )
+
+    country_line = (
+        "00:06:04.000 [84012980] REASON: Sender domain "
+        "<sender@example.test> is on the blocked country list."
+    )
+    country_spans = spans_for_line("delivery", country_line)
+    country_start = country_line.index("on the blocked country list")
+    country_end = country_start + len("on the blocked country list")
+    assert _has_span(
+        country_spans,
+        TOKEN_STATUS_BAD,
+        country_start,
+        country_end,
+    )
