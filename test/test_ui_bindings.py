@@ -493,14 +493,14 @@ async def test_fuzzy_threshold_shortcuts_adjust_value(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_copy_selection_button_reports_system_clipboard_success(
+async def test_copy_selection_button_submits_copy_request(
     tmp_path,
     monkeypatch,
 ):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
     app = LogBrowser(logs_dir=logs_dir)
-    copied: dict[str, str] = {}
+    submitted: dict[str, object] = {}
     async with app.run_test() as pilot:
         app._refresh_logs()
         kind, infos = next(iter(app._logs_by_kind.items()))
@@ -512,28 +512,28 @@ async def test_copy_selection_button_reports_system_clipboard_success(
 
         monkeypatch.setattr(app, "_get_selected_text", lambda: "alpha")
 
-        def _fake_copy(text: str) -> str:
-            copied["text"] = text
-            return "system"
+        def _fake_request(*, text: str, selection_only: bool) -> None:
+            submitted["text"] = text
+            submitted["selection_only"] = selection_only
 
-        monkeypatch.setattr(app, "_copy_text_to_clipboard", _fake_copy)
+        monkeypatch.setattr(app, "_request_clipboard_copy", _fake_request)
         copy_button = app.wizard.query_one("#copy-selection", Button)
         app.on_button_pressed(Button.Pressed(copy_button))
         await pilot.pause()
 
-        status = app.wizard.query_one("#status", Static)
-        assert "Copied selection to clipboard." in str(status.render())
-        assert copied["text"] == "alpha"
+        assert submitted["text"] == "alpha"
+        assert submitted["selection_only"] is True
 
 
 @pytest.mark.asyncio
-async def test_copy_all_button_reports_unavailable_clipboard(
+async def test_copy_all_button_submits_copy_request(
     tmp_path,
     monkeypatch,
 ):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
     app = LogBrowser(logs_dir=logs_dir)
+    submitted: dict[str, object] = {}
     async with app.run_test() as pilot:
         app._refresh_logs()
         kind, infos = next(iter(app._logs_by_kind.items()))
@@ -543,18 +543,18 @@ async def test_copy_all_button_reports_unavailable_clipboard(
         app._show_step_results()
         await pilot.pause()
 
-        monkeypatch.setattr(
-            app,
-            "_copy_text_to_clipboard",
-            lambda _text: "unavailable",
-        )
+        def _fake_request(*, text: str, selection_only: bool) -> None:
+            submitted["text"] = text
+            submitted["selection_only"] = selection_only
+
+        monkeypatch.setattr(app, "_request_clipboard_copy", _fake_request)
 
         copy_button = app.wizard.query_one("#copy-all", Button)
         app.on_button_pressed(Button.Pressed(copy_button))
         await pilot.pause()
 
-        status = app.wizard.query_one("#status", Static)
-        assert "Clipboard is unavailable." in str(status.render())
+        assert submitted["text"] == "alpha\nbeta"
+        assert submitted["selection_only"] is False
 
 
 @pytest.mark.asyncio
