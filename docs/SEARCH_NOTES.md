@@ -75,7 +75,10 @@ Search handlers currently exist for:
 - Fuzzy mode threshold can be adjusted in TUI with `Ctrl+Up`/`Ctrl+Down`.
 - Sub-search chains are supported from results.
 - Results pane has syntax highlighting across supported log kinds.
-- Copy selection and copy-all actions are available from results.
+- Copy selection and copy-all actions are available from results, including
+  right-click context actions.
+- Clipboard transfer uses terminal OSC 52 protocol; behavior depends on
+  terminal/multiplexer support in the active session.
 
 ### Theme behavior
 

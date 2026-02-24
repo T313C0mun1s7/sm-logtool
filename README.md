@@ -138,6 +138,7 @@ Wizard flow:
    (`Literal`/`Wildcard`/`Regex`/`Fuzzy`) plus result mode
    (`Show all related traffic`/`Only matching rows`).
 4. Review results, copy selection/all, and optionally run sub-search.
+   Right-click on results to open copy actions.
 
 Core actions are always visible in the top action strip:
 
@@ -152,6 +153,11 @@ Search-step footer shortcuts:
 - `Ctrl+Right` next search mode
 - `Ctrl+Up` increase fuzzy threshold (fuzzy mode only)
 - `Ctrl+Down` decrease fuzzy threshold (fuzzy mode only)
+
+Clipboard note:
+
+- Results copy actions use terminal clipboard protocol (OSC 52). Clipboard
+  support depends on your terminal/multiplexer chain configuration.
 
 Date selection shortcuts:
 
@@ -305,7 +311,6 @@ python -m unittest discover test
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Search Design Notes](docs/SEARCH_NOTES.md)
 - [Syntax Highlighting Notes](docs/syntax_highlighting.md)
-- [Release 0.9.5 Notes](docs/release_0.9.5.md)
 
 ## License
 
