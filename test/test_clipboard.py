@@ -8,6 +8,11 @@ def test_copy_text_to_system_clipboard_prefers_wayland(monkeypatch):
         calls.append(command)
         return command[0] == "wl-copy"
 
+    monkeypatch.setattr(
+        clipboard_module.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name == "wl-copy" else None,
+    )
     monkeypatch.setattr(clipboard_module, "_run_clipboard_command", _fake_run)
     backend = clipboard_module.copy_text_to_system_clipboard(
         "demo",
@@ -17,25 +22,59 @@ def test_copy_text_to_system_clipboard_prefers_wayland(monkeypatch):
     assert calls == [("wl-copy",)]
 
 
-def test_copy_text_to_system_clipboard_uses_xclip_when_available(monkeypatch):
+def test_copy_text_to_system_clipboard_uses_xsel_on_x11(monkeypatch):
+    calls: list[tuple[str, ...]] = []
+
+    def _fake_run(command: tuple[str, ...], *_args) -> bool:
+        calls.append(command)
+        return command[0] == "xsel"
+
+    monkeypatch.setattr(
+        clipboard_module.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in {"xsel", "xclip"} else None,
+    )
+    monkeypatch.setattr(clipboard_module, "_run_clipboard_command", _fake_run)
+    backend = clipboard_module.copy_text_to_system_clipboard(
+        "demo",
+        env={"DISPLAY": ":0"},
+    )
+    assert backend == "xsel"
+    assert calls == [("xsel", "--clipboard", "--input")]
+
+
+def test_copy_text_to_system_clipboard_uses_xclip_when_xsel_missing(
+    monkeypatch,
+):
     calls: list[tuple[str, ...]] = []
 
     def _fake_run(command: tuple[str, ...], *_args) -> bool:
         calls.append(command)
         return command[0] == "xclip"
 
+    monkeypatch.setattr(
+        clipboard_module.shutil,
+        "which",
+        lambda name: "/usr/bin/xclip" if name == "xclip" else None,
+    )
     monkeypatch.setattr(clipboard_module, "_run_clipboard_command", _fake_run)
     backend = clipboard_module.copy_text_to_system_clipboard(
         "demo",
         env={"DISPLAY": ":0"},
     )
     assert backend == "xclip"
-    assert calls[0] == ("xclip", "-selection", "clipboard")
+    assert calls == [("xclip", "-selection", "clipboard", "-in")]
 
 
 def test_copy_text_to_system_clipboard_returns_none_without_backend(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        clipboard_module.shutil,
+        "which",
+        lambda _name: None,
+    )
+
     def _fake_run(*_args) -> bool:
         return False
 

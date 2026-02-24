@@ -3450,8 +3450,6 @@ class LogBrowser(App):
         if worker is not None and not worker.is_finished:
             self._notify("Clipboard copy already in progress.")
             return
-        target = "selection" if selection_only else "full results"
-        self._notify(f"Copying {target}...")
         self._clipboard_worker = self.run_worker(
             partial(self._run_clipboard_copy_job, text, selection_only),
             name="clipboard-copy-worker",
@@ -3484,13 +3482,6 @@ class LogBrowser(App):
         if driver is None:
             return "unavailable"
         return "terminal"
-
-    def _copy_text_to_clipboard(self, text: str) -> str:
-        backend = copy_text_to_system_clipboard(text)
-        if backend is not None:
-            return "system"
-        self.copy_to_clipboard(text)
-        return self._terminal_clipboard_mode()
 
     def _copy_status_message(self, *, selection_only: bool, mode: str) -> str:
         target = "selection" if selection_only else "full results"
