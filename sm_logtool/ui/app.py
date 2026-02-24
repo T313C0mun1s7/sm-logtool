@@ -85,6 +85,7 @@ from .themes import build_results_theme
 from .themes import RESULTS_THEME_DEFAULT
 from .themes import RESULTS_THEME_DEFAULT_NAME
 from .themes import results_theme_name_for_app_theme
+from .clipboard import copy_text_to_system_clipboard
 from .theme_importer import load_imported_themes
 from .theme_importer import load_saved_themes
 from .theme_importer import default_theme_store_dir
@@ -3378,15 +3379,49 @@ class LogBrowser(App):
             if not text:
                 self._notify("Select text to copy.")
                 return
-            self.copy_to_clipboard(text)
-            self._notify("Copied selection to clipboard.")
+            mode = self._copy_text_to_clipboard(text)
+            self._notify(
+                self._copy_status_message(
+                    selection_only=True,
+                    mode=mode,
+                ),
+            )
             return
         text = self._get_full_results_text()
         if not text:
             self._notify("No results available to copy.")
             return
+        mode = self._copy_text_to_clipboard(text)
+        self._notify(
+            self._copy_status_message(
+                selection_only=False,
+                mode=mode,
+            ),
+        )
+
+    def _copy_text_to_clipboard(self, text: str) -> str:
+        backend = copy_text_to_system_clipboard(text)
+        if backend is not None:
+            return "system"
         self.copy_to_clipboard(text)
-        self._notify("Copied full results to clipboard.")
+        driver = getattr(self, "_driver", None)
+        if driver is None:
+            return "unavailable"
+        return "terminal"
+
+    def _copy_status_message(self, *, selection_only: bool, mode: str) -> str:
+        target = "selection" if selection_only else "full results"
+        if mode == "system":
+            return f"Copied {target} to clipboard."
+        if mode == "terminal":
+            return (
+                f"Sent {target} via terminal clipboard (OSC 52). "
+                "If paste is empty, install wl-copy/xclip/xsel."
+            )
+        return (
+            "Clipboard is unavailable. Install wl-copy/xclip/xsel, or "
+            "use a terminal with OSC 52 clipboard support."
+        )
 
     def _get_selected_text(self) -> str | None:
         if isinstance(self.output_log, ResultsArea):
