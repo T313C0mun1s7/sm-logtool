@@ -85,7 +85,6 @@ from .themes import build_results_theme
 from .themes import RESULTS_THEME_DEFAULT
 from .themes import RESULTS_THEME_DEFAULT_NAME
 from .themes import results_theme_name_for_app_theme
-from .clipboard import copy_text_to_system_clipboard
 from .theme_importer import load_imported_themes
 from .theme_importer import load_saved_themes
 from .theme_importer import default_theme_store_dir
@@ -842,15 +841,6 @@ class SearchOutput:
     result_mode: str
     targets: list[Path]
     results: list[SmtpSearchResult]
-
-
-@dataclass(frozen=True)
-class ClipboardCopyOutput:
-    """Completed clipboard copy payload returned by a worker."""
-
-    text: str
-    selection_only: bool
-    backend: str | None
 
 
 MAX_SEARCH_WORKERS = 4
@@ -1769,7 +1759,6 @@ class LogBrowser(App):
         self._context_menu_open = False
         self._search_worker: Worker[SearchOutput] | None = None
         self._index_worker: Worker[None] | None = None
-        self._clipboard_worker: Worker[ClipboardCopyOutput] | None = None
         self._search_in_progress = False
         self._live_rendered_lines: list[str] = []
         self._live_pending_results: dict[
@@ -2303,9 +2292,6 @@ class LogBrowser(App):
         if event.worker is self._search_worker:
             self._handle_search_worker_state_changed(event)
             return
-        if event.worker is self._clipboard_worker:
-            self._handle_clipboard_worker_state_changed(event)
-            return
 
     def _handle_search_worker_state_changed(
         self,
@@ -2353,34 +2339,6 @@ class LogBrowser(App):
         result = event.worker.result
         self._set_search_running(False)
         self._apply_search_output(result)
-
-    def _handle_clipboard_worker_state_changed(
-        self,
-        event: Worker.StateChanged,
-    ) -> None:
-        if event.state == WorkerState.RUNNING:
-            return
-        self._clipboard_worker = None
-        if event.state == WorkerState.CANCELLED:
-            self._notify("Clipboard copy canceled.")
-            return
-        if event.state == WorkerState.ERROR:
-            error = event.worker.error
-            message = "Clipboard copy failed."
-            if error is not None:
-                message = f"Clipboard copy failed: {error}"
-            self._notify(message)
-            return
-        if event.state != WorkerState.SUCCESS:
-            return
-        result = event.worker.result
-        mode = self._resolve_clipboard_mode(result)
-        self._notify(
-            self._copy_status_message(
-                selection_only=result.selection_only,
-                mode=mode,
-            ),
-        )
 
     def _highlight_kind_item(self, item: ListItem) -> None:
         if not isinstance(item, KindListItem):
@@ -3426,75 +3384,40 @@ class LogBrowser(App):
             if not text:
                 self._notify("Select text to copy.")
                 return
-            self._request_clipboard_copy(
-                text=text,
-                selection_only=True,
+            mode = self._copy_text_to_terminal_clipboard(text)
+            self._notify(
+                self._copy_status_message(
+                    selection_only=True,
+                    mode=mode,
+                ),
             )
             return
         text = self._get_full_results_text()
         if not text:
             self._notify("No results available to copy.")
             return
-        self._request_clipboard_copy(
-            text=text,
-            selection_only=False,
+        mode = self._copy_text_to_terminal_clipboard(text)
+        self._notify(
+            self._copy_status_message(
+                selection_only=False,
+                mode=mode,
+            ),
         )
 
-    def _request_clipboard_copy(
-        self,
-        *,
-        text: str,
-        selection_only: bool,
-    ) -> None:
-        worker = self._clipboard_worker
-        if worker is not None and not worker.is_finished:
-            self._notify("Clipboard copy already in progress.")
-            return
-        self._clipboard_worker = self.run_worker(
-            partial(self._run_clipboard_copy_job, text, selection_only),
-            name="clipboard-copy-worker",
-            group="clipboard-copy",
-            thread=True,
-            exclusive=True,
-            exit_on_error=False,
-        )
-
-    def _run_clipboard_copy_job(
-        self,
-        text: str,
-        selection_only: bool,
-    ) -> ClipboardCopyOutput:
-        backend = copy_text_to_system_clipboard(text)
-        return ClipboardCopyOutput(
-            text=text,
-            selection_only=selection_only,
-            backend=backend,
-        )
-
-    def _resolve_clipboard_mode(self, output: ClipboardCopyOutput) -> str:
-        if output.backend is not None:
-            return "system"
-        self.copy_to_clipboard(output.text)
-        return self._terminal_clipboard_mode()
-
-    def _terminal_clipboard_mode(self) -> str:
+    def _copy_text_to_terminal_clipboard(self, text: str) -> str:
         driver = getattr(self, "_driver", None)
+        self.copy_to_clipboard(text)
         if driver is None:
             return "unavailable"
         return "terminal"
 
     def _copy_status_message(self, *, selection_only: bool, mode: str) -> str:
         target = "selection" if selection_only else "full results"
-        if mode == "system":
-            return f"Copied {target} to system clipboard."
         if mode == "terminal":
-            return (
-                f"Sent {target} via terminal clipboard (OSC 52). "
-                "If paste is empty, install wl-copy/xclip/xsel."
-            )
+            return f"Sent {target} to terminal clipboard (OSC 52)."
         return (
-            "Clipboard is unavailable. Install wl-copy/xclip/xsel, or "
-            "use a terminal with OSC 52 clipboard support."
+            "Clipboard is unavailable in this session. Use a terminal "
+            "with OSC 52 clipboard support."
         )
 
     def _get_selected_text(self) -> str | None:
