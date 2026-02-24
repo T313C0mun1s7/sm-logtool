@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import inspect
 from collections import defaultdict
 from concurrent.futures import (
@@ -19,7 +20,7 @@ import multiprocessing as mp
 import os
 from pathlib import Path
 import time
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Mapping, Optional
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -849,6 +850,7 @@ _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
 _BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
+_OSC52_MAX_TEXT_BYTES = 75000
 
 
 def _search_single_target(
@@ -916,6 +918,21 @@ def _progress_bar(
     return (
         f"[{'=' * (filled - 1)}>{'.' * (safe_width - filled)}]"
     )
+
+
+def _osc52_sequence(
+    payload_base64: str,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    active_env = os.environ if env is None else env
+    osc = f"\x1b]52;c;{payload_base64}\x1b\\"
+    if active_env.get("TMUX"):
+        return f"\x1bPtmux;\x1b{osc}\x1b\\"
+    term = active_env.get("TERM", "")
+    if "screen" in term:
+        return f"\x1bP{osc}\x1b\\"
+    return osc
 
 
 def _search_targets_in_process_pool(
@@ -2289,8 +2306,14 @@ class LogBrowser(App):
         self,
         event: Worker.StateChanged,
     ) -> None:
-        if event.worker is not self._search_worker:
+        if event.worker is self._search_worker:
+            self._handle_search_worker_state_changed(event)
             return
+
+    def _handle_search_worker_state_changed(
+        self,
+        event: Worker.StateChanged,
+    ) -> None:
         if event.state == WorkerState.RUNNING:
             return
         if event.state == WorkerState.CANCELLED:
@@ -3378,15 +3401,54 @@ class LogBrowser(App):
             if not text:
                 self._notify("Select text to copy.")
                 return
-            self.copy_to_clipboard(text)
-            self._notify("Copied selection to clipboard.")
+            mode = self._copy_text_to_terminal_clipboard(text)
+            self._notify(
+                self._copy_status_message(
+                    selection_only=True,
+                    mode=mode,
+                ),
+            )
             return
         text = self._get_full_results_text()
         if not text:
             self._notify("No results available to copy.")
             return
-        self.copy_to_clipboard(text)
-        self._notify("Copied full results to clipboard.")
+        mode = self._copy_text_to_terminal_clipboard(text)
+        self._notify(
+            self._copy_status_message(
+                selection_only=False,
+                mode=mode,
+            ),
+        )
+
+    def _copy_text_to_terminal_clipboard(self, text: str) -> str:
+        driver = getattr(self, "_driver", None)
+        if driver is None:
+            return "unavailable"
+        payload = text.encode("utf-8")
+        encoded = base64.b64encode(payload).decode("ascii")
+        sequence = _osc52_sequence(encoded)
+        try:
+            driver.write(sequence)
+        except Exception:
+            return "unavailable"
+        if len(payload) > _OSC52_MAX_TEXT_BYTES:
+            return "terminal-large"
+        return "terminal"
+
+    def _copy_status_message(self, *, selection_only: bool, mode: str) -> str:
+        target = "selection" if selection_only else "full results"
+        if mode == "terminal":
+            return f"Sent {target} to terminal clipboard (OSC 52)."
+        if mode == "terminal-large":
+            return (
+                f"Sent {target} to terminal clipboard (OSC 52). "
+                "Payload is large and may be limited by your terminal."
+            )
+        return (
+            "Clipboard is unavailable in this session. Use a terminal "
+            "with OSC 52 clipboard support."
+        )
 
     def _get_selected_text(self) -> str | None:
         if isinstance(self.output_log, ResultsArea):

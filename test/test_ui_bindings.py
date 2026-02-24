@@ -493,6 +493,73 @@ async def test_fuzzy_threshold_shortcuts_adjust_value(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_copy_selection_button_sends_terminal_clipboard_text(
+    tmp_path,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    copied: dict[str, str] = {}
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.last_rendered_lines = ["alpha", "beta"]
+        app._show_step_results()
+        await pilot.pause()
+
+        monkeypatch.setattr(app, "_get_selected_text", lambda: "alpha")
+
+        def _fake_copy(text: str) -> str:
+            copied["text"] = text
+            return "terminal"
+
+        monkeypatch.setattr(app, "_copy_text_to_terminal_clipboard", _fake_copy)
+        copy_button = app.wizard.query_one("#copy-selection", Button)
+        app.on_button_pressed(Button.Pressed(copy_button))
+        await pilot.pause()
+
+        status = app.wizard.query_one("#status", Static)
+        assert copied["text"] == "alpha"
+        assert "Sent selection to terminal clipboard" in str(status.render())
+
+
+@pytest.mark.asyncio
+async def test_copy_all_button_sends_terminal_clipboard_text(
+    tmp_path,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    copied: dict[str, str] = {}
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app.selected_logs = infos[:1]
+        app.last_rendered_lines = ["alpha", "beta"]
+        app._show_step_results()
+        await pilot.pause()
+
+        def _fake_copy(text: str) -> str:
+            copied["text"] = text
+            return "terminal"
+
+        monkeypatch.setattr(app, "_copy_text_to_terminal_clipboard", _fake_copy)
+
+        copy_button = app.wizard.query_one("#copy-all", Button)
+        app.on_button_pressed(Button.Pressed(copy_button))
+        await pilot.pause()
+
+        status = app.wizard.query_one("#status", Static)
+        assert copied["text"] == "alpha\nbeta"
+        assert "Sent full results to terminal clipboard" in str(status.render())
+
+
+@pytest.mark.asyncio
 async def test_search_step_cycles_result_mode_and_builds_request(tmp_path):
     logs_dir = tmp_path / "logs"
     staging_dir = tmp_path / "staging"
