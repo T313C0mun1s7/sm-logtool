@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import inspect
 from collections import defaultdict
 from concurrent.futures import (
@@ -19,7 +20,7 @@ import multiprocessing as mp
 import os
 from pathlib import Path
 import time
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Mapping, Optional
 
 from textual import events
 from textual.app import App, ComposeResult
@@ -849,6 +850,7 @@ _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
 _BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
+_OSC52_MAX_TEXT_BYTES = 75000
 
 
 def _search_single_target(
@@ -916,6 +918,21 @@ def _progress_bar(
     return (
         f"[{'=' * (filled - 1)}>{'.' * (safe_width - filled)}]"
     )
+
+
+def _osc52_sequence(
+    payload_base64: str,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    active_env = os.environ if env is None else env
+    osc = f"\x1b]52;c;{payload_base64}\x1b\\"
+    if active_env.get("TMUX"):
+        return f"\x1bPtmux;\x1b{osc}\x1b\\"
+    term = active_env.get("TERM", "")
+    if "screen" in term:
+        return f"\x1bP{osc}\x1b\\"
+    return osc
 
 
 def _search_targets_in_process_pool(
@@ -3406,8 +3423,16 @@ class LogBrowser(App):
 
     def _copy_text_to_terminal_clipboard(self, text: str) -> str:
         driver = getattr(self, "_driver", None)
-        self.copy_to_clipboard(text)
         if driver is None:
+            return "unavailable"
+        payload = text.encode("utf-8")
+        if len(payload) > _OSC52_MAX_TEXT_BYTES:
+            return "too-large"
+        encoded = base64.b64encode(payload).decode("ascii")
+        sequence = _osc52_sequence(encoded)
+        try:
+            driver.write(sequence)
+        except Exception:
             return "unavailable"
         return "terminal"
 
@@ -3415,6 +3440,11 @@ class LogBrowser(App):
         target = "selection" if selection_only else "full results"
         if mode == "terminal":
             return f"Sent {target} to terminal clipboard (OSC 52)."
+        if mode == "too-large":
+            return (
+                f"{target.capitalize()} is too large for terminal clipboard "
+                "transfer (OSC 52 payload limit)."
+            )
         return (
             "Clipboard is unavailable in this session. Use a terminal "
             "with OSC 52 clipboard support."

@@ -512,10 +512,11 @@ async def test_copy_selection_button_sends_terminal_clipboard_text(
 
         monkeypatch.setattr(app, "_get_selected_text", lambda: "alpha")
 
-        def _fake_copy(text: str) -> None:
+        def _fake_copy(text: str) -> str:
             copied["text"] = text
+            return "terminal"
 
-        monkeypatch.setattr(app, "copy_to_clipboard", _fake_copy)
+        monkeypatch.setattr(app, "_copy_text_to_terminal_clipboard", _fake_copy)
         copy_button = app.wizard.query_one("#copy-selection", Button)
         app.on_button_pressed(Button.Pressed(copy_button))
         await pilot.pause()
@@ -543,10 +544,11 @@ async def test_copy_all_button_sends_terminal_clipboard_text(
         app._show_step_results()
         await pilot.pause()
 
-        def _fake_copy(text: str) -> None:
+        def _fake_copy(text: str) -> str:
             copied["text"] = text
+            return "terminal"
 
-        monkeypatch.setattr(app, "copy_to_clipboard", _fake_copy)
+        monkeypatch.setattr(app, "_copy_text_to_terminal_clipboard", _fake_copy)
 
         copy_button = app.wizard.query_one("#copy-all", Button)
         app.on_button_pressed(Button.Pressed(copy_button))
