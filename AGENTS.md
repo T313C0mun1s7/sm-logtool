@@ -57,6 +57,8 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
   feature branch so protected branches stay clean and reviewable.
 - When creating a new branch, ensure it is based on `origin/main`. If `origin`
   is not on `main`, stop and confirm with the user before continuing.
+- Do not add ad-hoc release-note files under `docs/` unless explicitly requested.
+  Provide release notes directly to the user or in PR/release metadata by default.
 
 ## Security & Configuration Tips
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
