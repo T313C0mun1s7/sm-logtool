@@ -9,6 +9,7 @@ import shutil
 import subprocess
 
 ClipboardCommand = tuple[str, ...]
+CLIPBOARD_COMMAND_TIMEOUT_SECONDS = 0.5
 
 
 def copy_text_to_system_clipboard(
@@ -53,10 +54,12 @@ def _run_clipboard_command(
             command,
             input=text,
             text=True,
-            capture_output=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             check=False,
             env=dict(env),
+            timeout=CLIPBOARD_COMMAND_TIMEOUT_SECONDS,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         return False
     return completed.returncode == 0

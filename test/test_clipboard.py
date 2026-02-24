@@ -45,3 +45,29 @@ def test_copy_text_to_system_clipboard_returns_none_without_backend(
         env={},
     )
     assert backend is None
+
+
+def test_run_clipboard_command_returns_false_on_timeout(monkeypatch):
+    monkeypatch.setattr(
+        clipboard_module.shutil,
+        "which",
+        lambda _name: "/usr/bin/wl-copy",
+    )
+
+    def _timeout_run(*_args, **_kwargs):
+        raise clipboard_module.subprocess.TimeoutExpired(
+            cmd=("wl-copy",),
+            timeout=clipboard_module.CLIPBOARD_COMMAND_TIMEOUT_SECONDS,
+        )
+
+    monkeypatch.setattr(
+        clipboard_module.subprocess,
+        "run",
+        _timeout_run,
+    )
+    ok = clipboard_module._run_clipboard_command(
+        ("wl-copy",),
+        "demo",
+        {},
+    )
+    assert ok is False
