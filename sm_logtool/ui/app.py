@@ -3426,24 +3426,24 @@ class LogBrowser(App):
         if driver is None:
             return "unavailable"
         payload = text.encode("utf-8")
-        if len(payload) > _OSC52_MAX_TEXT_BYTES:
-            return "too-large"
         encoded = base64.b64encode(payload).decode("ascii")
         sequence = _osc52_sequence(encoded)
         try:
             driver.write(sequence)
         except Exception:
             return "unavailable"
+        if len(payload) > _OSC52_MAX_TEXT_BYTES:
+            return "terminal-large"
         return "terminal"
 
     def _copy_status_message(self, *, selection_only: bool, mode: str) -> str:
         target = "selection" if selection_only else "full results"
         if mode == "terminal":
             return f"Sent {target} to terminal clipboard (OSC 52)."
-        if mode == "too-large":
+        if mode == "terminal-large":
             return (
-                f"{target.capitalize()} is too large for terminal clipboard "
-                "transfer (OSC 52 payload limit)."
+                f"Sent {target} to terminal clipboard (OSC 52). "
+                "Payload is large and may be limited by your terminal."
             )
         return (
             "Clipboard is unavailable in this session. Use a terminal "

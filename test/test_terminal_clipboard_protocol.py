@@ -20,9 +20,12 @@ def test_osc52_sequence_wraps_for_screen():
     assert sequence.endswith("\x1b\\\x1b\\")
 
 
-def test_copy_status_message_for_too_large_payload(tmp_path):
+def test_copy_status_message_for_large_payload(tmp_path):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
     app = LogBrowser(logs_dir=logs_dir)
-    message = app._copy_status_message(selection_only=True, mode="too-large")
-    assert "too large" in message
+    message = app._copy_status_message(
+        selection_only=True,
+        mode="terminal-large",
+    )
+    assert "Payload is large" in message
