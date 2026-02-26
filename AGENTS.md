@@ -62,6 +62,29 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
 - Use `docs/RELEASE_NOTES_TEMPLATE.md` as the standard format when drafting
   release notes for publishing.
 
+## Standards Audit Backlog (2026-02-26)
+- [ ] [Issue #61](https://github.com/T313C0mun1s7/sm-logtool/issues/61):
+  Ensure unittest discovery runs the real test suite.
+- [ ] [Issue #62](https://github.com/T313C0mun1s7/sm-logtool/issues/62):
+  Refactor `sm_logtool/ui/app.py` into smaller units and reduce nesting.
+- [ ] [Issue #63](https://github.com/T313C0mun1s7/sm-logtool/issues/63):
+  Refactor CLI parser/search orchestration for maintainability.
+- [ ] [Issue #64](https://github.com/T313C0mun1s7/sm-logtool/issues/64):
+  Close public API docstring gaps and add enforcement.
+- [ ] [Issue #65](https://github.com/T313C0mun1s7/sm-logtool/issues/65):
+  Enforce the 79-character line-length policy.
+- [ ] [Issue #66](https://github.com/T313C0mun1s7/sm-logtool/issues/66):
+  Remove tracked environment-specific config and document sample config
+  workflow.
+- [ ] [Issue #67](https://github.com/T313C0mun1s7/sm-logtool/issues/67):
+  Optimize live search preview rendering to reduce redraw churn.
+- [ ] [Issue #68](https://github.com/T313C0mun1s7/sm-logtool/issues/68):
+  Deduplicate ungrouped log-kind mapping across modules.
+- [ ] [Issue #69](https://github.com/T313C0mun1s7/sm-logtool/issues/69):
+  Move pytest tooling out of runtime dependencies.
+- [ ] [Issue #70](https://github.com/T313C0mun1s7/sm-logtool/issues/70):
+  Add standards-compliance checks to CI.
+
 ## Security & Configuration Tips
 Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
 The default runtime config path is per-user: `~/.config/sm-logtool/config.yaml`.
