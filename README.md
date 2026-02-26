@@ -310,6 +310,12 @@ Log discovery expects SmarterMail-style names such as:
 
 ## Development
 
+Install with test tooling:
+
+```bash
+python -m pip install -e ".[test]"
+```
+
 Run tests with both frameworks used in this repository:
 
 ```bash

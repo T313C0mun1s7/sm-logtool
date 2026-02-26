@@ -22,11 +22,13 @@ dependencies = [
   "textual>=0.55",
   "rich>=13.0",
   "PyYAML>=6.0",
-  "pytest>=8",
-  "pytest-asyncio>=0.23",
 ]
 
 [project.optional-dependencies]
+test = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+]
 speedups = [
   "rapidfuzz>=3.0",
 ]

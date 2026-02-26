@@ -41,9 +41,9 @@ Thank you for considering contributing to the **SmarterMail Log Tool** project! 
      python -m venv .venv
      source .venv/bin/activate
      ```
-   - Install the project in editable mode with its dependencies:
+   - Install the project in editable mode with test dependencies:
      ```bash
-     python -m pip install -e .
+     python -m pip install -e ".[test]"
      ```
 
 3. **Create a New Branch**:

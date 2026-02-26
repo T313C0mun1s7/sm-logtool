@@ -8,7 +8,8 @@ park references in `docs/`.
 
 ## Build, Test, and Development Commands
 Create a venv (`python -m venv .venv && source .venv/bin/activate`) and
-install with `python -m pip install -e .`. Add pytest if needed, run
+install with `python -m pip install -e ".[test]"` for contributor test
+runs (or `python -m pip install -e .` for runtime-only installs). Run
 `pytest -q`, and mirror CI with `python -m unittest discover test`. Launch the
 TUI via `python -m sm_logtool.cli --logs-dir /var/lib/smartermail/Logs` or aim
 it at your staging folder.
