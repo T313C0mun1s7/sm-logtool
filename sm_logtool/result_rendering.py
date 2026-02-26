@@ -5,43 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence
 
-from .log_kinds import (
-    KIND_ACTIVATION,
-    KIND_ADMINISTRATIVE,
-    KIND_AUTOCLEANFOLDERS,
-    KIND_CALENDARS,
-    KIND_CONTENTFILTER,
-    KIND_EVENT,
-    KIND_GENERALERRORS,
-    KIND_INDEXING,
-    KIND_LDAP,
-    KIND_MAINTENANCE,
-    KIND_PROFILER,
-    KIND_SPAMCHECKS,
-    KIND_WEBDAV,
-    normalize_kind,
-)
+from .log_kinds import is_entry_render_kind
 from .result_modes import normalize_result_mode
 from .result_modes import RESULT_MODE_MATCHING_ROWS
 from .result_modes import RESULT_MODE_RELATED_TRAFFIC
 from .result_formatting import collect_widths, format_conversation_lines
 from .search import SmtpSearchResult
-
-UNGROUPED_KINDS = {
-    KIND_ADMINISTRATIVE,
-    KIND_ACTIVATION,
-    KIND_AUTOCLEANFOLDERS,
-    KIND_CALENDARS,
-    KIND_CONTENTFILTER,
-    KIND_EVENT,
-    KIND_GENERALERRORS,
-    KIND_INDEXING,
-    KIND_LDAP,
-    KIND_MAINTENANCE,
-    KIND_PROFILER,
-    KIND_SPAMCHECKS,
-    KIND_WEBDAV,
-}
 
 
 def render_search_results(
@@ -57,8 +26,7 @@ def render_search_results(
     resolved_result_mode = normalize_result_mode(result_mode)
 
     rendered_lines: list[str] = []
-    kind_key = normalize_kind(kind)
-    is_ungrouped = kind_key in UNGROUPED_KINDS
+    is_ungrouped = is_entry_render_kind(kind)
     label = "entry" if is_ungrouped else "conversation"
 
     for result, target in zip(results, targets):

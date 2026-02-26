@@ -105,3 +105,35 @@ def test_render_matching_only_mode_for_delivery():
     assert any("matching row(s)" in line for line in lines)
     assert any("Delivery blocked by policy" in line for line in lines)
     assert not any("Queued for domain example.net" in line for line in lines)
+
+
+def test_render_related_mode_for_administrative_stays_entry_style():
+    result = SmtpSearchResult(
+        term="imap",
+        log_path=Path("administrative.log"),
+        conversations=[
+            Conversation(
+                message_id="1.1.1.1 00:00:00",
+                lines=[
+                    "00:00:00 [1.1.1.1] IMAP Session started",
+                    "00:00:01 [1.1.1.1] IMAP Auth success",
+                ],
+                first_line_number=1,
+            )
+        ],
+        total_lines=2,
+        orphan_matches=[],
+        matching_rows=[
+            (1, "00:00:00 [1.1.1.1] IMAP Session started"),
+        ],
+    )
+
+    lines = render_search_results(
+        [result],
+        [Path("administrative.log")],
+        "administrative",
+        result_mode=RESULT_MODE_RELATED_TRAFFIC,
+    )
+
+    assert any("1 entry(s)" in line for line in lines)
+    assert not any("first seen on line" in line for line in lines)
