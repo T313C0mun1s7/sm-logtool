@@ -10,6 +10,8 @@ park references in `docs/`.
 Create a venv (`python -m venv .venv && source .venv/bin/activate`) and
 install with `python -m pip install -e ".[test]"` for contributor test
 runs (or `python -m pip install -e .` for runtime-only installs). Run
+`python -m pytest -q test/test_line_length_policy.py \
+test/test_public_docstrings.py` for fast standards checks, run
 `pytest -q`, and mirror CI with `python -m unittest discover test`. Launch the
 TUI via `python -m sm_logtool.cli --logs-dir /var/lib/smartermail/Logs` or aim
 it at your staging folder.

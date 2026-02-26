@@ -59,6 +59,8 @@ Thank you for considering contributing to the **SmarterMail Log Tool** project! 
 5. **Run Tests**:
    - Before submitting your changes, ensure all tests pass:
      ```bash
+     python -m pytest -q test/test_line_length_policy.py \
+       test/test_public_docstrings.py
      pytest -q
      python -m unittest discover test
      ```
