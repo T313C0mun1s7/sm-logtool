@@ -13,6 +13,7 @@ import sys
 
 
 EXPECTED_THEME = "Cyberdark"
+SAMPLE_CONFIG_PATH = Path("config.example.yaml")
 
 
 def _load_default_theme_constant(path: Path) -> str:
@@ -74,10 +75,10 @@ def main() -> int:
             f"is {module_theme!r}, expected {EXPECTED_THEME!r}."
         )
 
-    repo_theme = _load_top_level_scalar(Path("config.yaml"), "theme")
+    repo_theme = _load_top_level_scalar(SAMPLE_CONFIG_PATH, "theme")
     if repo_theme != EXPECTED_THEME:
         failures.append(
-            "config.yaml theme is "
+            f"{SAMPLE_CONFIG_PATH} theme is "
             f"{repo_theme!r}, expected {EXPECTED_THEME!r}."
         )
 
@@ -89,7 +90,8 @@ def main() -> int:
 
     print(
         "Release default checks passed: "
-        f"DEFAULT_THEME={module_theme!r}, config.yaml theme={repo_theme!r}."
+        f"DEFAULT_THEME={module_theme!r}, "
+        f"{SAMPLE_CONFIG_PATH} theme={repo_theme!r}."
     )
     return 0
 

@@ -1,3 +1,5 @@
+# Sample sm-logtool runtime config.
+# Copy to ~/.config/sm-logtool/config.yaml or pass with --config.
 logs_dir: /var/lib/smartermail/Logs
 staging_dir: /var/tmp/sm-logtool/logs
 default_kind: smtp
