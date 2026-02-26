@@ -29,6 +29,9 @@ test = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
 ]
+lint = [
+  "ruff>=0.6",
+]
 speedups = [
   "rapidfuzz>=3.0",
 ]
@@ -43,3 +46,10 @@ include = ["sm_logtool*"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["test"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["F", "E9"]
