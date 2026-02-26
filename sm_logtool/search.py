@@ -13,24 +13,13 @@ import time
 from typing import Callable, List, Protocol, Tuple
 
 from .log_kinds import (
-    KIND_ACTIVATION,
     KIND_ADMINISTRATIVE,
-    KIND_AUTOCLEANFOLDERS,
-    KIND_CALENDARS,
-    KIND_CONTENTFILTER,
     KIND_DELIVERY,
-    KIND_EVENT,
-    KIND_GENERALERRORS,
     KIND_IMAP,
     KIND_IMAP_RETRIEVAL,
-    KIND_INDEXING,
-    KIND_LDAP,
-    KIND_MAINTENANCE,
     KIND_POP,
-    KIND_PROFILER,
     KIND_SMTP,
-    KIND_SPAMCHECKS,
-    KIND_WEBDAV,
+    is_search_ungrouped_kind,
     normalize_kind,
 )
 from .log_parsers import (
@@ -1648,20 +1637,7 @@ def _owner_strategy_for_kind(
         return "admin", _admin_owner_id
     if kind_key == KIND_IMAP_RETRIEVAL:
         return "imap-retrieval", _imap_retrieval_owner_id
-    if kind_key in {
-        KIND_ACTIVATION,
-        KIND_AUTOCLEANFOLDERS,
-        KIND_CALENDARS,
-        KIND_CONTENTFILTER,
-        KIND_EVENT,
-        KIND_GENERALERRORS,
-        KIND_INDEXING,
-        KIND_LDAP,
-        KIND_MAINTENANCE,
-        KIND_PROFILER,
-        KIND_SPAMCHECKS,
-        KIND_WEBDAV,
-    }:
+    if is_search_ungrouped_kind(kind_key):
         return "ungrouped", None
     raise ValueError(f"Unsupported log kind: {kind}")
 
@@ -1757,19 +1733,6 @@ def get_search_function(
         return search_admin_entries
     if kind_key == KIND_IMAP_RETRIEVAL:
         return search_imap_retrieval_entries
-    if kind_key in {
-        KIND_ACTIVATION,
-        KIND_AUTOCLEANFOLDERS,
-        KIND_CALENDARS,
-        KIND_CONTENTFILTER,
-        KIND_EVENT,
-        KIND_GENERALERRORS,
-        KIND_INDEXING,
-        KIND_LDAP,
-        KIND_MAINTENANCE,
-        KIND_PROFILER,
-        KIND_SPAMCHECKS,
-        KIND_WEBDAV,
-    }:
+    if is_search_ungrouped_kind(kind_key):
         return search_ungrouped_entries
     return None

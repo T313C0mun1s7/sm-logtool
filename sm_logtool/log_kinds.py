@@ -44,6 +44,26 @@ SUPPORTED_KINDS: Final[tuple[str, ...]] = (
     KIND_WEBDAV,
 )
 
+SEARCH_UNGROUPED_KINDS: Final[tuple[str, ...]] = (
+    KIND_ACTIVATION,
+    KIND_AUTOCLEANFOLDERS,
+    KIND_CALENDARS,
+    KIND_CONTENTFILTER,
+    KIND_EVENT,
+    KIND_GENERALERRORS,
+    KIND_INDEXING,
+    KIND_LDAP,
+    KIND_MAINTENANCE,
+    KIND_PROFILER,
+    KIND_SPAMCHECKS,
+    KIND_WEBDAV,
+)
+
+ENTRY_RENDER_KINDS: Final[tuple[str, ...]] = (
+    KIND_ADMINISTRATIVE,
+    *SEARCH_UNGROUPED_KINDS,
+)
+
 _KIND_ALIASES: Final[dict[str, str]] = {
     KIND_SMTP: KIND_SMTP,
     "smtplog": KIND_SMTP,
@@ -76,3 +96,15 @@ def normalize_kind(value: str) -> str:
 
     key = value.strip().lower()
     return _KIND_ALIASES.get(key, key)
+
+
+def is_search_ungrouped_kind(value: str) -> bool:
+    """Return whether ``value`` uses ungrouped search entry strategy."""
+
+    return normalize_kind(value) in SEARCH_UNGROUPED_KINDS
+
+
+def is_entry_render_kind(value: str) -> bool:
+    """Return whether ``value`` renders as entry-style results."""
+
+    return normalize_kind(value) in ENTRY_RENDER_KINDS

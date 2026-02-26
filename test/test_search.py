@@ -675,3 +675,17 @@ def test_search_match_callback_works_with_index_cache(tmp_path):
     assert hits == [
         (2, "00:00:01 [1.1.1.1][ABC123] Second line"),
     ]
+
+
+def test_get_search_function_maps_administrative_to_admin_search() -> None:
+    assert (
+        search.get_search_function("administrative")
+        is search.search_admin_entries
+    )
+
+
+def test_get_search_function_maps_activation_to_ungrouped_search() -> None:
+    assert (
+        search.get_search_function("activation")
+        is search.search_ungrouped_entries
+    )
