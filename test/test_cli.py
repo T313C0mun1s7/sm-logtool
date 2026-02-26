@@ -161,6 +161,78 @@ def test_run_themes_ensures_default_theme_dirs(tmp_path, monkeypatch):
     assert captured["quantize_ansi256"] is True
 
 
+def test_run_search_prunes_staging_on_startup_and_quit(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir()
+    staging_dir.mkdir()
+    phases: list[str] = []
+
+    def fake_prune(path: Path, *, phase: str) -> None:
+        assert path == staging_dir
+        phases.append(phase)
+
+    monkeypatch.setattr(cli, "_prune_staging_dir_for_phase", fake_prune)
+    monkeypatch.setattr(cli, "_run_search_flow", lambda _args, _ctx: 0)
+
+    args = argparse.Namespace(
+        list_kinds=False,
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+
+    assert exit_code == 0
+    assert phases == ["startup", "quit"]
+
+
+def test_run_search_prunes_staging_even_on_runtime_error(
+    tmp_path,
+    monkeypatch,
+):
+    logs_dir = tmp_path / "logs"
+    staging_dir = tmp_path / "staging"
+    logs_dir.mkdir()
+    staging_dir.mkdir()
+    phases: list[str] = []
+
+    def fake_prune(path: Path, *, phase: str) -> None:
+        assert path == staging_dir
+        phases.append(phase)
+
+    def raise_runtime_error(_args, _ctx):  # noqa: ANN001
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(cli, "_prune_staging_dir_for_phase", fake_prune)
+    monkeypatch.setattr(cli, "_run_search_flow", raise_runtime_error)
+
+    args = argparse.Namespace(
+        list_kinds=False,
+        logs_dir=None,
+        staging_dir=None,
+        kind=None,
+    )
+    args._config = AppConfig(
+        path=Path("config.yaml"),
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        default_kind="smtp",
+    )
+
+    exit_code = cli._run_search(args)
+
+    assert exit_code == 1
+    assert phases == ["startup", "quit"]
+
+
 def test_scan_logs_handles_missing_directory(tmp_path):
     missing_dir = tmp_path / "missing"
 

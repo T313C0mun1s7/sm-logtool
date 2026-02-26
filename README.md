@@ -109,6 +109,8 @@ cp config.example.yaml ~/.config/sm-logtool/config.yaml
 ```
 
 If `staging_dir` does not exist yet, the app creates it automatically.
+On startup and quit, staged files older than 14 days are pruned
+automatically.
 
 Default config location is per-user:
 
