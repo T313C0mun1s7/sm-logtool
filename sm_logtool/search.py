@@ -1667,7 +1667,10 @@ def _owner_strategy_for_kind(
 
 
 def has_search_index(log_path: Path, kind: str) -> bool:
-    """Return whether an owner index is cached for ``log_path`` and ``kind``."""
+    """Return whether an owner index is cached.
+
+    The cache key is scoped by ``log_path`` and ``kind``.
+    """
 
     owner_key, _owner_for_line = _owner_strategy_for_kind(kind)
     cache_key, _signature = _owner_index_cache_key(log_path, owner_key)

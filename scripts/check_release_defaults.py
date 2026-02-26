@@ -77,7 +77,8 @@ def main() -> int:
     repo_theme = _load_top_level_scalar(Path("config.yaml"), "theme")
     if repo_theme != EXPECTED_THEME:
         failures.append(
-            f"config.yaml theme is {repo_theme!r}, expected {EXPECTED_THEME!r}."
+            "config.yaml theme is "
+            f"{repo_theme!r}, expected {EXPECTED_THEME!r}."
         )
 
     if failures:

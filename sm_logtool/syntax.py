@@ -291,7 +291,9 @@ def _response_code_spans(line: str, offset: int) -> list[HighlightSpan]:
             continue
         start = payload_start + code_match.start(1)
         end = payload_start + code_match.end(1)
-        spans.append(HighlightSpan(offset + start, offset + end, TOKEN_RESPONSE))
+        spans.append(
+            HighlightSpan(offset + start, offset + end, TOKEN_RESPONSE),
+        )
     return spans
 
 
