@@ -19,6 +19,7 @@ from itertools import groupby
 import multiprocessing as mp
 import os
 from pathlib import Path
+import sys
 import time
 from typing import Callable, Dict, Iterable, List, Mapping, Optional
 
@@ -78,7 +79,12 @@ from ..search import has_search_index
 from ..search import prime_search_index
 from ..search_planning import choose_search_execution_plan
 from ..syntax import spans_for_line
-from ..staging import stage_log
+from ..staging import (
+    DEFAULT_STAGING_RETENTION_DAYS,
+    prune_staging_dir,
+    prune_warning_lines,
+    stage_log,
+)
 from .themes import CYBERDARK_THEME
 from .themes import CYBER_THEME_VARIABLE_DEFAULTS
 from .themes import FIRST_PARTY_APP_THEMES
@@ -3872,6 +3878,7 @@ def run(
 ) -> int:
     """Run the Textual app. Returns an exit code."""
 
+    _run_staging_prune(staging_dir, phase="startup")
     app = LogBrowser(
         logs_dir=logs_dir,
         staging_dir=staging_dir,
@@ -3885,5 +3892,23 @@ def run(
         theme_overrides=theme_overrides,
         persist_theme_changes=persist_theme_changes,
     )
-    app.run()
+    try:
+        app.run()
+    finally:
+        _run_staging_prune(staging_dir, phase="quit")
     return 0
+
+
+def _run_staging_prune(
+    staging_dir: Path | None,
+    *,
+    phase: str,
+) -> None:
+    if staging_dir is None:
+        return
+    report = prune_staging_dir(
+        staging_dir,
+        retention_days=DEFAULT_STAGING_RETENTION_DAYS,
+    )
+    for message in prune_warning_lines(report):
+        print(f"Staging cleanup warning ({phase}): {message}", file=sys.stderr)

@@ -42,7 +42,12 @@ from .search_modes import (
     normalize_search_mode,
 )
 from .search import get_search_function
-from .staging import stage_log
+from .staging import (
+    DEFAULT_STAGING_RETENTION_DAYS,
+    prune_staging_dir,
+    prune_warning_lines,
+    stage_log,
+)
 from .ui.theme_importer import ensure_default_theme_dirs
 from .ui.theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 
@@ -419,13 +424,22 @@ def _run_search(args: argparse.Namespace) -> int:
         return _list_kinds()
 
     try:
-        outcome = _run_search_flow(args, config)
+        context = _resolve_search_context(args, config)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    _prune_staging_dir_for_phase(context.staging_dir, phase="startup")
+    try:
+        outcome = _run_search_flow(args, context)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    finally:
+        _prune_staging_dir_for_phase(context.staging_dir, phase="quit")
     if isinstance(outcome, int):
         return outcome
 
@@ -440,10 +454,9 @@ def _run_search(args: argparse.Namespace) -> int:
 
 def _run_search_flow(
     args: argparse.Namespace,
-    config: AppConfig,
+    context: _SearchContext,
 ) -> int | _SearchRunResult:
     options = _resolve_search_options(args)
-    context = _resolve_search_context(args, config)
     if args.list:
         return _list_logs(context.logs_dir, context.log_kind)
     term = _resolve_search_term(args)
@@ -473,6 +486,19 @@ def _run_search_flow(
         log_kind=context.log_kind,
         result_mode=options.result_mode,
     )
+
+
+def _prune_staging_dir_for_phase(
+    staging_dir: Path,
+    *,
+    phase: str,
+) -> None:
+    report = prune_staging_dir(
+        staging_dir,
+        retention_days=DEFAULT_STAGING_RETENTION_DAYS,
+    )
+    for message in prune_warning_lines(report):
+        print(f"Staging cleanup warning ({phase}): {message}", file=sys.stderr)
 
 
 def _resolve_search_options(args: argparse.Namespace) -> _SearchOptions:

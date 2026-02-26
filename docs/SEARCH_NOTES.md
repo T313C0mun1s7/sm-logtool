@@ -34,6 +34,7 @@ Search handlers currently exist for:
 - Search runs on staged copies so source logs stay untouched.
 - `.zip` inputs are extracted to staging before search.
 - Staging directories are created automatically if missing.
+- Staged files older than 14 days are pruned on app startup and quit.
 - Runtime config is per-user (`~/.config/sm-logtool/config.yaml`); use
   `config.example.yaml` as a local bootstrap template.
 

@@ -29,6 +29,60 @@ def write_sample_logs(root: Path) -> None:
     )
 
 
+def test_run_prunes_staging_on_startup_and_quit(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    staging_dir = tmp_path / "staging"
+    staging_dir.mkdir()
+    phases: list[str] = []
+
+    class FakeBrowser:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def run(self) -> None:
+            return None
+
+    def fake_prune(staging_path: Path | None, *, phase: str) -> None:
+        assert staging_path == staging_dir
+        phases.append(phase)
+
+    monkeypatch.setattr(ui_app_module, "_run_staging_prune", fake_prune)
+    monkeypatch.setattr(ui_app_module, "LogBrowser", FakeBrowser)
+
+    exit_code = ui_app_module.run(logs_dir, staging_dir=staging_dir)
+
+    assert exit_code == 0
+    assert phases == ["startup", "quit"]
+
+
+def test_run_prunes_staging_on_quit_after_tui_error(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    staging_dir = tmp_path / "staging"
+    staging_dir.mkdir()
+    phases: list[str] = []
+
+    class FakeBrowser:
+        def __init__(self, **_kwargs: object) -> None:
+            return None
+
+        def run(self) -> None:
+            raise RuntimeError("boom")
+
+    def fake_prune(staging_path: Path | None, *, phase: str) -> None:
+        assert staging_path == staging_dir
+        phases.append(phase)
+
+    monkeypatch.setattr(ui_app_module, "_run_staging_prune", fake_prune)
+    monkeypatch.setattr(ui_app_module, "LogBrowser", FakeBrowser)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        ui_app_module.run(logs_dir, staging_dir=staging_dir)
+
+    assert phases == ["startup", "quit"]
+
+
 def test_log_browser_loads_saved_converted_themes(tmp_path):
     source = tmp_path / "demo.colortheme"
     source.write_text(
