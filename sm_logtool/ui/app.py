@@ -755,6 +755,8 @@ class ContextMenuScreen(ModalScreen[str | None]):
 
 
 class TopActionPressed(Message):
+    """Event message emitted when a top action is triggered."""
+
     def __init__(self, sender: "TopAction", action: str) -> None:
         super().__init__()
         self.sender = sender
@@ -817,6 +819,8 @@ class TopAction(Static):
 
 
 class WizardStep(Enum):
+    """Wizard stages for the log-browser workflow."""
+
     KIND = auto()
     DATE = auto()
     SEARCH = auto()
@@ -1109,6 +1113,8 @@ def _search_targets_in_thread_pool(
 
 
 class KindListItem(ListItem):
+    """Selectable list item representing a log kind."""
+
     def __init__(self, kind: str) -> None:
         self.label_widget = Static(kind, classes="label")
         super().__init__(self.label_widget)
@@ -1138,6 +1144,8 @@ class KindListView(ListView):
 
 
 class DateListItem(ListItem):
+    """Selectable list item representing a single dated log file."""
+
     def __init__(
         self,
         info: LogFileInfo,
@@ -1177,6 +1185,8 @@ class DateListItem(ListItem):
 
 
 class DateSelectionChanged(Message):
+    """Event message emitted when selected date rows change."""
+
     def __init__(
         self,
         sender: "DateListView",
@@ -1188,6 +1198,8 @@ class DateSelectionChanged(Message):
 
 
 class WizardBody(Vertical):
+    """Root container for wizard step content and shortcuts."""
+
     can_focus = True
     BINDINGS = [
         Binding(
@@ -1252,6 +1264,8 @@ class WizardBody(Vertical):
 
 
 class SearchInput(Input, inherit_bindings=False):
+    """Search input widget with custom key bindings."""
+
     BINDINGS = [
         Binding("left", "cursor_left", show=False),
         Binding("right", "cursor_right", show=False),
@@ -1264,6 +1278,8 @@ class SearchInput(Input, inherit_bindings=False):
 
 
 class MnemonicFooterKey(FooterKey):
+    """Footer key renderer that bolds mnemonic characters."""
+
     def __init__(
         self,
         *args: object,
@@ -1313,6 +1329,8 @@ class MnemonicFooterKey(FooterKey):
 
 
 class MenuFooter(Footer):
+    """Footer variant with mnemonic-aware key labels."""
+
     def _mnemonic_index(self, binding: Binding) -> int | None:
         description = binding.description
         if not description:
@@ -1539,6 +1557,8 @@ class DateListView(ListView):
 
     @property
     def selected_infos(self) -> list[LogFileInfo]:
+        """Return currently selected log file infos in list order."""
+
         infos: list[LogFileInfo] = []
         for idx, child in enumerate(self.children):
             if not isinstance(child, DateListItem):

@@ -109,10 +109,14 @@ class SmtpSearchResult:
 
     @property
     def total_conversations(self) -> int:
+        """Return the number of grouped conversations in ``conversations``."""
+
         return len(self.conversations)
 
 
 class SearchFunction(Protocol):
+    """Callable signature used by all search handlers."""
+
     def __call__(
         self,
         log_path: Path,
@@ -448,6 +452,8 @@ def search_ungrouped_entries(
 
 
 def normalize_materialization_mode(value: str) -> str:
+    """Normalize and validate grouped-search materialization strategy."""
+
     mode = value.strip().lower()
     if mode in SUPPORTED_MATERIALIZATION_MODES:
         return mode
@@ -1661,12 +1667,16 @@ def _owner_strategy_for_kind(
 
 
 def has_search_index(log_path: Path, kind: str) -> bool:
+    """Return whether an owner index is cached for ``log_path`` and ``kind``."""
+
     owner_key, _owner_for_line = _owner_strategy_for_kind(kind)
     cache_key, _signature = _owner_index_cache_key(log_path, owner_key)
     return _lookup_owner_line_index(cache_key) is not None
 
 
 def prime_search_index(log_path: Path, kind: str) -> None:
+    """Build and cache a search owner index for ``log_path`` and ``kind``."""
+
     owner_key, owner_for_line = _owner_strategy_for_kind(kind)
     cache_key, signature = _owner_index_cache_key(log_path, owner_key)
     if _lookup_owner_line_index(cache_key) is not None:

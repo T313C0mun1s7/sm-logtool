@@ -32,6 +32,8 @@ class LogFileInfo:
 
     @property
     def base_name(self) -> str:
+        """Return filename without a trailing ``.zip`` wrapper."""
+
         return self.path.name[:-4] if self.is_zipped else self.path.name
 
 

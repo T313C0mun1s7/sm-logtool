@@ -32,6 +32,8 @@ from .search import Conversation
 
 @dataclass
 class ColumnWidths:
+    """Maximum widths used to align parsed log columns."""
+
     time: int = 0
     ip: int = 0
     log_id: int = 0
