@@ -316,7 +316,14 @@ Install with test tooling:
 python -m pip install -e ".[test]"
 ```
 
-Run tests with both frameworks used in this repository:
+Run standards checks quickly:
+
+```bash
+python -m pytest -q test/test_line_length_policy.py \
+  test/test_public_docstrings.py
+```
+
+Run the full test suite with both frameworks used in this repository:
 
 ```bash
 pytest -q
