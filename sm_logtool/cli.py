@@ -6,6 +6,7 @@ Provides a TUI browser (`browse`) and a search workflow (`search`).
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import metadata
 import os
@@ -730,7 +731,14 @@ def _normalize_path_values(values: object) -> list[Path]:
         return []
     if isinstance(values, Path):
         return [values]
-    return list(values)
+    if not isinstance(values, Iterable):
+        raise TypeError("Expected iterable path values.")
+    output: list[Path] = []
+    for value in values:
+        if not isinstance(value, Path):
+            raise TypeError("Expected Path values.")
+        output.append(value)
+    return output
 
 
 def _normalize_text_values(values: object) -> list[str]:
@@ -738,7 +746,14 @@ def _normalize_text_values(values: object) -> list[str]:
         return []
     if isinstance(values, str):
         return [values]
-    return list(values)
+    if not isinstance(values, Iterable):
+        raise TypeError("Expected iterable text values.")
+    output: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise TypeError("Expected string values.")
+        output.append(value)
+    return output
 
 
 def _search_help_epilog() -> str:

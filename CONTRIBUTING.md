@@ -41,9 +41,10 @@ Thank you for considering contributing to the **SmarterMail Log Tool** project! 
      python -m venv .venv
      source .venv/bin/activate
      ```
-   - Install the project in editable mode with test and lint dependencies:
+   - Install the project in editable mode with test, lint, and type-check
+     dependencies:
      ```bash
-     python -m pip install -e ".[test,lint]"
+     python -m pip install -e ".[test,lint,typecheck]"
      ```
 
 3. **Create a New Branch**:
@@ -60,6 +61,7 @@ Thank you for considering contributing to the **SmarterMail Log Tool** project! 
    - Before submitting your changes, ensure all tests pass:
      ```bash
      python -m ruff check .
+     python -m mypy sm_logtool
      python -m pytest -q test/test_line_length_policy.py \
        test/test_public_docstrings.py
      pytest -q
