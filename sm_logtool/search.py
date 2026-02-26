@@ -36,11 +36,15 @@ from .search_modes import (
     wildcard_to_regex,
 )
 
-_rapidfuzz_fuzz: Any
-try:
-    from rapidfuzz import fuzz as _rapidfuzz_fuzz
-except Exception:  # pragma: no cover - optional dependency
-    _rapidfuzz_fuzz = None
+def _load_rapidfuzz_fuzz() -> Any:
+    try:
+        from rapidfuzz import fuzz
+    except Exception:  # pragma: no cover - optional dependency
+        return None
+    return fuzz
+
+
+_rapidfuzz_fuzz: Any = _load_rapidfuzz_fuzz()
 
 
 _FUZZY_ANCHOR_LIMIT = 120
