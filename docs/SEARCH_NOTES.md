@@ -114,6 +114,35 @@ Search handlers currently exist for:
 - [x] Improve large-log performance and responsiveness (progress feedback,
   background work, reduced memory footprint, index reuse).
 
+## Audit Backlog (2026-02-26)
+
+Cross-project tracking items from the standards audit:
+
+- [ ] [Issue #61](https://github.com/T313C0mun1s7/sm-logtool/issues/61):
+  ensure unittest discovery runs the real test suite.
+- [ ] [Issue #62](https://github.com/T313C0mun1s7/sm-logtool/issues/62):
+  refactor `sm_logtool/ui/app.py` into smaller units and reduce nesting.
+- [ ] [Issue #63](https://github.com/T313C0mun1s7/sm-logtool/issues/63):
+  refactor CLI parser/search orchestration for maintainability.
+- [ ] [Issue #64](https://github.com/T313C0mun1s7/sm-logtool/issues/64):
+  close public API docstring gaps and add enforcement.
+- [ ] [Issue #65](https://github.com/T313C0mun1s7/sm-logtool/issues/65):
+  enforce the 79-character line-length policy.
+- [ ] [Issue #66](https://github.com/T313C0mun1s7/sm-logtool/issues/66):
+  remove tracked environment-specific config and document sample config
+  workflow.
+
+Search-focused optimization and structure items:
+
+- [ ] [Issue #67](https://github.com/T313C0mun1s7/sm-logtool/issues/67):
+  optimize live search preview rendering to reduce redraw churn.
+- [ ] [Issue #68](https://github.com/T313C0mun1s7/sm-logtool/issues/68):
+  deduplicate ungrouped log-kind mapping across modules.
+- [ ] [Issue #69](https://github.com/T313C0mun1s7/sm-logtool/issues/69):
+  move pytest tooling out of runtime dependencies.
+- [ ] [Issue #70](https://github.com/T313C0mun1s7/sm-logtool/issues/70):
+  add standards-compliance checks to CI.
+
 ## Notes
 
 - Historical bash behavior is useful context, but current product behavior is
