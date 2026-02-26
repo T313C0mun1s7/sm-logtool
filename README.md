@@ -310,10 +310,10 @@ Log discovery expects SmarterMail-style names such as:
 
 ## Development
 
-Install with test tooling:
+Install with test and lint tooling:
 
 ```bash
-python -m pip install -e ".[test]"
+python -m pip install -e ".[test,lint]"
 ```
 
 Run standards checks quickly:
@@ -321,6 +321,12 @@ Run standards checks quickly:
 ```bash
 python -m pytest -q test/test_line_length_policy.py \
   test/test_public_docstrings.py
+```
+
+Run lint checks before running tests:
+
+```bash
+python -m ruff check .
 ```
 
 Run the full test suite with both frameworks used in this repository:
