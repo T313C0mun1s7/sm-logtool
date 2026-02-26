@@ -104,33 +104,33 @@ def format_conversation_lines(
 
 def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
     if kind_key in {KIND_SMTP, KIND_IMAP, KIND_POP}:
-        entry = parse_smtp_line(line)
-        if entry is None:
+        smtp_entry = parse_smtp_line(line)
+        if smtp_entry is None:
             return None
         return {
-            "time": entry.timestamp,
-            "ip": entry.ip,
-            "log_id": entry.log_id,
-            "message": entry.message,
+            "time": smtp_entry.timestamp,
+            "ip": smtp_entry.ip,
+            "log_id": smtp_entry.log_id,
+            "message": smtp_entry.message,
         }
     if kind_key == KIND_DELIVERY:
-        entry = parse_delivery_line(line)
-        if entry is None:
+        delivery_entry = parse_delivery_line(line)
+        if delivery_entry is None:
             return None
         return {
-            "time": entry.timestamp,
-            "log_id": entry.delivery_id,
-            "message": entry.message,
+            "time": delivery_entry.timestamp,
+            "log_id": delivery_entry.delivery_id,
+            "message": delivery_entry.message,
         }
     if kind_key == KIND_IMAP_RETRIEVAL:
-        entry = parse_imap_retrieval_line(line)
-        if entry is None:
+        retrieval_entry = parse_imap_retrieval_line(line)
+        if retrieval_entry is None:
             return None
         return {
-            "time": entry.timestamp,
-            "ip": entry.retrieval_id,
-            "log_id": entry.context,
-            "message": entry.message,
+            "time": retrieval_entry.timestamp,
+            "ip": retrieval_entry.retrieval_id,
+            "log_id": retrieval_entry.context,
+            "message": retrieval_entry.message,
         }
     if kind_key in {
         KIND_ADMINISTRATIVE,
@@ -138,15 +138,15 @@ def _parse_line(kind_key: str, line: str) -> dict[str, str] | None:
         KIND_INDEXING,
         KIND_WEBDAV,
     }:
-        entry = parse_bracket1_line(line)
-        if entry is None:
-            entry = parse_bracket1_trailing_time_line(line)
-        if entry is None:
+        bracket_entry = parse_bracket1_line(line)
+        if bracket_entry is None:
+            bracket_entry = parse_bracket1_trailing_time_line(line)
+        if bracket_entry is None:
             return None
         return {
-            "time": entry.timestamp,
-            "ip": entry.field1,
-            "message": entry.message,
+            "time": bracket_entry.timestamp,
+            "ip": bracket_entry.field1,
+            "message": bracket_entry.message,
         }
     return None
 

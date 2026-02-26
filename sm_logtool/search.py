@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 from threading import Lock
 import time
-from typing import Callable, List, Protocol, Tuple
+from typing import Any, Callable, List, Protocol, Tuple
 
 from .log_kinds import (
     KIND_ADMINISTRATIVE,
@@ -36,6 +36,7 @@ from .search_modes import (
     wildcard_to_regex,
 )
 
+_rapidfuzz_fuzz: Any
 try:
     from rapidfuzz import fuzz as _rapidfuzz_fuzz
 except Exception:  # pragma: no cover - optional dependency
@@ -1038,15 +1039,15 @@ def _search_grouped_single_pass(
                 current_id = None
             elif current_id is not None:
                 line_owner_id = current_id
-                conversation = builders.get(current_id)
-                if conversation is None:
-                    conversation = Conversation(
+                current_conversation = builders.get(current_id)
+                if current_conversation is None:
+                    current_conversation = Conversation(
                         message_id=current_id,
                         lines=[],
                         first_line_number=line_number,
                     )
-                    builders[current_id] = conversation
-                conversation.lines.append(line)
+                    builders[current_id] = current_conversation
+                current_conversation.lines.append(line)
 
             is_match = matcher(line)
             if is_match:
@@ -1262,15 +1263,15 @@ def _search_ungrouped_single_pass(
                 conversation.lines.append(line)
             elif current_id is not None:
                 line_owner_id = current_id
-                conversation = builders.get(current_id)
-                if conversation is None:
-                    conversation = Conversation(
+                current_conversation = builders.get(current_id)
+                if current_conversation is None:
+                    current_conversation = Conversation(
                         message_id=current_id,
                         lines=[],
                         first_line_number=line_number,
                     )
-                    builders[current_id] = conversation
-                conversation.lines.append(line)
+                    builders[current_id] = current_conversation
+                current_conversation.lines.append(line)
 
             is_match = matcher(line)
             if is_match:
