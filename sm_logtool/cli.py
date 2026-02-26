@@ -6,6 +6,7 @@ Provides a TUI browser (`browse`) and a search workflow (`search`).
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from importlib import metadata
 import os
 import textwrap
@@ -48,26 +49,45 @@ from .ui.theme_importer import SUPPORTED_THEME_MAPPING_PROFILES
 CONFIG_ATTR = "_config"
 
 
+@dataclass(frozen=True)
+class _SearchOptions:
+    mode: str
+    fuzzy_threshold: float
+    result_mode: str
+
+
+@dataclass(frozen=True)
+class _SearchContext:
+    logs_dir: Path
+    staging_dir: Path
+    log_kind: str
+
+
+@dataclass(frozen=True)
+class _SearchRunResult:
+    results: list
+    targets: list[Path]
+    log_kind: str
+    result_mode: str
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Create the top-level argument parser."""
 
+    parser = _build_root_parser()
+    subparsers = parser.add_subparsers(dest="command")
+    _add_browse_subcommand(subparsers)
+    _add_themes_subcommand(subparsers)
+    _add_search_subcommand(subparsers)
+    parser.set_defaults(command="browse", handler=_run_browse)
+    return parser
+
+
+def _build_root_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="sm-logtool",
-        description=textwrap.dedent(
-            """
-            Explore SmarterMail logs from your terminal.
-            The `browse` subcommand launches the Textual UI.
-            The `search` subcommand performs a console-based search across
-            supported SmarterMail log kinds.
-            The `themes` subcommand launches the visual theme converter.
-
-            Config-aware defaults:
-              - logs_dir and staging_dir come from config.yaml when present.
-              - Command-line flags override config values.
-            """
-        ).strip(),
+        description=_parser_description(),
     )
-
     parser.add_argument(
         "--config",
         type=Path,
@@ -82,9 +102,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"%(prog)s {_package_version()}",
     )
+    return parser
 
-    subparsers = parser.add_subparsers(dest="command")
 
+def _parser_description() -> str:
+    return textwrap.dedent(
+        """
+        Explore SmarterMail logs from your terminal.
+        The `browse` subcommand launches the Textual UI.
+        The `search` subcommand performs a console-based search across
+        supported SmarterMail log kinds.
+        The `themes` subcommand launches the visual theme converter.
+
+        Config-aware defaults:
+          - logs_dir and staging_dir come from config.yaml when present.
+          - Command-line flags override config values.
+        """
+    ).strip()
+
+
+def _add_browse_subcommand(subparsers: argparse._SubParsersAction) -> None:
     browse_parser = subparsers.add_parser(
         "browse",
         help="Launch the Textual UI",
@@ -100,6 +137,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     browse_parser.set_defaults(handler=_run_browse)
 
+
+def _add_themes_subcommand(subparsers: argparse._SubParsersAction) -> None:
     themes_parser = subparsers.add_parser(
         "themes",
         help="Open visual theme conversion utility",
@@ -136,7 +175,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     themes_parser.set_defaults(handler=_run_themes)
 
-    search_parser = subparsers.add_parser(
+
+def _add_search_subcommand(subparsers: argparse._SubParsersAction) -> None:
+    search_parser = _new_search_parser(subparsers)
+    _add_search_term_argument(search_parser)
+    _add_search_mode_arguments(search_parser)
+    _add_search_target_arguments(search_parser)
+    _add_search_control_arguments(search_parser)
+    search_parser.set_defaults(handler=_run_search)
+
+
+def _new_search_parser(
+    subparsers: argparse._SubParsersAction,
+) -> argparse.ArgumentParser:
+    return subparsers.add_parser(
         "search",
         help="Search SmarterMail logs for a term",
         description=(
@@ -145,6 +197,9 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=_search_help_epilog(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+
+def _add_search_term_argument(search_parser: argparse.ArgumentParser) -> None:
     search_parser.add_argument(
         "term",
         nargs="?",
@@ -154,6 +209,9 @@ def build_parser() -> argparse.ArgumentParser:
             "depends on --mode."
         ),
     )
+
+
+def _add_search_mode_arguments(search_parser: argparse.ArgumentParser) -> None:
     search_parser.add_argument(
         "--mode",
         choices=SUPPORTED_SEARCH_MODES,
@@ -184,6 +242,11 @@ def build_parser() -> argparse.ArgumentParser:
             "matching-only=show only directly matching lines."
         ),
     )
+
+
+def _add_search_target_arguments(
+    search_parser: argparse.ArgumentParser,
+) -> None:
     search_parser.add_argument(
         "--logs-dir",
         type=Path,
@@ -230,6 +293,11 @@ def build_parser() -> argparse.ArgumentParser:
             "multiple dates."
         ),
     )
+
+
+def _add_search_control_arguments(
+    search_parser: argparse.ArgumentParser,
+) -> None:
     search_parser.add_argument(
         "--list",
         action="store_true",
@@ -245,11 +313,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Treat the search term as case-sensitive.",
     )
-    search_parser.set_defaults(handler=_run_search)
-
-    parser.set_defaults(command="browse", handler=_run_browse)
-
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -355,96 +418,167 @@ def _run_search(args: argparse.Namespace) -> int:
         return _list_kinds()
 
     try:
-        search_mode = normalize_search_mode(
-            getattr(args, "mode", MODE_LITERAL),
-        )
+        outcome = _run_search_flow(args, config)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    try:
-        fuzzy_threshold = normalize_fuzzy_threshold(
-            getattr(args, "fuzzy_threshold", DEFAULT_FUZZY_THRESHOLD),
-        )
-    except ValueError as exc:
+    except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
-        return 2
-    try:
-        result_mode = normalize_result_mode(
-            getattr(args, "result_mode", RESULT_MODE_RELATED_TRAFFIC),
-        )
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    try:
-        logs_dir = _resolve_logs_dir(args, config)
-        staging_dir = _resolve_staging_dir(args, config)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    log_kind_value = args.kind or config.default_kind
-    if log_kind_value is None:
-        print("Log kind is required.", file=sys.stderr)
-        return 2
-    log_kind = normalize_kind(log_kind_value)
-
-    if args.list:
-        return _list_logs(logs_dir, log_kind)
-
-    if args.term is None:
-        print(
-            "Search term is required unless --list is supplied.",
-            file=sys.stderr,
-        )
-        return 2
-
-    search_fn = get_search_function(log_kind)
-    if search_fn is None:
-        print(f"Unsupported log kind: {log_kind}", file=sys.stderr)
-        return 2
-
-    try:
-        targets = _resolve_search_targets(args, logs_dir, log_kind)
-    except (UnknownLogDate, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    if not targets:
-        print(
-            f"No {log_kind} logs found in {logs_dir}",
-            file=sys.stderr,
-        )
-        return 2
-
-    results = []
-    for source_path in targets:
-        try:
-            staged = stage_log(
-                source_path,
-                staging_dir=staging_dir,
-            )
-        except Exception as exc:  # pragma: no cover - surface staging failure
-            print(f"Failed to stage log {source_path}: {exc}", file=sys.stderr)
-            return 1
-        try:
-            result = search_fn(
-                staged.staged_path,
-                args.term,
-                mode=search_mode,
-                fuzzy_threshold=fuzzy_threshold,
-                ignore_case=not args.case_sensitive,
-            )
-        except ValueError as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        results.append(result)
+        return 1
+    if isinstance(outcome, int):
+        return outcome
 
     _print_search_summary(
-        results,
-        targets,
-        log_kind,
-        result_mode=result_mode,
+        outcome.results,
+        outcome.targets,
+        outcome.log_kind,
+        result_mode=outcome.result_mode,
     )
     return 0
+
+
+def _run_search_flow(
+    args: argparse.Namespace,
+    config: AppConfig,
+) -> int | _SearchRunResult:
+    options = _resolve_search_options(args)
+    context = _resolve_search_context(args, config)
+    if args.list:
+        return _list_logs(context.logs_dir, context.log_kind)
+    term = _resolve_search_term(args)
+    search_fn = _resolve_search_function(context.log_kind)
+    targets = _resolve_search_targets_or_raise(
+        args,
+        context.logs_dir,
+        context.log_kind,
+    )
+    _ensure_targets_available(
+        targets,
+        log_kind=context.log_kind,
+        logs_dir=context.logs_dir,
+    )
+    results = _execute_search_targets(
+        search_fn,
+        targets,
+        term=term,
+        staging_dir=context.staging_dir,
+        mode=options.mode,
+        fuzzy_threshold=options.fuzzy_threshold,
+        ignore_case=not args.case_sensitive,
+    )
+    return _SearchRunResult(
+        results=results,
+        targets=targets,
+        log_kind=context.log_kind,
+        result_mode=options.result_mode,
+    )
+
+
+def _resolve_search_options(args: argparse.Namespace) -> _SearchOptions:
+    return _SearchOptions(
+        mode=normalize_search_mode(getattr(args, "mode", MODE_LITERAL)),
+        fuzzy_threshold=normalize_fuzzy_threshold(
+            getattr(args, "fuzzy_threshold", DEFAULT_FUZZY_THRESHOLD),
+        ),
+        result_mode=normalize_result_mode(
+            getattr(args, "result_mode", RESULT_MODE_RELATED_TRAFFIC),
+        ),
+    )
+
+
+def _resolve_search_context(
+    args: argparse.Namespace,
+    config: AppConfig,
+) -> _SearchContext:
+    logs_dir = _resolve_logs_dir(args, config)
+    staging_dir = _resolve_staging_dir(args, config)
+    log_kind_value = args.kind or config.default_kind
+    if log_kind_value is None:
+        raise ValueError("Log kind is required.")
+    return _SearchContext(
+        logs_dir=logs_dir,
+        staging_dir=staging_dir,
+        log_kind=normalize_kind(log_kind_value),
+    )
+
+
+def _resolve_search_term(args: argparse.Namespace) -> str:
+    term = args.term
+    if term is None:
+        raise ValueError("Search term is required unless --list is supplied.")
+    return term
+
+
+def _resolve_search_function(log_kind: str):
+    search_fn = get_search_function(log_kind)
+    if search_fn is None:
+        raise ValueError(f"Unsupported log kind: {log_kind}")
+    return search_fn
+
+
+def _resolve_search_targets_or_raise(
+    args: argparse.Namespace,
+    logs_dir: Path,
+    log_kind: str,
+) -> list[Path]:
+    try:
+        return _resolve_search_targets(args, logs_dir, log_kind)
+    except (UnknownLogDate, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _ensure_targets_available(
+    targets: list[Path],
+    *,
+    log_kind: str,
+    logs_dir: Path,
+) -> None:
+    if targets:
+        return
+    raise ValueError(f"No {log_kind} logs found in {logs_dir}")
+
+
+def _execute_search_targets(
+    search_fn,
+    targets: list[Path],
+    *,
+    term: str,
+    staging_dir: Path,
+    mode: str,
+    fuzzy_threshold: float,
+    ignore_case: bool,
+) -> list:
+    results = []
+    for source_path in targets:
+        staged_path = _stage_search_target(
+            source_path,
+            staging_dir=staging_dir,
+        )
+        result = search_fn(
+            staged_path,
+            term,
+            mode=mode,
+            fuzzy_threshold=fuzzy_threshold,
+            ignore_case=ignore_case,
+        )
+        results.append(result)
+    return results
+
+
+def _stage_search_target(
+    source_path: Path,
+    *,
+    staging_dir: Path,
+) -> Path:
+    try:
+        staged = stage_log(
+            source_path,
+            staging_dir=staging_dir,
+        )
+    except Exception as exc:  # pragma: no cover - surface staging failure
+        message = f"Failed to stage log {source_path}: {exc}"
+        raise RuntimeError(message) from exc
+    return staged.staged_path
 
 
 def _print_search_summary(
