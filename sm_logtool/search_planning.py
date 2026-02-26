@@ -45,7 +45,10 @@ def choose_search_execution_plan(
         return SearchExecutionPlan(bounded_workers, "indexed large workload")
 
     if total_bytes <= 0:
-        return SearchExecutionPlan(bounded_workers, "workload size unavailable")
+        return SearchExecutionPlan(
+            bounded_workers,
+            "workload size unavailable",
+        )
 
     per_target = total_bytes / target_count
     if target_count == 2 and total_bytes < _SMALL_TWO_TARGET_BYTES:

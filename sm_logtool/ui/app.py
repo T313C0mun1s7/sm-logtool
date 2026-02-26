@@ -2452,7 +2452,9 @@ class LogBrowser(App):
                 self._show_step_results()
                 lines = ["[search error]", message]
                 if self._live_execution_label:
-                    lines.extend(["", "[execution]", self._live_execution_label])
+                    lines.extend(
+                        ["", "[execution]", self._live_execution_label],
+                    )
                 self._write_output_lines(lines)
             self._notify(message)
             return
@@ -3296,7 +3298,10 @@ class LogBrowser(App):
         target_name: str,
     ) -> None:
         percent = int((current / total) * 100) if total else 0
-        detail = f"{phase} {current}/{total} log(s) ({percent}%): {target_name}"
+        detail = (
+            f"{phase} {current}/{total} log(s) "
+            f"({percent}%): {target_name}"
+        )
         self._notify(detail)
         self._set_live_progress(detail, percent)
 
