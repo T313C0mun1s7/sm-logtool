@@ -912,6 +912,7 @@ MAX_SEARCH_WORKERS = 4
 _LIVE_MATCH_BATCH_SIZE = 64
 _LIVE_MATCH_FLUSH_SECONDS = 0.2
 _LIVE_MATCH_PREVIEW_LINES = 240
+_LIVE_OUTPUT_REFRESH_SECONDS = 0.1
 _BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
 _OSC52_MAX_TEXT_BYTES = 75000
@@ -1872,10 +1873,13 @@ class LogBrowser(App):
         self._last_execution_label: str | None = None
         self._live_match_total = 0
         self._live_match_preview_lines: list[str] = []
+        self._last_live_output_refresh_at = 0.0
         self._search_started_at = 0.0
         self._first_result_notified = False
         self._search_session_id = 0
         self._back_navigation_armed_at = 0.0
+        self._last_output_target: object | None = None
+        self._last_output_text: str | None = None
         self.theme = CYBERDARK_THEME.name
 
     def compose(self) -> ComposeResult:  # type: ignore[override]
@@ -2090,6 +2094,8 @@ class LogBrowser(App):
         self._arm_back_navigation()
         self._mount_results_header()
         self.output_log = self._build_results_output_log()
+        self._last_output_target = None
+        self._last_output_text = None
         left_buttons = self._build_results_left_buttons()
         right_buttons = self._build_results_right_buttons()
         self._mount_results_body(left_buttons, right_buttons)
@@ -2699,12 +2705,13 @@ class LogBrowser(App):
         self._last_execution_label = None
         self._live_match_total = 0
         self._live_match_preview_lines = []
+        self._last_live_output_refresh_at = 0.0
         self._search_started_at = time.perf_counter()
         self._first_result_notified = False
         self._show_step_results()
         if isinstance(self.output_log, ResultsArea):
             self.output_log.set_log_kind(request.kind)
-        self._refresh_live_output()
+        self._request_live_output_refresh(force=True)
 
     def _build_search_request(self) -> SearchRequest | None:
         if self.staging_dir is None:
@@ -3030,7 +3037,7 @@ class LogBrowser(App):
         total = len(targets)
         message = self._parallel_start_message(total, workers, reason)
         self.call_from_thread(self._notify, message)
-        self.call_from_thread(self._set_live_progress, message, 0)
+        self.call_from_thread(self._set_live_progress, message, 0, True)
         on_completed = self._parallel_on_completed_callback()
         try:
             return self._run_thread_pool_search(
@@ -3195,6 +3202,7 @@ class LogBrowser(App):
         self._set_live_progress(
             f"Searching {current}/{total} log(s): {target_name}",
             0,
+            force=True,
         )
         self._live_match_preview_lines = []
 
@@ -3216,11 +3224,21 @@ class LogBrowser(App):
             self._live_match_preview_lines = self._live_match_preview_lines[
                 -_LIVE_MATCH_PREVIEW_LINES:
             ]
-        self._refresh_live_output()
+        self._request_live_output_refresh()
         if not self._first_result_notified:
             elapsed = time.perf_counter() - self._search_started_at
             self._notify(f"First results visible after {elapsed:.2f}s.")
             self._first_result_notified = True
+
+    def _request_live_output_refresh(self, *, force: bool = False) -> None:
+        if self.step != WizardStep.RESULTS:
+            return
+        now = time.perf_counter()
+        elapsed = now - self._last_live_output_refresh_at
+        if not force and elapsed < _LIVE_OUTPUT_REFRESH_SECONDS:
+            return
+        self._last_live_output_refresh_at = now
+        self._refresh_live_output()
 
     def _refresh_live_output(self) -> None:
         lines = self._live_rendered_lines.copy()
@@ -3281,7 +3299,7 @@ class LogBrowser(App):
             )
             self._live_rendered_lines.extend(lines)
             self._live_match_preview_lines = []
-            self._refresh_live_output()
+            self._request_live_output_refresh(force=True)
             self._live_next_index += 1
             if not self._first_result_notified:
                 elapsed = time.perf_counter() - self._search_started_at
@@ -3303,9 +3321,14 @@ class LogBrowser(App):
             f"({percent}%): {target_name}"
         )
         self._notify(detail)
-        self._set_live_progress(detail, percent)
+        self._set_live_progress(detail, percent, force=True)
 
-    def _set_live_progress(self, label: str, percent: int) -> None:
+    def _set_live_progress(
+        self,
+        label: str,
+        percent: int,
+        force: bool = False,
+    ) -> None:
         safe_percent = max(0, min(percent, 100))
         has_changed = (
             label != self._live_progress_label
@@ -3314,13 +3337,13 @@ class LogBrowser(App):
         self._live_progress_label = label
         self._live_progress_percent = safe_percent
         if has_changed and self.step == WizardStep.RESULTS:
-            self._refresh_live_output()
+            self._request_live_output_refresh(force=force)
 
     def _set_live_execution(self, label: str) -> None:
         has_changed = label != self._live_execution_label
         self._live_execution_label = label
         if has_changed and self.step == WizardStep.RESULTS:
-            self._refresh_live_output()
+            self._request_live_output_refresh(force=True)
 
     def _prepend_execution_summary(self, lines: list[str]) -> list[str]:
         if not self._last_execution_label:
@@ -3585,14 +3608,23 @@ class LogBrowser(App):
     def _write_output_lines(self, lines: list[str]) -> None:
         if self.output_log is None:
             return
+        text = "\n".join(lines)
+        if self.output_log is not self._last_output_target:
+            self._last_output_target = self.output_log
+            self._last_output_text = None
+        if text == self._last_output_text:
+            return
+
         if isinstance(self.output_log, ResultsArea):
-            self.output_log.text = "\n".join(lines)
+            self.output_log.text = text
+            self._last_output_text = text
             return
 
         if hasattr(self.output_log, "clear"):
             self.output_log.clear()  # type: ignore[call-arg]
         if hasattr(self.output_log, "update"):
-            self.output_log.update("\n".join(lines))
+            self.output_log.update(text)
+        self._last_output_text = text
 
     def _copy_results(
         self,

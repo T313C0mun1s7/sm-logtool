@@ -785,6 +785,123 @@ async def test_target_progress_status_is_determinate(tmp_path):
         assert "(512.0B/1.0KB)" in status_text
 
 
+def test_live_progress_updates_are_throttled(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    app.step = WizardStep.RESULTS
+    refreshes: list[float] = []
+    clock = {"value": 100.0}
+
+    monkeypatch.setattr(
+        ui_app_module.time,
+        "perf_counter",
+        lambda: clock["value"],
+    )
+    monkeypatch.setattr(
+        app,
+        "_refresh_live_output",
+        lambda: refreshes.append(clock["value"]),
+    )
+
+    app._set_live_progress("Searching 1/4 log(s): one", 1)
+    clock["value"] = 100.02
+    app._set_live_progress("Searching 2/4 log(s): two", 2)
+    clock["value"] = 100.04
+    app._set_live_progress("Searching 3/4 log(s): three", 3)
+    clock["value"] = 100.12
+    app._set_live_progress("Searching 4/4 log(s): four", 4)
+
+    assert refreshes == [100.0, 100.12]
+
+
+def test_start_live_target_preview_forces_refresh(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    app.step = WizardStep.RESULTS
+    refreshes: list[float] = []
+    clock = {"value": 200.0}
+
+    monkeypatch.setattr(
+        ui_app_module.time,
+        "perf_counter",
+        lambda: clock["value"],
+    )
+    monkeypatch.setattr(
+        app,
+        "_refresh_live_output",
+        lambda: refreshes.append(clock["value"]),
+    )
+
+    app._set_live_progress("Staging 1/2 log(s): one.log", 1)
+    clock["value"] = 200.01
+    app._start_live_target_preview(1, 2, "one.log")
+
+    assert refreshes == [200.0, 200.01]
+
+
+def test_live_match_preview_batches_are_throttled(tmp_path, monkeypatch):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    app.step = WizardStep.RESULTS
+    app._search_in_progress = True
+    app._search_started_at = 299.0
+    refreshes: list[float] = []
+    clock = {"value": 300.0}
+
+    monkeypatch.setattr(
+        ui_app_module.time,
+        "perf_counter",
+        lambda: clock["value"],
+    )
+    monkeypatch.setattr(
+        app,
+        "_refresh_live_output",
+        lambda: refreshes.append(clock["value"]),
+    )
+    monkeypatch.setattr(app, "_notify", lambda _message: None)
+
+    batch = [(1, "Connection initiated")]
+    app._on_live_target_match_batch(1, 1, "one.log", batch)
+    clock["value"] = 300.02
+    app._on_live_target_match_batch(1, 1, "one.log", batch)
+    clock["value"] = 300.04
+    app._on_live_target_match_batch(1, 1, "one.log", batch)
+    clock["value"] = 300.12
+    app._on_live_target_match_batch(1, 1, "one.log", batch)
+
+    assert refreshes == [300.0, 300.12]
+
+
+def test_write_output_lines_skips_duplicate_payloads(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+
+    class _Output:
+        def __init__(self) -> None:
+            self.clear_calls = 0
+            self.updates: list[str] = []
+
+        def clear(self) -> None:
+            self.clear_calls += 1
+
+        def update(self, text: str) -> None:
+            self.updates.append(text)
+
+    output = _Output()
+    app.output_log = output  # type: ignore[assignment]
+
+    app._write_output_lines(["alpha"])
+    app._write_output_lines(["alpha"])
+    app._write_output_lines(["beta"])
+
+    assert output.clear_calls == 2
+    assert output.updates == ["alpha", "beta"]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "raised_error",
