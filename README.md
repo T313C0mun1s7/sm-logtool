@@ -96,6 +96,18 @@ default_kind: smtp
 theme: Cyberdark
 ```
 
+Repository template:
+
+- `config.example.yaml` is a sample config for local bootstrap.
+- The repository does not track a live runtime `config.yaml`.
+
+Bootstrap a per-user config from the template:
+
+```bash
+mkdir -p ~/.config/sm-logtool
+cp config.example.yaml ~/.config/sm-logtool/config.yaml
+```
+
 If `staging_dir` does not exist yet, the app creates it automatically.
 
 Default config location is per-user:

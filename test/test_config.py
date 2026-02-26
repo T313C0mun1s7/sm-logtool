@@ -8,6 +8,18 @@ import yaml
 from sm_logtool import config
 
 
+def test_config_example_matches_runtime_defaults() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    sample_path = project_root / "config.example.yaml"
+
+    payload = yaml.safe_load(sample_path.read_text(encoding="utf-8"))
+
+    assert payload["logs_dir"] == str(config.DEFAULT_LOGS_DIR)
+    assert payload["staging_dir"] == str(config.DEFAULT_STAGING_DIR)
+    assert payload["default_kind"] == config.DEFAULT_KIND
+    assert payload["theme"] == config.DEFAULT_THEME
+
+
 def test_load_config_missing_file(tmp_path):
     cfg_path = tmp_path / "config.yaml"
 

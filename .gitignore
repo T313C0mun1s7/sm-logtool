@@ -164,6 +164,7 @@ cython_debug/
 sample_logs/*
 !sample_logs/README.txt
 artifacts/
+/config.yaml
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

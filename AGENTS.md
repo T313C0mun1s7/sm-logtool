@@ -86,7 +86,12 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
   Add standards-compliance checks to CI.
 
 ## Security & Configuration Tips
-Treat SmarterMail logs as sensitive—redact personal data before sharing. Always work on staged copies, copying prior-day files once and refreshing today’s log before each search. Keep environment-specific config out of git, and document any operational caveats when changing filesystem behavior.
+Treat SmarterMail logs as sensitive—redact personal data before sharing.
+Always work on staged copies, copying prior-day files once and refreshing
+today’s log before each search. Keep environment-specific config out of git,
+and document any operational caveats when changing filesystem behavior.
+Use `config.example.yaml` as the bootstrap template; do not commit a live
+runtime `config.yaml`.
 The default runtime config path is per-user: `~/.config/sm-logtool/config.yaml`.
 Theme import sources and converted themes are also per-user:
 `~/.config/sm-logtool/theme-sources` and `~/.config/sm-logtool/themes`.
