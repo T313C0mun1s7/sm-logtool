@@ -55,6 +55,7 @@ Search handlers currently exist for:
   - percent complete,
   - an inline progress bar,
   - current phase/detail text,
+  - an explicit staging phase before execution planning for staged searches,
   - execution mode notes (serial/parallel/fallback),
   - live match preview while active targets are scanning.
 - Search results stream into the results view as completed targets return.
@@ -70,7 +71,10 @@ Search handlers currently exist for:
 ### TUI behavior
 
 - Wizard flow: log kind -> date selection -> search -> results.
-- Date selection supports keyboard and mouse toggling.
+- Date selection starts with today selected by default when available.
+- Date selection supports mouse toggles, `Space` toggles, and `Enter` as the
+  common single-day continue path.
+- The Step 2 heading now tells users that today is selected by default.
 - Search step includes explicit mode switching
   (`Literal`/`Wildcard`/`Regex`/`Fuzzy`).
 - Search step includes explicit result-mode switching
@@ -117,33 +121,33 @@ Search handlers currently exist for:
 - [x] Improve large-log performance and responsiveness (progress feedback,
   background work, reduced memory footprint, index reuse).
 
-## Audit Backlog (2026-02-26)
+## Standards Audit Status (Completed 2026-04-23)
 
 Cross-project tracking items from the standards audit:
 
-- [ ] [Issue #61](https://github.com/T313C0mun1s7/sm-logtool/issues/61):
+- [x] [Issue #61](https://github.com/T313C0mun1s7/sm-logtool/issues/61):
   ensure unittest discovery runs the real test suite.
-- [ ] [Issue #62](https://github.com/T313C0mun1s7/sm-logtool/issues/62):
+- [x] [Issue #62](https://github.com/T313C0mun1s7/sm-logtool/issues/62):
   refactor `sm_logtool/ui/app.py` into smaller units and reduce nesting.
-- [ ] [Issue #63](https://github.com/T313C0mun1s7/sm-logtool/issues/63):
+- [x] [Issue #63](https://github.com/T313C0mun1s7/sm-logtool/issues/63):
   refactor CLI parser/search orchestration for maintainability.
-- [ ] [Issue #64](https://github.com/T313C0mun1s7/sm-logtool/issues/64):
+- [x] [Issue #64](https://github.com/T313C0mun1s7/sm-logtool/issues/64):
   close public API docstring gaps and add enforcement.
-- [ ] [Issue #65](https://github.com/T313C0mun1s7/sm-logtool/issues/65):
+- [x] [Issue #65](https://github.com/T313C0mun1s7/sm-logtool/issues/65):
   enforce the 79-character line-length policy.
-- [ ] [Issue #66](https://github.com/T313C0mun1s7/sm-logtool/issues/66):
+- [x] [Issue #66](https://github.com/T313C0mun1s7/sm-logtool/issues/66):
   remove tracked environment-specific config and document sample config
   workflow.
 
 Search-focused optimization and structure items:
 
-- [ ] [Issue #67](https://github.com/T313C0mun1s7/sm-logtool/issues/67):
+- [x] [Issue #67](https://github.com/T313C0mun1s7/sm-logtool/issues/67):
   optimize live search preview rendering to reduce redraw churn.
-- [ ] [Issue #68](https://github.com/T313C0mun1s7/sm-logtool/issues/68):
+- [x] [Issue #68](https://github.com/T313C0mun1s7/sm-logtool/issues/68):
   deduplicate ungrouped log-kind mapping across modules.
-- [ ] [Issue #69](https://github.com/T313C0mun1s7/sm-logtool/issues/69):
+- [x] [Issue #69](https://github.com/T313C0mun1s7/sm-logtool/issues/69):
   move pytest tooling out of runtime dependencies.
-- [ ] [Issue #70](https://github.com/T313C0mun1s7/sm-logtool/issues/70):
+- [x] [Issue #70](https://github.com/T313C0mun1s7/sm-logtool/issues/70):
   add standards-compliance checks to CI.
 
 ## Notes
