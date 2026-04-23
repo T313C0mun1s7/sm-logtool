@@ -147,7 +147,8 @@ sm-logtool browse --logs-dir /var/lib/smartermail/Logs
 Wizard flow:
 
 1. Choose log kind.
-2. Select one or more log dates.
+2. Select one or more log dates. Today is selected by default; deselect it
+   if unwanted.
 3. Enter search term and choose search mode
    (`Literal`/`Wildcard`/`Regex`/`Fuzzy`) plus result mode
    (`Show all related traffic`/`Only matching rows`).
@@ -176,8 +177,10 @@ Clipboard note:
 Date selection shortcuts:
 
 - Arrow keys to move
+- Click to toggle a date
 - `Space` to toggle a date
-- `Enter` to continue
+- `Enter` to select the highlighted date and continue
+- Today is selected by default when the date step opens
 
 ### Run console search
 

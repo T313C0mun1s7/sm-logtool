@@ -67,27 +67,27 @@ Add cases under `test/test_*.py` with descriptive names. Lean on fixtures such a
 - Use `docs/RELEASE_NOTES_TEMPLATE.md` as the standard format when drafting
   release notes for publishing.
 
-## Standards Audit Backlog (2026-02-26)
-- [ ] [Issue #61](https://github.com/T313C0mun1s7/sm-logtool/issues/61):
+## Standards Audit Status (Completed 2026-04-23)
+- [x] [Issue #61](https://github.com/T313C0mun1s7/sm-logtool/issues/61):
   Ensure unittest discovery runs the real test suite.
-- [ ] [Issue #62](https://github.com/T313C0mun1s7/sm-logtool/issues/62):
+- [x] [Issue #62](https://github.com/T313C0mun1s7/sm-logtool/issues/62):
   Refactor `sm_logtool/ui/app.py` into smaller units and reduce nesting.
-- [ ] [Issue #63](https://github.com/T313C0mun1s7/sm-logtool/issues/63):
+- [x] [Issue #63](https://github.com/T313C0mun1s7/sm-logtool/issues/63):
   Refactor CLI parser/search orchestration for maintainability.
-- [ ] [Issue #64](https://github.com/T313C0mun1s7/sm-logtool/issues/64):
+- [x] [Issue #64](https://github.com/T313C0mun1s7/sm-logtool/issues/64):
   Close public API docstring gaps and add enforcement.
-- [ ] [Issue #65](https://github.com/T313C0mun1s7/sm-logtool/issues/65):
+- [x] [Issue #65](https://github.com/T313C0mun1s7/sm-logtool/issues/65):
   Enforce the 79-character line-length policy.
-- [ ] [Issue #66](https://github.com/T313C0mun1s7/sm-logtool/issues/66):
+- [x] [Issue #66](https://github.com/T313C0mun1s7/sm-logtool/issues/66):
   Remove tracked environment-specific config and document sample config
   workflow.
-- [ ] [Issue #67](https://github.com/T313C0mun1s7/sm-logtool/issues/67):
+- [x] [Issue #67](https://github.com/T313C0mun1s7/sm-logtool/issues/67):
   Optimize live search preview rendering to reduce redraw churn.
-- [ ] [Issue #68](https://github.com/T313C0mun1s7/sm-logtool/issues/68):
+- [x] [Issue #68](https://github.com/T313C0mun1s7/sm-logtool/issues/68):
   Deduplicate ungrouped log-kind mapping across modules.
-- [ ] [Issue #69](https://github.com/T313C0mun1s7/sm-logtool/issues/69):
+- [x] [Issue #69](https://github.com/T313C0mun1s7/sm-logtool/issues/69):
   Move pytest tooling out of runtime dependencies.
-- [ ] [Issue #70](https://github.com/T313C0mun1s7/sm-logtool/issues/70):
+- [x] [Issue #70](https://github.com/T313C0mun1s7/sm-logtool/issues/70):
   Add standards-compliance checks to CI.
 
 ## Security & Configuration Tips
@@ -101,7 +101,7 @@ The default runtime config path is per-user: `~/.config/sm-logtool/config.yaml`.
 Theme import sources and converted themes are also per-user:
 `~/.config/sm-logtool/theme-sources` and `~/.config/sm-logtool/themes`.
 
-## Upcoming Work
+## Delivered Work
 - [x] Expand the search pipeline to cover additional SmarterMail log kinds and grouping rules.
 - [x] Add syntax highlighting for supported log kinds in the TUI view.
 - [x] Add syntax highlighting for supported log kinds in the CLI view.
@@ -131,16 +131,22 @@ Theme import sources and converted themes are also per-user:
 
 
 ## Current State Notes
-- [x] Toggle-only date selection works with arrows, `Space`, and `Enter`.
+- [x] Date selection supports mouse toggles, `Space`, and `Enter` as the
+  common single-day continue path; today is selected by default and the Step
+  2 heading now says so.
 - [x] Core actions (`Menu`, `Quit`, `Reset`) stay visible in the top action
   strip, while step-specific search shortcuts remain in the footer.
 - [x] Search results display one log line per row after formatting updates.
+- [x] Staged searches show a staging status before execution planning instead
+  of sitting on a misleading planning label.
 - [x] `sm-logtool themes` provides a visual Theme Studio with live Browse-style
   preview and ANSI-256-aware mapping profiles.
 - [x] Converted themes load automatically from the per-user theme store and
   apply to both chrome and syntax results.
 - [x] Theme Studio supports manual element remapping and enforces distinct
   selection states for usable date-list highlighting.
+- [x] GitHub Actions workflows use current action majors for checkout, Python
+  setup, and artifact transfer.
 
 ## Issue #21 Implementation Notes (Completed)
 - Baseline measurements were captured against real staged logs before tuning.
