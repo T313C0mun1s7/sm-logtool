@@ -29,6 +29,16 @@ def write_sample_logs(root: Path) -> None:
     )
 
 
+def write_sample_logs_for_dates(root: Path, stamps: list[str]) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    for stamp in stamps:
+        log_path = root / f"{stamp}-smtpLog.log"
+        log_path.write_text(
+            "00:00:00 [1.1.1.1][ABC123] Connection initiated\n",
+            encoding="utf-8",
+        )
+
+
 def test_run_prunes_staging_on_startup_and_quit(tmp_path, monkeypatch):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
@@ -1205,6 +1215,62 @@ async def test_plain_question_mark_remains_input_text(tmp_path):
         await pilot.press("?")
         await pilot.pause()
         assert app.search_input.value == "?"
+
+
+@pytest.mark.asyncio
+async def test_date_step_enter_switches_to_highlighted_day(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs_for_dates(
+        logs_dir,
+        ["2024.01.03", "2024.01.02", "2024.01.01"],
+    )
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app._show_step_date()
+        await pilot.pause()
+
+        assert [info.path.name for info in app.selected_logs] == [
+            infos[0].path.name
+        ]
+
+        await pilot.press("down", "enter")
+        await pilot.pause()
+
+        assert app.step == WizardStep.SEARCH
+        assert [info.path.name for info in app.selected_logs] == [
+            infos[1].path.name
+        ]
+
+
+@pytest.mark.asyncio
+async def test_date_step_mouse_click_toggles_clicked_day_once(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs_for_dates(
+        logs_dir,
+        ["2024.01.03", "2024.01.02", "2024.01.01"],
+    )
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._refresh_logs()
+        kind, infos = next(iter(app._logs_by_kind.items()))
+        app.current_kind = kind
+        app._show_step_date()
+        await pilot.pause()
+
+        assert app.date_list is not None
+        second_item = list(app.date_list.children)[1]
+
+        await pilot.click(second_item, offset=(1, 0))
+        await pilot.pause()
+
+        assert app.step == WizardStep.DATE
+        assert [info.path.name for info in app.selected_logs] == [
+            infos[0].path.name,
+            infos[1].path.name,
+        ]
 
 
 @pytest.mark.asyncio
