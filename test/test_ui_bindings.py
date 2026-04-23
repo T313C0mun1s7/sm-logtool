@@ -12,7 +12,13 @@ from sm_logtool.search import get_search_function
 from sm_logtool.search import SmtpSearchResult
 from sm_logtool.result_modes import RESULT_MODE_MATCHING_ROWS
 from sm_logtool.ui import app as ui_app_module
-from sm_logtool.ui.app import LogBrowser, ResultsArea, TopAction, WizardStep
+from sm_logtool.ui.app import (
+    LogBrowser,
+    ResultsArea,
+    SearchRequest,
+    TopAction,
+    WizardStep,
+)
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
 from sm_logtool.ui.theme_importer import load_imported_themes
@@ -721,10 +727,41 @@ async def test_perform_search_notifies_submit_immediately(
         assert "[progress]" in progress_text
         assert "Search submitted. Preparing logs..." in progress_text
         assert "[execution]" in progress_text
-        assert "Planning execution mode..." in progress_text
+        assert "Staging selected logs..." in progress_text
         assert app._search_in_progress is True
         cancel_button = app.wizard.query_one("#cancel-search", Button)
         assert cancel_button.disabled is False
+
+
+@pytest.mark.parametrize(
+    ("needs_staging", "expected_label"),
+    [
+        (True, "Staging selected logs..."),
+        (False, "Planning execution mode..."),
+    ],
+)
+def test_start_live_results_sets_initial_execution_label(
+    tmp_path,
+    needs_staging,
+    expected_label,
+):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    request = SearchRequest(
+        kind="smtp",
+        term="Connection",
+        mode="literal",
+        result_mode=RESULT_MODE_MATCHING_ROWS,
+        fuzzy_threshold=0.6,
+        ignore_case=True,
+        source_paths=[logs_dir / "2024.01.01-smtpLog.log"],
+        needs_staging=needs_staging,
+        use_index_cache=needs_staging,
+    )
+
+    assert app._initial_live_execution_label(request) == expected_label
+
 
 
 @pytest.mark.asyncio

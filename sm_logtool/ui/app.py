@@ -2693,7 +2693,9 @@ class LogBrowser(App):
         self._live_target_label = None
         self._live_progress_label = "Search submitted. Preparing logs..."
         self._live_progress_percent = 0
-        self._live_execution_label = "Planning execution mode..."
+        self._live_execution_label = self._initial_live_execution_label(
+            request
+        )
         self._last_execution_label = None
         self._live_match_total = 0
         self._live_match_preview_lines = []
@@ -2704,6 +2706,14 @@ class LogBrowser(App):
         if isinstance(self.output_log, ResultsArea):
             self.output_log.set_log_kind(request.kind)
         self._request_live_output_refresh(force=True)
+
+    def _initial_live_execution_label(
+        self,
+        request: SearchRequest,
+    ) -> str:
+        if request.needs_staging:
+            return "Staging selected logs..."
+        return "Planning execution mode..."
 
     def _build_search_request(self) -> SearchRequest | None:
         if self.staging_dir is None:
@@ -2811,6 +2821,10 @@ class LogBrowser(App):
     ) -> list[Path]:
         if not request.needs_staging:
             return request.source_paths.copy()
+        self.call_from_thread(
+            self._set_live_execution,
+            "Staging selected logs...",
+        )
         assert self.staging_dir is not None
         total = len(request.source_paths)
         targets: list[Path] = []
