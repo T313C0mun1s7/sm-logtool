@@ -83,7 +83,11 @@ def test_prune_staging_dir_uses_filename_when_mtime_is_invalid(
 
     def fake_stat(self, *args, **kwargs):  # noqa: ANN001
         if self == stale_file:
-            return SimpleNamespace(st_mtime=float("nan"))
+            stat_result = original_stat(self, *args, **kwargs)
+            return SimpleNamespace(
+                st_mtime=float("nan"),
+                st_mode=stat_result.st_mode,
+            )
         return original_stat(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "stat", fake_stat)
