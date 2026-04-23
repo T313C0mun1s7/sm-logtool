@@ -2041,8 +2041,12 @@ class LogBrowser(App):
     def _show_step_date(self) -> None:
         self.step = WizardStep.DATE
         self._clear_wizard()
-        step_text = "Step 2: Select one or more log dates"
-        self.wizard.mount(Static(step_text, classes="instruction"))
+        self.wizard.mount(
+            Static(
+                self._date_step_heading_text(),
+                classes="instruction",
+            )
+        )
         instructions = Static(
             "Use arrow keys or the mouse to highlight a date. Press Space or "
             "click to toggle it.\nPress Enter (or Next) when you are ready "
@@ -2082,6 +2086,15 @@ class LogBrowser(App):
         self._update_next_button_state()
         self.date_list.focus()
         self._refresh_footer_bindings()
+
+    def _date_step_heading_text(self) -> Text:
+        """Return the Step 2 heading with a preferred wrap before the note."""
+
+        primary = "Step 2: Select one or more log dates"
+        note = "(Today is selected by default, deselect if unwanted)"
+        # Keep the primary heading together and prefer wrapping before the
+        # explanatory note when the available width is tight.
+        return Text(primary.replace(" ", "\u00a0") + "\u200b " + note)
 
     def _show_step_search(self) -> None:
         self.step = WizardStep.SEARCH

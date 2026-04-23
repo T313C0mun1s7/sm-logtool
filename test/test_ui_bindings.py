@@ -1282,6 +1282,22 @@ async def test_date_step_enter_switches_to_highlighted_day(tmp_path):
         ]
 
 
+def test_date_step_heading_prefers_wrap_before_default_note(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+
+    heading = app._date_step_heading_text().plain
+
+    assert (
+        heading.replace("\u00a0", " ").replace("\u200b", "")
+        == "Step 2: Select one or more log dates "
+        "(Today is selected by default, deselect if unwanted)"
+    )
+    assert "\u200b " in heading
+    assert "\u00a0" in heading
+
+
 @pytest.mark.asyncio
 async def test_date_step_mouse_click_toggles_clicked_day_once(tmp_path):
     logs_dir = tmp_path / "logs"
