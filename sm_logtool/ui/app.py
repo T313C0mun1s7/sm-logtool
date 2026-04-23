@@ -1459,8 +1459,11 @@ class DateListView(ListView):
         self._update_visual_state()
 
     def _apply_enter(self, index: int) -> None:
-        if not self.selected_indices:
+        if index not in self.selected_indices:
+            # Enter should make the highlighted date usable as the common
+            # single-day path, while Space/click remain available for toggles.
             self.selected_indices = {index}
+            self.anchor_index = index
             self._update_visual_state()
 
         self._post_selection()
@@ -2402,9 +2405,7 @@ class LogBrowser(App):
     ) -> None:  # type: ignore[override]
         if self.step == WizardStep.KIND:
             self._select_kind_item(event.item)
-            return
-        if self.step == WizardStep.DATE:
-            self._select_date_item(event.item)
+        return
 
     def on_date_selection_changed(self, message: DateSelectionChanged) -> None:
         if self.step != WizardStep.DATE:
@@ -2496,21 +2497,6 @@ class LogBrowser(App):
             return
         self.current_kind = item.kind
         self._show_step_date()
-
-    def _select_date_item(self, item: ListItem) -> None:
-        if self.date_list is None or not isinstance(item, DateListItem):
-            return
-        index = self._child_index(self.date_list, item)
-        if index is None:
-            return
-        self.date_list._toggle_index(index)
-        self.date_list.anchor_index = index
-        self.date_list._update_visual_state()
-        self.selected_logs = self.date_list.selected_infos
-        self.post_message(
-            DateSelectionChanged(self.date_list, self.date_list.selected_infos)
-        )
-        self._update_next_button_state()
 
     @staticmethod
     def _child_index(container: ListView, item: ListItem) -> int | None:
