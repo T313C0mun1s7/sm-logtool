@@ -32,6 +32,8 @@ TOKEN_PROTO_XMPP = "proto_xmpp"
 TOKEN_PROTO_API = "proto_api"
 TOKEN_STATUS_BAD = "status_bad"
 TOKEN_STATUS_GOOD = "status_good"
+TOKEN_LINK = "link"
+TOKEN_LINK_HOVER = "link_hover"
 
 _TIME_START = re.compile(
     r"^(?P<time>\d{2}:\d{2}:\d{2}(?:\.\d{3})?)"
