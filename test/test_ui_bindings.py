@@ -938,6 +938,80 @@ async def test_results_area_ignores_middle_mouse_down(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_delivery_lookup_link_activates_on_mouse_up(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    link = _DeliveryLookupLink(4, "67518204", date(2024, 1, 1))
+
+    class Event:
+        button = 1
+        stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+        area = app.wizard.query_one(ResultsArea)
+        opened: list[_DeliveryLookupLink] = []
+        area._delivery_lookup_link_at_event = (  # type: ignore[method-assign]
+            lambda _event: link
+        )
+        area._open_delivery_lookup = (  # type: ignore[method-assign]
+            lambda active_link: opened.append(active_link)
+        )
+
+        down_event = Event()
+        await area._on_mouse_down(down_event)  # type: ignore[arg-type]
+
+        assert opened == []
+        assert down_event.stopped is True
+
+        up_event = Event()
+        await area._on_mouse_up(up_event)  # type: ignore[arg-type]
+
+        assert opened == [link]
+        assert up_event.stopped is True
+
+
+@pytest.mark.asyncio
+async def test_delivery_lookup_link_mouse_up_elsewhere_cancels(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    link = _DeliveryLookupLink(4, "67518204", date(2024, 1, 1))
+
+    class Event:
+        button = 1
+        stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+        area = app.wizard.query_one(ResultsArea)
+        opened: list[_DeliveryLookupLink] = []
+        lookup_results = [link, None]
+        area._delivery_lookup_link_at_event = (  # type: ignore[method-assign]
+            lambda _event: lookup_results.pop(0)
+        )
+        area._open_delivery_lookup = (  # type: ignore[method-assign]
+            lambda active_link: opened.append(active_link)
+        )
+
+        await area._on_mouse_down(Event())  # type: ignore[arg-type]
+        up_event = Event()
+        await area._on_mouse_up(up_event)  # type: ignore[arg-type]
+
+        assert opened == []
+        assert up_event.stopped is True
+
+
+@pytest.mark.asyncio
 async def test_clear_wizard_releases_results_mouse_capture(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
