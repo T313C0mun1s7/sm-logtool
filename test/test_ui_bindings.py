@@ -833,6 +833,81 @@ def test_smtp_result_view_adds_delivery_lookup_link(tmp_path):
     ]
 
 
+def test_smtp_subsearch_result_view_reuses_prior_delivery_link_date(
+    tmp_path,
+):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    subsearch_path = tmp_path / "staging" / "subsearch_01.log"
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    app.last_delivery_lookup_links = [
+        _DeliveryLookupLink(8, "67518204", date(2024, 1, 1)),
+    ]
+    result = SmtpSearchResult(
+        term="other@example.net",
+        log_path=subsearch_path,
+        conversations=[
+            Conversation(
+                message_id="10059869",
+                first_line_number=1,
+                lines=[
+                    (
+                        "00:05:47.504 [100.110.209.55] [10059869] "
+                        "Successfully wrote to the HDR file. "
+                        "(/var/lib/smartermail/Spool/SubSpool8/"
+                        "67518204.hdr)"
+                    ),
+                    (
+                        "00:05:47.504 [100.110.209.55] [10059869] "
+                        "Data transfer succeeded, writing mail to "
+                        "67518204.eml"
+                    ),
+                ],
+            )
+        ],
+        total_lines=2,
+        orphan_matches=[],
+    )
+
+    rendered = app._render_result_view(
+        [result],
+        [subsearch_path],
+        "smtp",
+        "related",
+    )
+
+    assert DELIVERY_LOOKUP_LINK_TEXT in rendered.lines
+    assert rendered.delivery_lookup_links == [
+        _DeliveryLookupLink(
+            rendered.lines.index(DELIVERY_LOOKUP_LINK_TEXT),
+            "67518204",
+            date(2024, 1, 1),
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_results_area_end_mouse_interaction_releases_capture(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+        area = app.wizard.query_one(ResultsArea)
+        calls: list[str] = []
+        area._end_mouse_selection = (  # type: ignore[attr-defined]
+            lambda: calls.append("end")
+        )
+        area.release_mouse = (  # type: ignore[method-assign]
+            lambda: calls.append("release")
+        )
+
+        area._end_mouse_interaction()
+
+        assert calls == ["end", "release"]
+
+
 def test_delivery_lookup_request_targets_same_day_delivery_log(tmp_path):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()
