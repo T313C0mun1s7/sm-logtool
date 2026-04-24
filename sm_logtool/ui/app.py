@@ -567,6 +567,7 @@ class ResultsArea(TextArea):
         self._log_kind = log_kind or ""
         self._delivery_lookup_links: dict[int, _DeliveryLookupLink] = {}
         self._hover_delivery_lookup_row: int | None = None
+        self._pressed_delivery_lookup_link: _DeliveryLookupLink | None = None
         super().__init__(
             text="",
             language=None,
@@ -608,6 +609,12 @@ class ResultsArea(TextArea):
         self._delivery_lookup_links = {link.row: link for link in links}
         if self._hover_delivery_lookup_row not in self._delivery_lookup_links:
             self._hover_delivery_lookup_row = None
+        if (
+            self._pressed_delivery_lookup_link is not None
+            and self._pressed_delivery_lookup_link.row
+            not in self._delivery_lookup_links
+        ):
+            self._pressed_delivery_lookup_link = None
         self._build_highlight_map()
         self.refresh()
 
@@ -670,20 +677,26 @@ class ResultsArea(TextArea):
             return
         link = self._delivery_lookup_link_at_event(event)
         if link is not None:
-            app = getattr(self, "app", None)
-            open_lookup = getattr(app, "_open_delivery_lookup", None)
-            if open_lookup is not None:
-                self._end_mouse_interaction()
-                self._hover_delivery_lookup_row = None
-                open_lookup(link)
-                event.stop()
-                return
+            self._pressed_delivery_lookup_link = link
+            self._end_mouse_interaction()
+            event.stop()
+            return
         await super()._on_mouse_down(event)
 
     async def _on_mouse_up(
         self,
         event: events.MouseUp,
     ) -> None:  # pragma: no cover - UI behaviour
+        pending_link = self._pressed_delivery_lookup_link
+        if pending_link is not None:
+            self._pressed_delivery_lookup_link = None
+            self._end_mouse_interaction()
+            released_link = self._delivery_lookup_link_at_event(event)
+            if released_link == pending_link:
+                self._hover_delivery_lookup_row = None
+                self._open_delivery_lookup(released_link)
+            event.stop()
+            return
         try:
             await super()._on_mouse_up(event)
         finally:
@@ -692,7 +705,14 @@ class ResultsArea(TextArea):
     def on_unmount(self) -> None:
         """Release mouse capture if results are redrawn during interaction."""
 
+        self._pressed_delivery_lookup_link = None
         self._end_mouse_interaction()
+
+    def _open_delivery_lookup(self, link: _DeliveryLookupLink) -> None:
+        app = getattr(self, "app", None)
+        open_lookup = getattr(app, "_open_delivery_lookup", None)
+        if open_lookup is not None:
+            open_lookup(link)
 
     async def _on_mouse_move(
         self,
