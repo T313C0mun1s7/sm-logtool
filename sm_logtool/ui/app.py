@@ -714,6 +714,19 @@ class ResultsArea(TextArea):
         if open_lookup is not None:
             open_lookup(link)
 
+    async def _on_key(
+        self,
+        event: events.Key,
+    ) -> None:  # pragma: no cover - UI behaviour
+        if event.key == "enter":
+            link = self._delivery_lookup_link_at_cursor()
+            if link is not None:
+                self._open_delivery_lookup(link)
+                event.stop()
+                event.prevent_default()
+                return
+        await super()._on_key(event)
+
     async def _on_mouse_move(
         self,
         event: events.MouseMove,
@@ -740,6 +753,13 @@ class ResultsArea(TextArea):
     ) -> _DeliveryLookupLink | None:
         try:
             row, _column = self.get_target_document_location(event)
+        except Exception:
+            return None
+        return self._delivery_lookup_links.get(row)
+
+    def _delivery_lookup_link_at_cursor(self) -> _DeliveryLookupLink | None:
+        try:
+            row, _column = self.cursor_location
         except Exception:
             return None
         return self._delivery_lookup_links.get(row)
