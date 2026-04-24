@@ -1012,6 +1012,44 @@ async def test_delivery_lookup_link_mouse_up_elsewhere_cancels(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_delivery_lookup_link_activates_on_enter(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    link = _DeliveryLookupLink(4, "67518204", date(2024, 1, 1))
+
+    class Event:
+        key = "enter"
+        stopped = False
+        prevented = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+        def prevent_default(self) -> None:
+            self.prevented = True
+
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+        area = app.wizard.query_one(ResultsArea)
+        area.text = "\n".join(f"line {index}" for index in range(6))
+        area.set_delivery_lookup_links([link])
+        area.move_cursor((link.row, 0))
+        opened: list[_DeliveryLookupLink] = []
+        area._open_delivery_lookup = (  # type: ignore[method-assign]
+            lambda active_link: opened.append(active_link)
+        )
+        event = Event()
+
+        await area._on_key(event)  # type: ignore[arg-type]
+
+        assert opened == [link]
+        assert event.stopped is True
+        assert event.prevented is True
+
+
+@pytest.mark.asyncio
 async def test_clear_wizard_releases_results_mouse_capture(tmp_path):
     logs_dir = tmp_path / "logs"
     write_sample_logs(logs_dir)
