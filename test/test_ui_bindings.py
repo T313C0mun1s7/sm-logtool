@@ -908,6 +908,54 @@ async def test_results_area_end_mouse_interaction_releases_capture(tmp_path):
         assert calls == ["end", "release"]
 
 
+@pytest.mark.asyncio
+async def test_results_area_ignores_middle_mouse_down(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+
+    class Event:
+        button = 2
+        stopped = False
+
+        def stop(self) -> None:
+            self.stopped = True
+
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+        area = app.wizard.query_one(ResultsArea)
+        calls: list[str] = []
+        area._end_mouse_interaction = (  # type: ignore[method-assign]
+            lambda: calls.append("end")
+        )
+        event = Event()
+
+        await area._on_mouse_down(event)  # type: ignore[arg-type]
+
+        assert calls == ["end"]
+        assert event.stopped is True
+
+
+@pytest.mark.asyncio
+async def test_clear_wizard_releases_results_mouse_capture(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    async with app.run_test() as pilot:
+        app._show_step_results()
+        await pilot.pause()
+        area = app.wizard.query_one(ResultsArea)
+        calls: list[str] = []
+        area._end_mouse_interaction = (  # type: ignore[method-assign]
+            lambda: calls.append("end")
+        )
+
+        app._clear_wizard()
+
+        assert calls == ["end"]
+
+
 def test_delivery_lookup_request_targets_same_day_delivery_log(tmp_path):
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir()

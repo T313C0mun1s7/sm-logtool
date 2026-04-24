@@ -639,7 +639,8 @@ class ResultsArea(TextArea):
         self,
         event: events.MouseDown,
     ) -> None:  # pragma: no cover - UI behaviour
-        if getattr(event, "button", None) == 3:
+        button = getattr(event, "button", _MOUSE_LEFT_BUTTON)
+        if button == _MOUSE_RIGHT_BUTTON:
             selection = self.selected_text or None
             self._end_mouse_interaction()
             region = getattr(self, "region", None)
@@ -663,6 +664,10 @@ class ResultsArea(TextArea):
             self.call_after_refresh(_open_menu)
             event.stop()
             return
+        if button != _MOUSE_LEFT_BUTTON:
+            self._end_mouse_interaction()
+            event.stop()
+            return
         link = self._delivery_lookup_link_at_event(event)
         if link is not None:
             app = getattr(self, "app", None)
@@ -674,6 +679,20 @@ class ResultsArea(TextArea):
                 event.stop()
                 return
         await super()._on_mouse_down(event)
+
+    async def _on_mouse_up(
+        self,
+        event: events.MouseUp,
+    ) -> None:  # pragma: no cover - UI behaviour
+        try:
+            await super()._on_mouse_up(event)
+        finally:
+            self._end_mouse_interaction()
+
+    def on_unmount(self) -> None:
+        """Release mouse capture if results are redrawn during interaction."""
+
+        self._end_mouse_interaction()
 
     async def _on_mouse_move(
         self,
@@ -990,6 +1009,8 @@ _LIVE_OUTPUT_REFRESH_SECONDS = 0.1
 _BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
 _OSC52_MAX_TEXT_BYTES = 75000
+_MOUSE_LEFT_BUTTON = 1
+_MOUSE_RIGHT_BUTTON = 3
 DELIVERY_LOOKUP_LINK_TEXT = "Find this message in the Delivery Log"
 _DELIVERY_SPOOL_FILE = re.compile(r"\b(?P<root>\d+)\.(?:hdr|eml)\b")
 _DELIVERY_ACCEPTANCE_MARKERS = (
@@ -2757,6 +2778,8 @@ class LogBrowser(App):
                 break
 
     def _clear_wizard(self) -> None:
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log._end_mouse_interaction()
         if hasattr(self, 'wizard'):
             for child in list(self.wizard.children):
                 child.remove()
