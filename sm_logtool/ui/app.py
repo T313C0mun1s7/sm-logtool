@@ -582,6 +582,18 @@ class ResultsArea(TextArea):
         self.register_theme(RESULTS_THEME_DEFAULT)
         self.set_visual_theme()
 
+    def _end_mouse_interaction(self) -> None:
+        end_selection = getattr(self, "_end_mouse_selection", None)
+        if callable(end_selection):
+            try:
+                end_selection()
+            except Exception:
+                pass
+        try:
+            self.release_mouse()
+        except Exception:
+            pass
+
     def set_log_kind(self, log_kind: str | None) -> None:
         self._log_kind = log_kind or ""
         self._build_highlight_map()
@@ -629,16 +641,7 @@ class ResultsArea(TextArea):
     ) -> None:  # pragma: no cover - UI behaviour
         if getattr(event, "button", None) == 3:
             selection = self.selected_text or None
-            end_selection = getattr(self, "_end_mouse_selection", None)
-            if callable(end_selection):
-                try:
-                    end_selection()
-                except Exception:
-                    pass
-            try:
-                self.release_mouse()
-            except Exception:
-                pass
+            self._end_mouse_interaction()
             region = getattr(self, "region", None)
             if region is not None:
                 screen_x = int(region.x + event.x)
@@ -665,6 +668,8 @@ class ResultsArea(TextArea):
             app = getattr(self, "app", None)
             open_lookup = getattr(app, "_open_delivery_lookup", None)
             if open_lookup is not None:
+                self._end_mouse_interaction()
+                self._hover_delivery_lookup_row = None
                 open_lookup(link)
                 event.stop()
                 return
@@ -675,11 +680,19 @@ class ResultsArea(TextArea):
         event: events.MouseMove,
     ) -> None:  # pragma: no cover - UI behaviour
         previous = self._hover_delivery_lookup_row
-        link = self._delivery_lookup_link_at_event(event)
+        selecting = bool(getattr(self, "_selecting", False))
+        link = (
+            None
+            if selecting
+            else self._delivery_lookup_link_at_event(event)
+        )
         self._hover_delivery_lookup_row = link.row if link else None
         if previous != self._hover_delivery_lookup_row:
             self._build_highlight_map()
             self.refresh()
+        if link is not None:
+            event.stop()
+            return
         await super()._on_mouse_move(event)
 
     def _delivery_lookup_link_at_event(
@@ -4000,13 +4013,21 @@ class LogBrowser(App):
             return None
         if result_mode != RESULT_MODE_RELATED_TRAFFIC:
             return None
-        target_date = parse_log_filename(target).stamp
-        if target_date is None:
-            return None
         spool_root = _accepted_delivery_spool_root(lines)
         if spool_root is None:
             return None
+        target_date = parse_log_filename(target).stamp
+        if target_date is None:
+            target_date = self._delivery_lookup_date_for_root(spool_root)
+        if target_date is None:
+            return None
         return (spool_root, target_date)
+
+    def _delivery_lookup_date_for_root(self, spool_root: str) -> date | None:
+        for link in self.last_delivery_lookup_links:
+            if link.spool_root == spool_root:
+                return link.target_date
+        return None
 
     def _indexed_delivery_lookup_links(
         self,
