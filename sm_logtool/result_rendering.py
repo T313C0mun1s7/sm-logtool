@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from .log_kinds import is_entry_render_kind
 from .result_modes import normalize_result_mode
 from .result_modes import RESULT_MODE_MATCHING_ROWS
 from .result_modes import RESULT_MODE_RELATED_TRAFFIC
 from .result_formatting import collect_widths, format_conversation_lines
-from .search import SmtpSearchResult
+from .search import Conversation, SmtpSearchResult
+
+ConversationFooter = Callable[
+    [SmtpSearchResult, Conversation, Path],
+    Sequence[str],
+]
 
 
 def render_search_results(
@@ -18,6 +23,7 @@ def render_search_results(
     targets: Sequence[Path],
     kind: str,
     result_mode: str = RESULT_MODE_RELATED_TRAFFIC,
+    conversation_footer: ConversationFooter | None = None,
 ) -> list[str]:
     """Render search results as output lines."""
 
@@ -69,6 +75,10 @@ def render_search_results(
                     f"{conversation.first_line_number}"
                 )
             rendered_lines.extend(formatted)
+            if conversation_footer is not None:
+                rendered_lines.extend(
+                    conversation_footer(result, conversation, target)
+                )
         if result.orphan_matches:
             if not is_ungrouped:
                 rendered_lines.append("")

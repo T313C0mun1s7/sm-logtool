@@ -15,6 +15,8 @@ from ..syntax import TOKEN_EMAIL
 from ..syntax import TOKEN_ID
 from ..syntax import TOKEN_IP
 from ..syntax import TOKEN_LINE_NUMBER
+from ..syntax import TOKEN_LINK
+from ..syntax import TOKEN_LINK_HOVER
 from ..syntax import TOKEN_MESSAGE_ID
 from ..syntax import TOKEN_PROTO_ACTIVESYNC
 from ..syntax import TOKEN_PROTO_API
@@ -382,6 +384,12 @@ def build_results_theme(theme: Theme) -> TextAreaTheme:
             TOKEN_MESSAGE_ID: Style(color=_as_hex(message_id)),
             TOKEN_STATUS_BAD: Style(color=_as_hex(error), bold=True),
             TOKEN_STATUS_GOOD: Style(color=_as_hex(success), bold=True),
+            TOKEN_LINK: Style(color=_as_hex(primary), underline=True),
+            TOKEN_LINK_HOVER: Style(
+                color=_as_hex(primary),
+                bold=True,
+                underline=True,
+            ),
         }
     )
     syntax_styles.update(

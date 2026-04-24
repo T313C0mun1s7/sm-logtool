@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 import time
 
@@ -7,17 +8,20 @@ from textual.containers import Horizontal
 from textual.widgets import Button, Static
 
 from sm_logtool import config as config_module
+from sm_logtool.result_modes import RESULT_MODE_MATCHING_ROWS
 from sm_logtool.search import Conversation
 from sm_logtool.search import get_search_function
 from sm_logtool.search import SmtpSearchResult
-from sm_logtool.result_modes import RESULT_MODE_MATCHING_ROWS
 from sm_logtool.ui import app as ui_app_module
 from sm_logtool.ui.app import (
+    DELIVERY_LOOKUP_LINK_TEXT,
     LogBrowser,
     ResultsArea,
     SearchRequest,
     TopAction,
     WizardStep,
+    _DeliveryLookupLink,
+    _accepted_delivery_spool_root,
 )
 from sm_logtool.ui.themes import CYBERDARK_THEME_NAME
 from sm_logtool.ui.themes import CYBERNOTDARK_THEME_NAME
@@ -761,6 +765,126 @@ def test_start_live_results_sets_initial_execution_label(
     )
 
     assert app._initial_live_execution_label(request) == expected_label
+
+
+def test_accepted_delivery_spool_root_prefers_acceptance_lines():
+    lines = [
+        "00:05:46.000 [100.110.209.55] [10059869] unrelated 111.eml",
+        (
+            "00:05:47.504 [100.110.209.55] [10059869] "
+            "Successfully wrote to the HDR file. "
+            "(/var/lib/smartermail/Spool/SubSpool8/67518204.hdr)"
+        ),
+        (
+            "00:05:47.504 [100.110.209.55] [10059869] "
+            "Data transfer succeeded, writing mail to 67518204.eml "
+            "(MessageID: <20260424070547@example.com>)"
+        ),
+    ]
+
+    assert _accepted_delivery_spool_root(lines) == "67518204"
+
+
+def test_smtp_result_view_adds_delivery_lookup_link(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    target = logs_dir / "2024.01.01-smtpLog.log"
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    result = SmtpSearchResult(
+        term="accepted",
+        log_path=target,
+        conversations=[
+            Conversation(
+                message_id="10059869",
+                first_line_number=1,
+                lines=[
+                    (
+                        "00:05:47.504 [100.110.209.55] [10059869] "
+                        "Successfully wrote to the HDR file. "
+                        "(/var/lib/smartermail/Spool/SubSpool8/"
+                        "67518204.hdr)"
+                    ),
+                    (
+                        "00:05:47.504 [100.110.209.55] [10059869] "
+                        "Data transfer succeeded, writing mail to "
+                        "67518204.eml"
+                    ),
+                ],
+            )
+        ],
+        total_lines=2,
+        orphan_matches=[],
+    )
+
+    rendered = app._render_result_view(
+        [result],
+        [target],
+        "smtp",
+        "related",
+    )
+
+    assert DELIVERY_LOOKUP_LINK_TEXT in rendered.lines
+    assert rendered.delivery_lookup_links == [
+        _DeliveryLookupLink(
+            rendered.lines.index(DELIVERY_LOOKUP_LINK_TEXT),
+            "67518204",
+            date(2024, 1, 1),
+        )
+    ]
+
+
+def test_delivery_lookup_request_targets_same_day_delivery_log(tmp_path):
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    smtp_log = logs_dir / "2024.01.01-smtpLog.log"
+    smtp_log.write_text("", encoding="utf-8")
+    delivery_log = logs_dir / "2024.01.01-delivery.log"
+    delivery_log.write_text("", encoding="utf-8")
+    app = LogBrowser(logs_dir=logs_dir, staging_dir=tmp_path / "staging")
+    app.subsearch_paths = [tmp_path / "staging" / "subsearch_01.log"]
+
+    request = app._build_delivery_lookup_request(
+        _DeliveryLookupLink(4, "67518204", date(2024, 1, 1))
+    )
+
+    assert request is not None
+    assert request.kind == "delivery"
+    assert request.term == "67518204"
+    assert request.mode == "literal"
+    assert request.source_paths == [delivery_log]
+    assert request.needs_staging is True
+
+
+def test_back_subsearch_restores_previous_result_kind_and_links(tmp_path):
+    logs_dir = tmp_path / "logs"
+    write_sample_logs(logs_dir)
+    app = LogBrowser(logs_dir=logs_dir)
+    link = _DeliveryLookupLink(2, "67518204", date(2024, 1, 1))
+    app.subsearch_terms = ["accepted", "67518204"]
+    app.subsearch_paths = [logs_dir / "smtp-snapshot.log", logs_dir / "d.log"]
+    app.subsearch_kinds = ["smtp", "delivery"]
+    app.subsearch_rendered = [["smtp result"], ["delivery result"]]
+    app.subsearch_delivery_lookup_links = [[link], []]
+    app.subsearch_depth = len(app.subsearch_paths)
+    app.subsearch_path = app.subsearch_paths[-1]
+    app.subsearch_kind = "delivery"
+    app.last_rendered_lines = ["delivery result"]
+    app.last_rendered_kind = "delivery"
+    displayed: list[tuple[list[str], str | None, list[_DeliveryLookupLink]]] = []
+    app._display_results = (  # type: ignore[method-assign]
+        lambda lines, kind, links=None: displayed.append(
+            (lines, kind, links or [])
+        )
+    )
+
+    app._step_back_subsearch()
+
+    assert app.subsearch_kind == "smtp"
+    assert app.subsearch_path == logs_dir / "smtp-snapshot.log"
+    assert app.last_rendered_lines == ["smtp result"]
+    assert app.last_rendered_kind == "smtp"
+    assert app.last_delivery_lookup_links == [link]
+    assert displayed == [(["smtp result"], "smtp", [link])]
 
 
 

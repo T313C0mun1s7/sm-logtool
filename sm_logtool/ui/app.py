@@ -19,6 +19,7 @@ from itertools import groupby
 import multiprocessing as mp
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from typing import Callable, Dict, Iterable, List, Mapping, Optional
@@ -49,8 +50,9 @@ from textual.widgets._footer import FooterKey, FooterLabel, KeyGroup
 from rich.text import Text
 
 from ..config import ConfigError, save_theme
-from ..log_kinds import KIND_SMTP, normalize_kind
+from ..log_kinds import KIND_DELIVERY, KIND_SMTP, normalize_kind
 from ..logfiles import (
+    find_log_by_date,
     LogFileInfo,
     parse_log_filename,
     summarize_logs,
@@ -78,7 +80,9 @@ from ..search import get_search_function
 from ..search import has_search_index
 from ..search import prime_search_index
 from ..search_planning import choose_search_execution_plan
-from ..syntax import spans_for_line
+from ..syntax import HighlightSpan, spans_for_line
+from ..syntax import TOKEN_LINK
+from ..syntax import TOKEN_LINK_HOVER
 from ..staging import (
     DEFAULT_STAGING_RETENTION_DAYS,
     prune_staging_dir,
@@ -561,6 +565,8 @@ class ResultsArea(TextArea):
         classes: str | None = None,
     ) -> None:
         self._log_kind = log_kind or ""
+        self._delivery_lookup_links: dict[int, _DeliveryLookupLink] = {}
+        self._hover_delivery_lookup_row: int | None = None
         super().__init__(
             text="",
             language=None,
@@ -578,6 +584,18 @@ class ResultsArea(TextArea):
 
     def set_log_kind(self, log_kind: str | None) -> None:
         self._log_kind = log_kind or ""
+        self._build_highlight_map()
+        self.refresh()
+
+    def set_delivery_lookup_links(
+        self,
+        links: Iterable[_DeliveryLookupLink],
+    ) -> None:
+        """Set clickable Delivery-log lookup rows for rendered results."""
+
+        self._delivery_lookup_links = {link.row: link for link in links}
+        if self._hover_delivery_lookup_row not in self._delivery_lookup_links:
+            self._hover_delivery_lookup_row = None
         self._build_highlight_map()
         self.refresh()
 
@@ -642,7 +660,37 @@ class ResultsArea(TextArea):
             self.call_after_refresh(_open_menu)
             event.stop()
             return
+        link = self._delivery_lookup_link_at_event(event)
+        if link is not None:
+            app = getattr(self, "app", None)
+            open_lookup = getattr(app, "_open_delivery_lookup", None)
+            if open_lookup is not None:
+                open_lookup(link)
+                event.stop()
+                return
         await super()._on_mouse_down(event)
+
+    async def _on_mouse_move(
+        self,
+        event: events.MouseMove,
+    ) -> None:  # pragma: no cover - UI behaviour
+        previous = self._hover_delivery_lookup_row
+        link = self._delivery_lookup_link_at_event(event)
+        self._hover_delivery_lookup_row = link.row if link else None
+        if previous != self._hover_delivery_lookup_row:
+            self._build_highlight_map()
+            self.refresh()
+        await super()._on_mouse_move(event)
+
+    def _delivery_lookup_link_at_event(
+        self,
+        event: events.MouseEvent,
+    ) -> _DeliveryLookupLink | None:
+        try:
+            row, _column = self.get_target_document_location(event)
+        except Exception:
+            return None
+        return self._delivery_lookup_links.get(row)
 
     def _build_highlight_map(self) -> None:
         highlights = self._highlights
@@ -652,6 +700,13 @@ class ResultsArea(TextArea):
         for row in range(document.line_count):
             line = document.get_line(row)
             spans = spans_for_line(kind, line)
+            if not spans:
+                spans = []
+            if row in self._delivery_lookup_links:
+                token = TOKEN_LINK
+                if row == self._hover_delivery_lookup_row:
+                    token = TOKEN_LINK_HOVER
+                spans.append(HighlightSpan(0, len(line), token))
             if not spans:
                 continue
             offsets = _byte_offsets(line)
@@ -922,6 +977,25 @@ _LIVE_OUTPUT_REFRESH_SECONDS = 0.1
 _BACK_NAVIGATION_GUARD_SECONDS = 0.35
 _LIVE_PROGRESS_BAR_WIDTH = 24
 _OSC52_MAX_TEXT_BYTES = 75000
+DELIVERY_LOOKUP_LINK_TEXT = "Find this message in the Delivery Log"
+_DELIVERY_SPOOL_FILE = re.compile(r"\b(?P<root>\d+)\.(?:hdr|eml)\b")
+_DELIVERY_ACCEPTANCE_MARKERS = (
+    "Successfully wrote to the HDR file",
+    "Data transfer succeeded, writing mail to",
+)
+
+
+@dataclass(frozen=True)
+class _DeliveryLookupLink:
+    row: int
+    spool_root: str
+    target_date: date
+
+
+@dataclass(frozen=True)
+class _RenderedResultView:
+    lines: list[str]
+    delivery_lookup_links: list[_DeliveryLookupLink]
 
 
 def _search_single_target(
@@ -1004,6 +1078,36 @@ def _osc52_sequence(
     if "screen" in term:
         return f"\x1bP{osc}\x1b\\"
     return osc
+
+
+def _accepted_delivery_spool_root(lines: list[str]) -> str | None:
+    for line in reversed(lines):
+        if not _contains_delivery_acceptance_marker(line):
+            continue
+        match = _DELIVERY_SPOOL_FILE.search(line)
+        if match is not None:
+            return match.group("root")
+    return None
+
+
+def _contains_delivery_acceptance_marker(line: str) -> bool:
+    return any(marker in line for marker in _DELIVERY_ACCEPTANCE_MARKERS)
+
+
+def _shift_delivery_lookup_links(
+    links: list[_DeliveryLookupLink],
+    row_offset: int,
+) -> list[_DeliveryLookupLink]:
+    if row_offset == 0:
+        return links.copy()
+    return [
+        _DeliveryLookupLink(
+            link.row + row_offset,
+            link.spool_root,
+            link.target_date,
+        )
+        for link in links
+    ]
 
 
 def _search_targets_in_process_pool(
@@ -1859,9 +1963,14 @@ class LogBrowser(App):
         self.subsearch_depth = 0
         self.last_rendered_lines: list[str] | None = None
         self.last_rendered_kind: str | None = None
+        self.last_delivery_lookup_links: list[_DeliveryLookupLink] = []
         self.subsearch_terms: list[str] = []
         self.subsearch_paths: list[Path] = []
+        self.subsearch_kinds: list[str] = []
         self.subsearch_rendered: list[list[str]] = []
+        self.subsearch_delivery_lookup_links: list[
+            list[_DeliveryLookupLink]
+        ] = []
         self._result_log_counter = 0
         self._context_menu_open = False
         self._search_worker: Worker[SearchOutput] | None = None
@@ -1882,6 +1991,7 @@ class LogBrowser(App):
         self._last_execution_label: str | None = None
         self._live_match_total = 0
         self._live_match_preview_lines: list[str] = []
+        self._live_delivery_lookup_links: list[_DeliveryLookupLink] = []
         self._last_live_output_refresh_at = 0.0
         self._search_started_at = 0.0
         self._first_result_notified = False
@@ -2452,9 +2562,13 @@ class LogBrowser(App):
             if self._live_rendered_lines:
                 self.last_rendered_lines = self._live_rendered_lines.copy()
                 self.last_rendered_kind = self._live_kind
+                self.last_delivery_lookup_links = (
+                    self._live_delivery_lookup_links.copy()
+                )
                 self._display_results(
                     self.last_rendered_lines,
                     self.last_rendered_kind,
+                    self.last_delivery_lookup_links,
                 )
             elif self.step == WizardStep.RESULTS:
                 self._show_step_search()
@@ -2465,12 +2579,21 @@ class LogBrowser(App):
             if self._live_rendered_lines:
                 self.last_rendered_lines = self._live_rendered_lines.copy()
                 self.last_rendered_kind = self._live_kind
+                self.last_delivery_lookup_links = (
+                    self._live_delivery_lookup_links.copy()
+                )
                 self._last_execution_label = self._live_execution_label
+                display_lines = self._prepend_execution_summary(
+                    self.last_rendered_lines,
+                )
+                shift = len(display_lines) - len(self.last_rendered_lines)
                 self._display_results(
-                    self._prepend_execution_summary(
-                        self.last_rendered_lines,
-                    ),
+                    display_lines,
                     self.last_rendered_kind,
+                    _shift_delivery_lookup_links(
+                        self.last_delivery_lookup_links,
+                        shift,
+                    ),
                 )
             error = event.worker.error
             message = "Search failed." if error is None else str(error)
@@ -2683,11 +2806,21 @@ class LogBrowser(App):
         request = self._build_search_request()
         if request is None:
             return
+        self._submit_search_request(
+            request,
+            "Search submitted. Preparing logs...",
+        )
+
+    def _submit_search_request(
+        self,
+        request: SearchRequest,
+        status_message: str,
+    ) -> None:
         self._search_session_id += 1
         session_id = self._search_session_id
         self._set_search_running(True)
         self._start_live_results(request)
-        self._notify("Search submitted. Preparing logs...")
+        self._notify(status_message)
         self._search_worker = self.run_worker(
             partial(self._run_search_job, request, session_id),
             name="search-worker",
@@ -2699,6 +2832,7 @@ class LogBrowser(App):
 
     def _start_live_results(self, request: SearchRequest) -> None:
         self._live_rendered_lines = []
+        self._live_delivery_lookup_links = []
         self._live_pending_results = {}
         self._live_next_index = 0
         self._live_kind = request.kind
@@ -2774,6 +2908,53 @@ class LogBrowser(App):
             source_paths=source_paths,
             needs_staging=needs_staging,
             use_index_cache=needs_staging,
+        )
+
+    def _open_delivery_lookup(self, link: _DeliveryLookupLink) -> None:
+        if self._search_in_progress:
+            self._notify("Search is running. Wait or press Cancel.")
+            return
+        request = self._build_delivery_lookup_request(link)
+        if request is None:
+            return
+        self.subsearch_active = True
+        self._submit_search_request(
+            request,
+            "Delivery lookup submitted. Preparing logs...",
+        )
+
+    def _build_delivery_lookup_request(
+        self,
+        link: _DeliveryLookupLink,
+    ) -> SearchRequest | None:
+        if self.staging_dir is None:
+            self._notify(
+                "Staging directory is not configured. Set 'staging_dir' in "
+                "config.yaml or pass --staging-dir."
+            )
+            return None
+        if not self.subsearch_paths:
+            self._notify("No prior SMTP results available for Back.")
+            return None
+        delivery_log = find_log_by_date(
+            self.logs_dir,
+            KIND_DELIVERY,
+            link.target_date,
+        )
+        if delivery_log is None:
+            stamp = link.target_date.strftime("%Y.%m.%d")
+            self._notify(f"No Delivery log found for {stamp}.")
+            return None
+        return SearchRequest(
+            kind=KIND_DELIVERY,
+            term=link.spool_root,
+            mode=MODE_LITERAL,
+            result_mode=RESULT_MODE_RELATED_TRAFFIC,
+            fuzzy_threshold=self.fuzzy_threshold,
+            ignore_case=True,
+            source_paths=[delivery_log.path],
+            needs_staging=True,
+            use_index_cache=True,
         )
 
     def _run_search_job(
@@ -3262,6 +3443,8 @@ class LogBrowser(App):
     def _refresh_live_output(self) -> None:
         lines = self._live_rendered_lines.copy()
         output_lines: list[str] = []
+        if isinstance(self.output_log, ResultsArea):
+            self.output_log.set_delivery_lookup_links([])
         if self._search_in_progress and self._live_progress_label:
             bar = _progress_bar(self._live_progress_percent)
             output_lines.extend(
@@ -3310,13 +3493,20 @@ class LogBrowser(App):
                 self._live_next_index
             )
             kind = self._live_kind or (self.current_kind or "")
-            lines = render_search_results(
+            rendered_view = self._render_result_view(
                 [next_result],
                 [next_target],
                 kind,
                 result_mode=self._live_result_mode,
             )
-            self._live_rendered_lines.extend(lines)
+            offset = len(self._live_rendered_lines)
+            self._live_rendered_lines.extend(rendered_view.lines)
+            self._live_delivery_lookup_links.extend(
+                _shift_delivery_lookup_links(
+                    rendered_view.delivery_lookup_links,
+                    offset,
+                )
+            )
             self._live_match_preview_lines = []
             self._request_live_output_refresh(force=True)
             self._live_next_index += 1
@@ -3377,26 +3567,37 @@ class LogBrowser(App):
         return summary + lines
 
     def _apply_search_output(self, output: SearchOutput) -> None:
-        rendered_lines = self._render_results(
+        rendered_view = self._render_result_view(
             output.results,
             output.targets,
             output.kind,
             output.result_mode,
         )
+        rendered_lines = rendered_view.lines
         self._live_rendered_lines = rendered_lines.copy()
         self._live_pending_results = {}
-        self.last_rendered_lines = rendered_lines
-        self.last_rendered_kind = output.kind
         self._last_execution_label = self._live_execution_label
         self._write_subsearch_snapshot(
             output.results,
             output.term,
+            output.kind,
             rendered_lines,
             output.result_mode,
+            rendered_view.delivery_lookup_links,
+        )
+        self.last_rendered_lines = rendered_lines
+        self.last_rendered_kind = output.kind
+        self.last_delivery_lookup_links = (
+            rendered_view.delivery_lookup_links.copy()
         )
         self.subsearch_kind = output.kind
         display_lines = self._prepend_execution_summary(rendered_lines)
-        self._display_results(display_lines, output.kind)
+        shift = len(display_lines) - len(rendered_lines)
+        display_links = _shift_delivery_lookup_links(
+            rendered_view.delivery_lookup_links,
+            shift,
+        )
+        self._display_results(display_lines, output.kind, display_links)
         self._notify(
             f"Search complete. Processed {len(output.targets)} log(s)."
         )
@@ -3727,14 +3928,17 @@ class LogBrowser(App):
         self,
         lines: list[str],
         kind: str | None,
+        delivery_lookup_links: list[_DeliveryLookupLink] | None = None,
     ) -> None:
         self._show_step_results()
         if not lines:
             return
         if isinstance(self.output_log, ResultsArea):
             self.output_log.set_log_kind(kind)
+            self.output_log.set_delivery_lookup_links(
+                delivery_lookup_links or []
+            )
         self._write_output_lines(lines)
-
 
     def _render_results(
         self,
@@ -3743,12 +3947,83 @@ class LogBrowser(App):
         kind: str,
         result_mode: str,
     ) -> list[str]:
-        return render_search_results(
+        return self._render_result_view(
             results,
             targets,
             kind,
             result_mode=result_mode,
+        ).lines
+
+    def _render_result_view(
+        self,
+        results: list,
+        targets: list[Path],
+        kind: str,
+        result_mode: str,
+    ) -> _RenderedResultView:
+        pending_links: list[tuple[str, date]] = []
+
+        def footer(
+            _result: SmtpSearchResult,
+            conversation,
+            target: Path,
+        ) -> list[str]:
+            link = self._delivery_link_for_conversation(
+                conversation.lines,
+                target,
+                kind,
+                result_mode,
+            )
+            if link is None:
+                return []
+            pending_links.append(link)
+            return [DELIVERY_LOOKUP_LINK_TEXT]
+
+        lines = render_search_results(
+            results,
+            targets,
+            kind,
+            result_mode=result_mode,
+            conversation_footer=footer,
         )
+        links = self._indexed_delivery_lookup_links(lines, pending_links)
+        return _RenderedResultView(lines, links)
+
+    def _delivery_link_for_conversation(
+        self,
+        lines: list[str],
+        target: Path,
+        kind: str,
+        result_mode: str,
+    ) -> tuple[str, date] | None:
+        if normalize_kind(kind) != KIND_SMTP:
+            return None
+        if result_mode != RESULT_MODE_RELATED_TRAFFIC:
+            return None
+        target_date = parse_log_filename(target).stamp
+        if target_date is None:
+            return None
+        spool_root = _accepted_delivery_spool_root(lines)
+        if spool_root is None:
+            return None
+        return (spool_root, target_date)
+
+    def _indexed_delivery_lookup_links(
+        self,
+        lines: list[str],
+        pending_links: list[tuple[str, date]],
+    ) -> list[_DeliveryLookupLink]:
+        links: list[_DeliveryLookupLink] = []
+        pending_iter = iter(pending_links)
+        for row, line in enumerate(lines):
+            if line != DELIVERY_LOOKUP_LINK_TEXT:
+                continue
+            try:
+                spool_root, target_date = next(pending_iter)
+            except StopIteration:
+                break
+            links.append(_DeliveryLookupLink(row, spool_root, target_date))
+        return links
 
     def _subsearch_output_path(self) -> Path:
         if self.staging_dir is None:
@@ -3767,8 +4042,10 @@ class LogBrowser(App):
         self,
         results: list,
         term: str,
+        kind: str,
         rendered_lines: list[str],
         result_mode: str,
+        delivery_lookup_links: list[_DeliveryLookupLink],
     ) -> None:
         if not self.subsearch_active:
             self._reset_subsearch()
@@ -3791,7 +4068,9 @@ class LogBrowser(App):
         self.subsearch_depth += 1
         self.subsearch_terms.append(term)
         self.subsearch_paths.append(output_path)
+        self.subsearch_kinds.append(kind)
         self.subsearch_rendered.append(rendered_lines)
+        self.subsearch_delivery_lookup_links.append(delivery_lookup_links)
 
     def _start_subsearch(self) -> None:
         if self.subsearch_path is None:
@@ -3807,6 +4086,7 @@ class LogBrowser(App):
         self._display_results(
             self.last_rendered_lines,
             self.last_rendered_kind,
+            self.last_delivery_lookup_links,
         )
 
     def _step_back_subsearch(self) -> None:
@@ -3814,7 +4094,11 @@ class LogBrowser(App):
             return
         self.subsearch_terms.pop()
         self.subsearch_paths.pop()
+        if self.subsearch_kinds:
+            self.subsearch_kinds.pop()
         self.subsearch_rendered.pop()
+        if self.subsearch_delivery_lookup_links:
+            self.subsearch_delivery_lookup_links.pop()
         self.subsearch_depth = len(self.subsearch_paths)
         self.subsearch_path = (
             self.subsearch_paths[-1] if self.subsearch_paths else None
@@ -3822,11 +4106,21 @@ class LogBrowser(App):
         self.last_rendered_lines = (
             self.subsearch_rendered[-1] if self.subsearch_rendered else None
         )
-        self.last_rendered_kind = self.subsearch_kind
+        if self.subsearch_kinds:
+            self.last_rendered_kind = self.subsearch_kinds[-1]
+        else:
+            self.last_rendered_kind = self.subsearch_kind
+        self.subsearch_kind = self.last_rendered_kind
+        self.last_delivery_lookup_links = (
+            self.subsearch_delivery_lookup_links[-1]
+            if self.subsearch_delivery_lookup_links
+            else []
+        )
         if self.last_rendered_lines:
             self._display_results(
                 self.last_rendered_lines,
                 self.last_rendered_kind,
+                self.last_delivery_lookup_links,
             )
         else:
             self._show_step_kind()
@@ -3838,9 +4132,12 @@ class LogBrowser(App):
         self.subsearch_depth = 0
         self.last_rendered_lines = None
         self.last_rendered_kind = None
+        self.last_delivery_lookup_links = []
         self.subsearch_terms = []
         self.subsearch_paths = []
+        self.subsearch_kinds = []
         self.subsearch_rendered = []
+        self.subsearch_delivery_lookup_links = []
 
     def _results_title(self) -> str:
         if not self.subsearch_terms:
